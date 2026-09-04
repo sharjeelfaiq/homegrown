@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Clone Studio</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.0.0/tabler-icons.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+        
+        header {
+            padding: 20px 0;
+            border-bottom: 1px solid #1e293b;
+            position: sticky;
+            top: 0;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 100;
+        }
+        
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo { font-size: 20px; font-weight: 600; letter-spacing: -0.5px; }
+        .logo i { color: #06b6d4; margin-right: 8px; }
+        
+        nav a { color: #94a3b8; margin-left: 32px; text-decoration: none; font-size: 14px; transition: color 0.2s; }
+        nav a:hover { color: #06b6d4; }
+        
+        .hero {
+            padding: 100px 0;
+            text-align: center;
+        }
+        
+        .hero h1 {
+            font-size: 48px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #f1f5f9;
+            line-height: 1.2;
+        }
+        
+        .hero .subtitle {
+            font-size: 20px;
+            color: #cbd5e1;
+            margin-bottom: 32px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .cta-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-bottom: 60px;
+        }
+        
+        .btn {
+            padding: 12px 28px;
+            border-radius: 8px;
+            border: none;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #06b6d4;
+            color: #0f172a;
+        }
+        
+        .btn-primary:hover {
+            background: #22d3ee;
+        }
+        
+        .btn-secondary {
+            background: transparent;
+            color: #06b6d4;
+            border: 1px solid #06b6d4;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(6, 182, 212, 0.1);
+        }
+        
+        .hero-badge {
+            display: inline-block;
+            background: rgba(6, 182, 212, 0.1);
+            border: 1px solid #06b6d4;
+            color: #06b6d4;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+        
+        .features {
+            padding: 80px 0;
+            border-top: 1px solid #1e293b;
+        }
+        
+        .section-title {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 48px;
+            text-align: center;
+            color: #f1f5f9;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 32px;
+            margin-bottom: 60px;
+        }
+        
+        .feature-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid #1e293b;
+            padding: 32px;
+            border-radius: 12px;
+            transition: all 0.3s;
+        }
+        
+        .feature-card:hover {
+            border-color: #06b6d4;
+            background: rgba(30, 41, 59, 0.8);
+        }
+        
+        .feature-icon {
+            font-size: 32px;
+            color: #06b6d4;
+            margin-bottom: 16px;
+        }
+        
+        .feature-card h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #f1f5f9;
+        }
+        
+        .feature-card p {
+            color: #cbd5e1;
+            font-size: 14px;
+        }
+        
+        .workflow {
+            padding: 80px 0;
+            border-top: 1px solid #1e293b;
+        }
+        
+        .workflow-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+        
+        .step {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid #1e293b;
+            padding: 28px;
+            border-radius: 12px;
+            position: relative;
+        }
+        
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background: #06b6d4;
+            color: #0f172a;
+            border-radius: 50%;
+            font-weight: 600;
+            margin-bottom: 16px;
+            font-size: 16px;
+        }
+        
+        .step h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #f1f5f9;
+        }
+        
+        .step p {
+            color: #cbd5e1;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .specs {
+            padding: 80px 0;
+            border-top: 1px solid #1e293b;
+        }
+        
+        .specs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 24px;
+        }
+        
+        .spec-box {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid #1e293b;
+            padding: 24px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .spec-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #06b6d4;
+            margin-bottom: 8px;
+        }
+        
+        .spec-label {
+            font-size: 13px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid #1e293b;
+            text-align: center;
+            color: #64748b;
+            font-size: 14px;
+            margin-top: 60px;
+        }
+        
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 32px; }
+            .hero .subtitle { font-size: 16px; }
+            .cta-buttons { flex-direction: column; }
+            .section-title { font-size: 24px; }
+            nav { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="ti ti-microphone"></i>Voice Clone Studio
+                </div>
+                <nav>
+                    <a href="#features">Features</a>
+                    <a href="#workflow">How it works</a>
+                    <a href="#specs">Specs</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+    
+    <section class="hero">
+        <div class="container">
+            <div class="hero-badge">
+                <i class="ti ti-lightning-bolt"></i>Fast, local, on-device
+            </div>
+            <h1>Clone any voice in seconds</h1>
+            <p class="subtitle">Create perfect AI voice clones with a 2-15 second reference clip. Studio-quality voiceovers at scale, all running locally on your GPU.</p>
+            <div class="cta-buttons">
+                <button class="btn btn-primary">
+                    <i class="ti ti-play-circle"></i>Try now
+                </button>
+                <button class="btn btn-secondary">
+                    <i class="ti ti-book"></i>Read the docs
+                </button>
+            </div>
+        </div>
+    </section>
+    
+    <section class="features" id="features">
+        <div class="container">
+            <h2 class="section-title">What you can do</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="ti ti-waveform"></i></div>
+                    <h3>Instant voice clones</h3>
+                    <p>Upload a 2-15 second reference clip and get a perfect voice clone. Auto-transcription keeps everything simple.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="ti ti-layers"></i></div>
+                    <h3>Batch generation</h3>
+                    <p>Write multiple scripts and assign different voices in one sitting. Queue them all at once and watch them process.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="ti ti-settings"></i></div>
+                    <h3>Style & control</h3>
+                    <p>Adjust stability and style per batch. Cinematic, conversational, urgent — dial in the mood you need.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="ti ti-history"></i></div>
+                    <h3>Full history</h3>
+                    <p>Every generation is saved. Re-queue with edits in one click and regenerate without starting from scratch.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="ti ti-server"></i></div>
+                    <h3>Local & fast</h3>
+                    <p>Everything runs on your GPU. No cloud calls, no data leaving your machine, no subscription tiers.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="ti ti-files"></i></div>
+                    <h3>Long scripts</h3>
+                    <p>Scripts up to 60,000 characters automatically chunked. No audio degradation, no noise. Just clean output.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="workflow" id="workflow">
+        <div class="container">
+            <h2 class="section-title">How it works</h2>
+            <div class="workflow-steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3>Add a voice</h3>
+                    <p>Create a preset with a reference clip (2-15 sec). Name it, optionally add a mood tag. Let it auto-transcribe or paste the exact text.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3>Write scripts</h3>
+                    <p>Write voiceover text in script blocks. Assign a voice to each one. Add as many as you want — each gets its own voice dropdown.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3>Generate all</h3>
+                    <p>Click "Generate All" to queue every script at once. The app switches to Queue & History so you can watch them process.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <h3>Monitor queue</h3>
+                    <p>Jobs run one at a time. See queued status, live progress, and estimated time remaining. Downloads ready instantly when done.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">5</div>
+                    <h3>Edit & re-queue</h3>
+                    <p>Re-queue with one click. Pull any finished job back into the studio and regenerate. Save your best takes.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="specs" id="specs">
+        <div class="container">
+            <h2 class="section-title">Specs & limits</h2>
+            <div class="specs-grid">
+                <div class="spec-box">
+                    <div class="spec-value">2-15s</div>
+                    <div class="spec-label">Reference clip</div>
+                </div>
+                <div class="spec-box">
+                    <div class="spec-value">60k</div>
+                    <div class="spec-label">Max characters per script</div>
+                </div>
+                <div class="spec-box">
+                    <div class="spec-value">~85s</div>
+                    <div class="spec-label">Per chunk on single GPU</div>
+                </div>
+                <div class="spec-box">
+                    <div class="spec-value">∞</div>
+                    <div class="spec-label">Saved presets</div>
+                </div>
+                <div class="spec-box">
+                    <div class="spec-value">Chunked</div>
+                    <div class="spec-label">Long-form support</div>
+                </div>
+                <div class="spec-box">
+                    <div class="spec-value">Auto</div>
+                    <div class="spec-label">Transcription</div>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <footer>
+        <div class="container">
+            <p>Voice Clone Studio — run locally, generate at scale</p>
+        </div>
+    </footer>
+
+    <script>
+        document.querySelectorAll('a[href^="#"]').forEach(link => {
+            link.addEventListener('click', e => {
+                e.preventDefault();
+                const id = link.getAttribute('href').slice(1);
+                document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+            });
+        });
+    </script>
+</body>
+</html>

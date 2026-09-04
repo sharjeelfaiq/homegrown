@@ -1,0 +1,54 @@
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Painted before any stylesheet-driven background resolves — kills the
+   white flash on load. */
+html {
+  background: #060b1a;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, var(--font-body);
+}
+
+#root {
+  min-height: 100svh;
+}
+
+p {
+  margin: 0;
+}
+
+/* Scrollbars — thin, blue-dark track, blue-primary thumb. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--blue-primary) var(--blue-dark);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--blue-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--blue-primary);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--blue-accent);
+}

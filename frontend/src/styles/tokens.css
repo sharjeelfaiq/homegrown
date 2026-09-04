@@ -1,0 +1,64 @@
+/* Mastering Suite design tokens — the studio's single source of truth.
+   The legacy teal/periwinkle block at the top of App.css remains only for
+   LandingPage.css; studio styles must use these.
+
+   Palette: Runtime Gurus brand theme. The bg, blue, text, amber, green and
+   danger variables below are the canonical brand variables; every other
+   variable in this file is an alias onto them so the rest of the
+   stylesheet (written against these semantic names) re-themes for free. */
+:root {
+  /* Brand tokens */
+  --bg-deepest: #060b1a; /* darkest bg, footer, stats bar */
+  --bg-nav: #080d1f; /* navbar */
+  --bg-base: #0a1228; /* main page background */
+  --bg-hero: #0d1535; /* hero / card mid-tone */
+  --bg-card: #0d1535; /* panel / card background */
+
+  --blue-primary: #2563eb; /* CTA buttons */
+  --blue-accent: #3b82f6; /* heading accent, active states */
+  --blue-dark: #1e3a8a; /* borders, badge outlines */
+  --blue-light: #93c5fd; /* badge text, pill labels */
+
+  --text-primary: #ffffff;
+  --text-muted: #94a3b8;
+
+  --amber: #f59e0b; /* ratings */
+  --green: #22c55e; /* success / guarantee */
+  --danger: #ef4444; /* delete / error */
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* Studio aliases -- existing rules are written against these */
+  --bg-panel: var(--bg-card); /* opaque now; blur stays harmless on solid bg */
+  --bg-panel-solid: var(--bg-card);
+  --bg-inset: var(--bg-nav); /* inputs, wells */
+  --accent-amber: var(--blue-accent);
+  --accent-amber-soft: rgba(37, 99, 235, 0.08);
+  --accent-red: var(--danger);
+  --accent-red-soft: rgba(239, 68, 68, 0.16);
+  --accent-green: var(--green);
+  --accent-green-soft: rgba(34, 197, 94, 0.16);
+  --panel-border: var(--blue-dark);
+  --panel-border-strong: var(--blue-dark);
+  --blur-panel: 20px;
+
+  --shadow-float: 0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 12px 32px rgba(0, 0, 0, 0.55);
+  --shadow-press: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 3px 10px rgba(0, 0, 0, 0.5);
+  --glow-amber: 0 0 0 1px var(--blue-dark), 0 8px 28px rgba(37, 99, 235, 0.25);
+
+  --font-display: 'Archivo Variable', 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue-accent);
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
