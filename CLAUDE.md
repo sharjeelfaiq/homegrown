@@ -88,6 +88,13 @@ Three things that were each learned the hard way, all measured on this machine:
   audio appended to a finished 82s read. Headroom there is additive (`_CHUNK_CAP_HEADROOM_FRAMES`), not a
   percentage: pauses from `...` don't scale with character count, and a proportional cap cut the last line.
 
+- **`chunk_text` balances chunk sizes; it is not greedy.** Greedy packing leaves the last chunk holding the
+  remainder (one script gave `[138, 164, 188, 174, 195, 186, 75]`), and that runt is the chunk that sits
+  near its frame cap, drops its closing words and murmurs. `_pack()` runs a partition DP over the same
+  chunk count greedy would use, so count never rises and `max_chars` is never exceeded — only boundaries
+  move. Packing to a smaller limit does NOT achieve this: greedy at any limit below 195 gave nine chunks
+  instead of seven. Removing the runt took total silence from 16.2s to 0.0s on the test script.
+
 Verify changes here by transcribing the output and diffing against the script, not by comparing durations —
 duration ratios cannot tell padding from a legitimately long read. `faster_whisper` is already a dependency.
 
