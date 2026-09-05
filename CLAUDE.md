@@ -65,8 +65,15 @@ collapses as rope positions extrapolate out of validated range. So long scripts 
 as one call:
 
 ```
-text -> chunk_text(CHUNK_MAX_CHARS=800) -> per-chunk generate (fresh KV cache each) -> stitch_audio(200ms gap) -> write_mp3
+text -> chunk_text(_seq_budget(preset)) -> per-chunk generate (fresh KV cache each) -> stitch_audio(200ms gap) -> write_mp3
 ```
+
+The chunk size is **not** the static `CHUNK_MAX_CHARS=800` — that value is only the ceiling, and it was
+calibrated for a ~3.5s reference clip. The reference and the script share one `max_seq_len` window, so
+`_seq_budget()` in `main.py` derives the per-chunk char budget (and `max_new_tokens`) from what the
+preset's clip actually leaves: `available = MAX_SEQ_LEN - margin - ref_frames - ref_text_tokens`. A 53.5s
+clip costs 833 of 1024 positions on its own and drops the budget to ~114 chars/chunk. When the clip leaves
+less than `MIN_GEN_FRAMES`, `/api/generate` rejects the job rather than emitting garbage.
 
 Each chunk calls `generate_voice_clone_streaming` — **not** for delivery (the client only gets audio when
 the whole job finishes) but so a cancel lands within ~1s instead of waiting out an ~85s chunk. One retry
@@ -149,6 +156,14 @@ rely on.
 - **`CHUNK_MAX_CHARS=800` / `max_seq_len=1024` / `MAX_REF_AUDIO_SECS=60` are empirical, GPU-specific
   numbers**, tuned on a 4GB GTX 960 (see `gpu.txt`, `qwen/HOW_TO_RUN.md`). Raising them is plausible on
   bigger cards but untested; reference clips over ~23s previously produced garbled/looping output.
+  `CHUNK_MAX_CHARS` is now only a ceiling — `_seq_budget()` lowers it per preset (see above). The failure
+  it fixes: a 53.5s clip + an 876-char script asked for ~1729 positions against 1024, and the output came
+  back as murmur and long silence (54.4s of audio holding ~20s of speech) rather than as an error.
+- **The vocoder decodes in bounded launches (`DECODE_CHUNK_FRAMES=100` in `qwen/faster_qwen3_tts.py`).**
+  The vendored `chunked_decode` defaults to 300 frames = 25s of audio per GPU launch, which takes ~4s on a
+  GTX 970 — over Windows WDDM's 2s TDR watchdog, which kills the kernel and the CUDA context with
+  `cudaErrorLaunchTimeout`. Anything that raises per-launch decode work risks reintroducing this on
+  display-attached GPUs.
 - **`MAX_SCRIPT_CHARS` in `frontend/src/constants.ts` must stay in sync with `MAX_TOTAL_CHARS` in
   `backend/main.py`** (60,000). Nothing enforces this.
 - **`qwen/` is vendored, not a pip package.** In dev, `main.py` inserts the repo root into `sys.path`; when

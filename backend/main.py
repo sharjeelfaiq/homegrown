@@ -51,7 +51,15 @@ def _transcribe_audio(path: str) -> str:
         if _whisper_model is None:
             from faster_whisper import WhisperModel
             _whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
-        segments, _ = _whisper_model.transcribe(path)
+        # condition_on_previous_text=False and vad_filter=True are the standard
+        # cure for whisper's repetition loop, where it re-emits a sentence it
+        # already transcribed. Observed here on a 15s clip: one sentence
+        # duplicated, giving 361 chars for 15s (~24 chars/sec, about double a
+        # real speaking rate). That matters beyond tidiness -- ref_text is spent
+        # from the same max_seq_len budget generation needs (see _seq_budget).
+        segments, _ = _whisper_model.transcribe(
+            path, condition_on_previous_text=False, vad_filter=True,
+        )
         return " ".join(seg.text.strip() for seg in segments).strip()
 
 logging.basicConfig(level=logging.INFO)
@@ -103,6 +111,32 @@ MAX_NEW_TOKENS = 700
 MAX_TOTAL_CHARS = 60_000
 STITCH_GAP_SECONDS = 0.2
 
+# --- max_seq_len budgeting -------------------------------------------------
+# The reference clip and the script share ONE window, and CHUNK_MAX_CHARS=800
+# above is calibrated for a ~3.5s reference. Nothing used to reconcile the two,
+# so a long clip silently overran the window. Measured failure: a 53.5s
+# reference (642 frames) plus an 876-char script asked for
+#
+#     642 ref frames + ~190 ref_text tokens + ~197 script tokens
+#         + 700 generated frames  =  ~1729  vs  1024 available
+#
+# The talker does not hard-fail on this -- rope positions extrapolate past the
+# validated range and output degenerates into murmur and long silence (54.4s of
+# audio holding only ~20s of speech). The same preset with a 160-char script
+# came to ~1009 and sounded fine, which is why this looked intermittent.
+#
+# So derive the per-chunk char budget from what the reference actually leaves,
+# rather than assuming a short clip. Conversion factors are deliberately rough:
+# they only need to be conservative, and SEQ_SAFETY_MARGIN absorbs the slop.
+MAX_SEQ_LEN = 1024          # must match from_pretrained(max_seq_len=...) below
+CODEC_FRAME_HZ = 12         # Qwen3-TTS-12Hz: 12 codec frames per second of audio
+SEQ_SAFETY_MARGIN = 64      # absorbs tokenizer/prompt overhead these estimates miss
+MIN_CHUNK_CHARS = 80        # ~one short sentence; below this prosody suffers badly
+MIN_GEN_FRAMES = 64         # ~5s of audio; less room than this means reject, not guess
+_CHARS_PER_TOKEN = 4.0      # rough English average
+_SPEECH_CHARS_PER_SEC = 14.0  # observed: 141 chars -> 8.7s, 160 chars -> 9.6s
+_GEN_FRAMES_PER_CHAR = CODEC_FRAME_HZ / _SPEECH_CHARS_PER_SEC
+
 # Idle auto-stop: RUNPOD_API_KEY/RUNPOD_POD_ID let this process stop its own
 # RunPod pod once nobody's using it (paired with the Vercel api/wake.ts
 # function on the frontend, which resumes it on demand). Left unset for local
@@ -128,6 +162,11 @@ MAX_REF_AUDIO_SECS = 60.0
 # not a placeholder (e.g. "ZAZA" for a 23s clip). Real speech is roughly
 # 12-15 chars/sec; anything under ~3 chars/sec is almost certainly wrong.
 MIN_REF_TEXT_CHARS_PER_SEC = 3.0
+# Upper bound on the same check. Fast English narration tops out around 20
+# chars/sec; well past that means the transcript is not what was actually said
+# -- in practice a whisper repetition loop duplicating a passage. An inflated
+# ref_text both mis-conditions the clone and eats sequence budget (_seq_budget).
+MAX_REF_TEXT_CHARS_PER_SEC = 22.0
 
 # Time estimation: rolling average of chars/second from the last N completed
 # jobs (seeded from history.json's persisted generation_s on startup so
@@ -243,6 +282,79 @@ def _estimate_seconds(char_count: int) -> float:
     return char_count / rate if rate > 0 else char_count / _FALLBACK_CHARS_PER_SEC
 
 
+def _ref_seq_cost(preset: dict) -> Optional[int]:
+    """Sequence positions the reference clip consumes before generation starts.
+
+    That is its audio codes (duration x 12Hz) plus its transcript's tokens --
+    both live in the same window the generated audio has to fit into. Returns
+    None when the clip can't be measured, so callers fall back to the static
+    budget rather than guessing.
+    """
+    audio_path = preset.get("audio_path")
+    if not audio_path:
+        return None
+    try:
+        duration_s = sf.info(audio_path).duration
+    except Exception:
+        logger.warning("Could not measure reference clip %s; using static budget", audio_path)
+        return None
+    ref_frames = int(duration_s * CODEC_FRAME_HZ)
+    ref_text_tokens = int(len(preset.get("ref_text") or "") / _CHARS_PER_TOKEN)
+    return ref_frames + ref_text_tokens
+
+
+def _seq_budget(preset: dict) -> tuple[int, int]:
+    """(chunk_chars, max_new_tokens) that fit alongside this preset's reference.
+
+    Each script char costs roughly 1/_CHARS_PER_TOKEN positions of prompt AND
+    _GEN_FRAMES_PER_CHAR positions of generated audio, so solve
+
+        available = chars * (1/_CHARS_PER_TOKEN + _GEN_FRAMES_PER_CHAR)
+
+    for chars, then give the generation whatever remains. A reference long
+    enough to push chunk_chars below MIN_CHUNK_CHARS is clamped -- shorter
+    chunks would hurt prosody more than the overrun they prevent.
+
+    max_new_tokens is deliberately NOT floored at a usable minimum: when the
+    clip leaves less than MIN_GEN_FRAMES of room the returned value says so and
+    /api/generate rejects the job. Flooring it would reinstate the very overrun
+    this function exists to prevent, and quietly reproduce the murmur-and-
+    silence output all over again.
+    """
+    ref_cost = _ref_seq_cost(preset)
+    if ref_cost is None:
+        return CHUNK_MAX_CHARS, MAX_NEW_TOKENS
+
+    available = MAX_SEQ_LEN - SEQ_SAFETY_MARGIN - ref_cost
+    chunk_chars = int(available / (1 / _CHARS_PER_TOKEN + _GEN_FRAMES_PER_CHAR))
+    chunk_chars = max(MIN_CHUNK_CHARS, min(CHUNK_MAX_CHARS, chunk_chars))
+
+    max_new_tokens = min(MAX_NEW_TOKENS, int(available - chunk_chars / _CHARS_PER_TOKEN))
+
+    if chunk_chars < CHUNK_MAX_CHARS:
+        logger.info(
+            "Preset %r: reference costs %d of %d sequence positions -- chunking at "
+            "%d chars (max %d) and %d new tokens (max %d)",
+            preset.get("name"), ref_cost, MAX_SEQ_LEN, chunk_chars, CHUNK_MAX_CHARS,
+            max_new_tokens, MAX_NEW_TOKENS,
+        )
+    # Clamping chunk_chars up to the floor can leave fewer frames than those
+    # chars actually need to be spoken, which would truncate every chunk
+    # mid-sentence. Treat that as infeasible rather than shipping clipped audio.
+    frames_needed = int(chunk_chars * _GEN_FRAMES_PER_CHAR)
+    if max_new_tokens < frames_needed:
+        max_new_tokens = min(max_new_tokens, 0)
+
+    if max_new_tokens < MIN_GEN_FRAMES:
+        logger.warning(
+            "Preset %r: reference costs %d of %d sequence positions, leaving room for "
+            "only %d frames of audio. Jobs using it will be rejected -- the clip needs "
+            "to be shorter.",
+            preset.get("name"), ref_cost, MAX_SEQ_LEN, max_new_tokens,
+        )
+    return chunk_chars, max_new_tokens
+
+
 # ---- Queue helpers (all assume caller holds _jobs_lock) --------------------
 
 def _queue_position_locked(job_id: str) -> Optional[int]:
@@ -338,7 +450,9 @@ def _restore_queue_on_startup() -> None:
                 )
                 continue
             text = record["text"]
-            chunks = chunk_text(text, CHUNK_MAX_CHARS)
+            # Recomputed from the preset, not read back from queue.json, so a
+            # restored job chunks the same way a fresh one would.
+            chunks = chunk_text(text, _seq_budget(preset)[0])
             job_id = record["job_id"]
             _jobs[job_id] = {
                 # .get(), not [] -- queue.json written before the multiuser
@@ -408,6 +522,8 @@ def _process_job(job_id: str) -> None:
 
     audio_chunks: list[np.ndarray] = []
     sr: Optional[int] = None
+    # Once per job, not once per chunk: it re-reads the clip's header and logs.
+    max_new_tokens = _seq_budget(preset)[1]
 
     for i, chunk in enumerate(chunks):
         with _jobs_lock:
@@ -435,7 +551,9 @@ def _process_job(job_id: str) -> None:
                         ref_audio=preset["audio_path"],
                         ref_text=preset["ref_text"],
                         instruct=STYLE_INSTRUCTIONS[style],
-                        max_new_tokens=MAX_NEW_TOKENS,
+                        # Bounded by what the reference leaves in max_seq_len,
+                        # not the static ceiling -- see _seq_budget().
+                        max_new_tokens=max_new_tokens,
                         **STABILITY_PARAMS[stability],
                     )
                     for piece, sr, _timing in stream:
@@ -625,7 +743,7 @@ async def lifespan(app: FastAPI):
             # On CPU the wrapper downgrades this to float32 itself.
             dtype=torch.bfloat16,
             attn_implementation="sdpa",
-            max_seq_len=1024,
+            max_seq_len=MAX_SEQ_LEN,
         )
     except Exception as e:
         # Fail soft, not hard: an uncaught exception here would crash uvicorn
@@ -810,6 +928,16 @@ async def create_preset(
             "in the reference clip -- a mismatched transcript causes unstable voice cloning.",
         )
 
+    if len(ref_text) / duration_s > MAX_REF_TEXT_CHARS_PER_SEC:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(
+            400,
+            f"ref_text ({len(ref_text)} chars for {duration_s:.1f}s = "
+            f"{len(ref_text)/duration_s:.0f} chars/sec) is too long to be an accurate "
+            "transcript -- nobody speaks that fast. Usually this means a repeated or "
+            "duplicated passage. Trim it to exactly what is spoken in the clip.",
+        )
+
     logger.info(
         "Creating preset %r: duration=%.1fs ref_text_len=%d language=%s",
         name, duration_s, len(ref_text), language,
@@ -971,7 +1099,16 @@ def generate(req: GenerateRequest, user_id: str = Depends(get_current_user)) -> 
     if stability not in STABILITY_PARAMS:
         raise HTTPException(400, f"Unknown stability '{req.stability}'")
 
-    chunks = chunk_text(text, CHUNK_MAX_CHARS)
+    chunk_chars, max_new_tokens = _seq_budget(preset)
+    if max_new_tokens < MIN_GEN_FRAMES:
+        raise HTTPException(
+            400,
+            f"Preset '{preset['name']}' has a reference clip long enough to fill the "
+            f"model's {MAX_SEQ_LEN}-position window on its own, leaving no room to "
+            "generate speech. Create a preset from a shorter clip (10-20s works well).",
+        )
+
+    chunks = chunk_text(text, chunk_chars)
     estimated_s = _estimate_seconds(len(text))
     job_id = uuid.uuid4().hex
     job = {
