@@ -58,7 +58,7 @@ export default function GenerateButton({
         transition={{ type: 'spring', stiffness: 400, damping: 26 }}
       >
         <WandIcon />
-        <span>{warming ? 'Warming up the voice model...' : busy ? 'Submitting...' : 'Generate all'}</span>
+        <span>{warming ? 'Warming up the voice model...' : busy ? 'Submitting...' : 'Generate'}</span>
         {!busy && !warming && count > 1 && (
           <span className="mono generate-count">{count}</span>
         )}

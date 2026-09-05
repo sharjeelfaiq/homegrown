@@ -35,18 +35,17 @@ Each **script block** is independent:
 
 "+ Add another script" adds more blocks — write as many voiceovers as you want in one sitting, each with a different voice if needed. Style and Stability (and Language) apply to the whole batch, not per-block.
 
-Click **Generate All** — every valid block (non-empty text, a voice picked, under the char limit) gets submitted to the queue at once, and the app switches you to **Queue & History** so you can watch them process.
+Click **Generate** — every valid block (non-empty text, a voice picked, under the char limit) gets submitted to the queue at once.
 
-## 4. Monitor the queue (Queue & History tab)
+## 4. Monitor the queue (Currently Generating)
 
-Jobs process **one at a time** (this is a single-GPU setup — the model can't run two generations concurrently, so there's no point pretending otherwise). Each row shows:
+Jobs process **one at a time** (this is a single-GPU setup — the model can't run two generations concurrently, so there's no point pretending otherwise). **Currently Generating** shows the one job actually on the GPU, as a single row with a progress bar; anything waiting sits under it as a compact line you can reorder (^/v) or cancel (trash icon). Statuses:
 - **Queued** — waiting, with an estimated wait time (accounts for the job currently running plus everything ahead of it in line)
-- **Processing** — chunk N/M complete, with a live "time remaining" estimate
-- **Done** — audio ready, playable inline, downloadable
+- **Processing** — chunk N/M complete, with a live "time remaining" estimate and a progress bar
 - **Failed** — error message shown directly (e.g. a GPU driver reset, or a chunk that failed twice)
 - **Canceled** — you canceled it before it started
 
-For jobs still in the **Queued** state you can reorder (^/v) or cancel (trash icon) — once a job starts Processing it runs to completion or failure, no mid-job cancellation.
+Finished jobs do **not** stay here — they move to **Generations**, playable inline and downloadable. A running job can be canceled (it stops after the current chunk); a queued one can be canceled before it starts.
 
 ## 5. Review history
 

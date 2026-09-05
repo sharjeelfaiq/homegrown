@@ -134,8 +134,8 @@ export default function LandingPage({ onEnter }: Props) {
               <div className="landing-step-number">3</div>
               <h3>Generate all</h3>
               <p>
-                Click "Generate All" to queue every script at once. The app switches to Queue &
-                History so you can watch them process.
+                Click "Generate" to queue every script at once. Currently Generating shows the one
+                on the GPU, and finished clips land in Generations.
               </p>
             </div>
             <div className="landing-step">

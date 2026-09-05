@@ -1346,3 +1346,79 @@ button {
   background: rgba(245, 196, 81, 0.08);
   border: 1px solid rgba(245, 196, 81, 0.25);
 }
+
+/* --- Currently Generating -------------------------------------------------
+   One full row for the job on the GPU, with queued work collapsed beneath it.
+   Finished jobs are not rendered here at all; they belong to Generations. */
+.generating-row {
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--blue-dark);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-track {
+  height: 6px;
+  width: 100%;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
+  /* Fed by useOptimisticProgress on a 200ms tick, so use a linear transition
+     just longer than the tick -- easing each step would read as stuttering. */
+  transition: width 0.25s linear;
+}
+
+.queue-compact {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.queue-compact-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--blue-dark);
+  font-size: 0.82rem;
+}
+
+.queue-compact-pos {
+  min-width: 1.4em;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* Takes the slack so the meta and buttons sit right-aligned. */
+.queue-compact-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-compact-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill {
+    transition: none;
+  }
+}
