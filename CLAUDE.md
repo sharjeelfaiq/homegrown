@@ -203,10 +203,14 @@ rely on.
   with a reason.
 - **`/api/queue` sorts by real position in `_pending_job_ids`**, not `_jobs` insertion order; reorder only
   splices the requesting user's own jobs so a shared FIFO can't be jumped.
-- **Docs drift.** `workflow.md` still references `webapp/backend` paths that don't exist, and describes
-  Style/Stability controls the current `StudioShell`/`api.ts` no longer send (the backend defaults to
-  `natural`/`balanced`). `HANDOFF.md` is a point-in-time snapshot with its own stale entries. Verify against
-  source before trusting either.
+- **Doc hierarchy.** `README.md` (setup, features, troubleshooting) and this file are the maintained docs;
+  `workflow.md` covers day-to-day usage and is current. `HANDOFF.md` and `DEPLOY_SPEC.md` carry explicit
+  "historical" banners and `DEPLOYMENT.md` documents the dormant Vercel+RunPod path -- treat those three as
+  context, not current behaviour, and verify against source.
+- **Two things the UI does not do, despite appearances.** `startGenerate()` sends only
+  `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
+  `natural`/`balanced`), and no preset is ever `is_builtin`, so the voice gallery's "Studio Voices" section
+  never renders.
 - **`backend/migrate_to_multiuser.py` is dead** — a one-shot script from the abandoned Clerk multi-tenant
   detour. Don't wire it into anything.
 

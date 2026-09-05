@@ -1,5 +1,10 @@
 # HANDOFF.md
 
+> **Historical snapshot.** This was generated from the repo state at a point in time and is kept for
+> its context and open questions. It is *not* maintained. Where it disagrees with `README.md` or
+> `CLAUDE.md`, those are correct — notably the generation pipeline, which has changed substantially
+> since (per-preset chunk budgets, balanced chunking, degenerate-chunk resampling, CPU fallback).
+
 Generated from actual repo state (`git log`, source files, config) — not from memory. Items I couldn't
 verify directly are marked **TODO: verify**.
 
@@ -181,7 +186,9 @@ Prioritized:
 - **cu128, not cu13 or plain `torch`.** `torch==2.11.0+cu128` / `torchaudio==2.11.0+cu128` are CUDA 12.8
   wheels — installing a mismatched CUDA build will fail or silently fall back to CPU. See
   `qwen/HOW_TO_RUN.md`.
-- **4GB-VRAM tuning baked into constants.** `CHUNK_MAX_CHARS=800` and `max_seq_len=1024`
+- **4GB-VRAM tuning baked into constants.** *(Partly superseded: `CHUNK_MAX_CHARS` is now only a
+  ceiling — `_seq_budget()` derives the real per-chunk size from each preset's reference clip.)*
+  `CHUNK_MAX_CHARS=800` and `max_seq_len=1024`
   (`backend/main.py`) were tuned for a razor-thin-margin GTX 960 4GB card (`gpu.txt`) to avoid Windows TDR
   kernel kills and rope-position quality collapse on long generations. The office GPU machine has 12GB —
   these caps are conservative for that hardware and could likely be raised for better throughput/quality,

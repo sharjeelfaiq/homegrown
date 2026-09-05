@@ -1,5 +1,9 @@
 # Deployment: Vercel frontend + on-demand RunPod backend
 
+> **Dormant.** This path is gated behind `VITE_USE_RUNPOD_WAKE`, which is unset everywhere except the
+> Vercel project. The deployments in active use are the LAN single-port server and the Windows
+> installer — both documented in `README.md`. Kept because the decision to retire it has not been made.
+
 Frontend and backend are now separate origins:
 
 ```

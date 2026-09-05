@@ -1,214 +1,350 @@
-# Voice Clone Studio (local dashboard for FasterQwen3TTS)
+# Voice Clone Studio
 
-A local web dashboard around the `qwen` package's `FasterQwen3TTS` — modeled after
-[clonevoiceprompt.online/dashboard](https://clonevoiceprompt.online/dashboard)'s core generation flow:
-named, reusable voice presets, style/stability controls, script input, generation history, and
-play/download — **without** accounts, credits, or billing, which remain intentionally out of scope for
-this local MVP.
+A local/LAN web dashboard for voice cloning, built around a vendored copy of `FasterQwen3TTS`
+(Qwen3-TTS-12Hz-0.6B with CUDA-graph acceleration). Upload a short reference clip, save it as a named voice
+preset, paste a script, get an `.mp3` back.
 
+No accounts, no credits, no billing — every request runs as a single local user.
+
+> **Generation is stochastic.** The model samples (`do_sample=True`, nothing is seeded), so the same script
+> generated twice produces different audio: different pacing, different pauses, occasionally different
+> pronunciation of hard words. That is inherent to the model, not a bug. If you like a take, keep it — you
+> cannot reproduce it.
+
+---
+
+## Quick start
+
+```bash
+git clone git@github.com:sharjeelfaiq/voice-clone-agent.git
+cd voice-clone-agent
+bash setup.sh
 ```
-qwen/       Vendored FasterQwen3TTS package (CUDA-graph-accelerated Qwen3-TTS wrapper) --
-            see qwen/README.md and qwen/HOW_TO_RUN.md
-backend/
-  main.py             FastAPI app: loads FasterQwen3TTS once, serves the REST API, runs
-                      generation jobs in a background thread
-  text_chunker.py     Splits a script into TTS-safe chunks (sentence boundaries first,
-                      clause/word-boundary fallback for oversized sentences)
-  audio_stitcher.py   Concatenates per-chunk audio with a silence gap between chunks
-frontend/   React + Vite + TypeScript dashboard
-start_server.bat          One-click launcher for the always-on LAN server mode (see Run below)
-start_server_silent.vbs   Same, with no console window -- for auto-start-at-login setups
+
+`setup.sh` is idempotent — every step is skipped if already done, so if it fails or you interrupt it, run it
+again. It creates `.venv`, installs Python dependencies (~3GB), downloads the model (~2.5GB), writes
+`backend/.env`, and builds the frontend.
+
+It deliberately keeps pip's cache/temp **and** the model on the repo's own drive rather than `C:` — this
+project pulls roughly 5GB, and the defaults would put all of it on your system drive.
+
+Then start the server:
+
+```bash
+cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-## Installing on another PC (Windows installer)
+Open **http://localhost:8000**.
 
-For a non-developer to run this on their own Windows machine, you only need to give them **one file**:
-`dist/VoiceCloneStudio-Setup-1.0.0.exe` (~1.5GB). Nothing else from this repo is needed on the target
-machine -- no Python, no Node, no source code, no `.venv`. The installer bundles a frozen `backend.exe`
-(Python + torch/CUDA + every dependency), the built frontend, and a launcher exe into one package.
+---
 
-**Target machine requirements:**
-- Windows 10/11, 64-bit
-- An NVIDIA GPU with up-to-date drivers (CUDA-enabled torch is bundled, but the driver/GPU itself is not --
-  the app shows a clear error dialog if no compatible GPU is found instead of a cryptic crash)
-- Internet connection the *first* time it runs, to download the ~2.5GB Qwen3-TTS model snapshot (nothing
-  further needed after that -- fully offline afterward)
-- ~10GB free disk (bundle + model + generated audio storage)
+## Requirements
 
-**What the user does:** double-click `VoiceCloneStudio-Setup-1.0.0.exe` → Next/Next/Install (no admin
-rights required -- it installs per-user to `%LOCALAPPDATA%\Programs\VoiceCloneStudio`) → double-click the
-"Voice Clone Studio" desktop shortcut it creates. That launches the backend hidden in the background and
-opens `http://localhost:8000` in their default browser. Closing the browser tab does *not* stop the app --
-it keeps running in the background so re-opening the shortcut just reopens the tab; use the Start Menu
-uninstaller entry to fully stop and remove it.
+| | |
+|---|---|
+| OS | Windows 10/11 (64-bit). The code is cross-platform; the launcher scripts are Windows. |
+| GPU | NVIDIA, or none — see below |
+| Disk | ~10GB (3GB dependencies + 2.5GB model + generated audio) |
+| Python | 3.11+ |
+| Node | 18+ (frontend build) |
 
-**Rebuilding the installer** (after any backend/frontend code change), from the repo root:
+**GPU support.** Torch is pinned to the **cu126** build, which ships kernels for `sm_50` through `sm_90` — so
+Maxwell and Pascal cards (GTX 9xx, GTX 10xx) work, as do Turing, Ampere and Ada. This is deliberate: the
+cu128 build only covers `sm_75+`, and on an older card `torch.cuda.is_available()` still returns `True`
+before every GPU operation dies with `no kernel image is available for execution on the device`.
+
+Blackwell (RTX 50xx, `sm_100`/`sm_120`) needs cu128 instead — change the `--extra-index-url` and both the
+`torch` and `torchaudio` pins in `backend/requirements.txt` together.
+
+**No GPU?** It still runs. The backend detects an unusable GPU (it checks the architecture list *and*
+executes a test matmul, because `torch.cuda.is_available()` alone lies), falls back to CPU in float32, and
+shows a warning banner in the UI. Correct output, but expect **many minutes per chunk**.
+
+---
+
+## Running it
+
+### LAN server (the main way)
+
+One process serves the API and the built frontend on one port, reachable from any device on your network.
+
+```bash
+cd frontend && npm run build      # once, and again after any frontend change
+cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Or double-click **`start_server.bat`** in the repo root, which runs that second command for you.
+
+- On this PC: **http://localhost:8000**
+- From other devices: **http://\<this-PC's-LAN-IP\>:8000** (find it with `ipconfig`)
+
+> **Do not open `http://0.0.0.0:8000`.** `0.0.0.0` means "listen on every interface" — it is a bind address,
+> not a destination. Browsers reject it with `ERR_ADDRESS_INVALID`.
+
+**Let other devices through the firewall** (once, as Administrator):
+
+```powershell
+New-NetFirewallRule -DisplayName "Voice Clone Studio" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
+```
+
+**If port 8000 is already taken** on your machine, pick another and tell clients the new port — nothing on
+the frontend side is hardcoded to 8000:
+
+```bash
+cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 0.0.0.0 --port 8010
+```
+
+**Auto-start at login** — use `start_server_silent.vbs` (same thing, no console window) with Task Scheduler:
+
+```powershell
+schtasks /create /tn "VoiceCloneStudio" /tr "wscript.exe \"C:\path\to\repo\start_server_silent.vbs\"" /sc onlogon /rl highest /f
+```
+
+### Local development (hot reload)
+
+Two terminals, two ports. **`vite.config.ts` has no dev proxy, on purpose**, so the frontend must be told
+where the backend is:
+
+```bash
+# frontend/.env.local
+VITE_BACKEND_URL=http://127.0.0.1:8000
+```
+
+```bash
+# terminal 1
+cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+# terminal 2
+cd frontend && npm run dev        # http://localhost:5173
+```
+
+That is cross-origin, so `backend/.env` also needs `ALLOWED_ORIGINS=http://localhost:5173`.
+
+> ⚠️ **Delete or empty `frontend/.env.local` before building for LAN or the installer.** `VITE_BACKEND_URL`
+> is baked into the bundle at build time. If it says `127.0.0.1` when you run `npm run build`, every LAN
+> client calls *their own* localhost and the app is broken for everyone except this machine.
+
+### Windows installer (frozen desktop app)
+
+Produces a single `.exe` for a non-developer machine — no Python, no Node, no source. Build order matters
+(`backend.spec` hard-fails if `frontend/dist` is missing):
+
 ```bash
 cd frontend && npm install && npm run build && cd ..
-cd backend && pip install pyinstaller && pyinstaller backend.spec --clean --noconfirm && cd ..
+cd backend && pyinstaller backend.spec --clean --noconfirm && cd ..
 cd launcher && pyinstaller launcher.spec --clean --noconfirm && cd ..
 cd installer && makensis setup.nsi && cd ..
 ```
-Output lands at `dist/VoiceCloneStudio-Setup-1.0.0.exe`. See `backend/run.py` (frozen-mode entrypoint:
-model path resolution, first-run model download), `backend/backend.spec` (PyInstaller bundling --
-`collect_all` for torch/transformers/etc. plus the vendored `qwen/` package and built `frontend/dist`
-as raw data), `launcher/launcher.py` (starts `backend.exe` hidden, waits for `/api/health`, opens the
-browser, shows friendly errors for missing GPU/timeout), and `installer/setup.nsi` (NSIS script; per-user
-install, no UAC, with an uninstaller that asks before deleting `storage/`).
 
-## Prerequisites
+The installer is **not** checked into this repo — you have to build it. It installs per-user to
+`%LOCALAPPDATA%\Programs\VoiceCloneStudio` (no admin required) and downloads the model on first run.
 
-Follow `qwen/HOW_TO_RUN.md` first — CUDA-enabled torch, `qwen-tts`, `soundfile`, and a downloaded
-model snapshot. This app reuses those exact same settings (`dtype=bfloat16`, `attn_implementation="sdpa"`,
-`max_seq_len=1024`), tuned for a 4GB GPU.
+Relevant files: `backend/run.py` (frozen entrypoint: path resolution, first-run model download),
+`launcher/launcher.py` (starts the backend hidden, polls `/api/health`, opens the browser),
+`installer/setup.nsi`.
 
-Also needed:
-```bash
-pip install -r backend/requirements.txt
-```
-```bash
-cd frontend
-npm install
-```
+### Vercel + RunPod (dormant)
 
-## Configure
+A split deployment: static frontend on Vercel, backend on a RunPod pod that sleeps when idle and is woken by
+`frontend/api/wake.ts`. Gated behind `VITE_USE_RUNPOD_WAKE`, which is unset everywhere except that project.
+See `DEPLOYMENT.md`. Not used by the LAN or installer paths.
 
-Copy `backend/.env.example` to `backend/.env` and set `MODEL_PATH` to your local model snapshot path
-(the same one from `HOW_TO_RUN.md` step 3).
+---
 
-## Run
+## Making a voice preset that actually works
 
-**Local development** (hot reload, two terminals):
+This matters more than any setting in the app. Three rules, all measured on this hardware.
 
-```bash
-# Terminal 1 -- backend (loads the model; first startup takes a few seconds)
-cd backend
-python -m uvicorn main:app --host 127.0.0.1 --port 8000
-```
+**1. Keep the reference clip to 10–20 seconds.**
 
-```bash
-# Terminal 2 -- frontend (proxies /api and /audio to the backend, see vite.config.ts)
-cd frontend
-npm run dev
-```
+The reference clip and your script share a single 1024-position context window. A clip costs roughly
+`duration × 12.5` positions before generation even starts:
 
-Open **http://localhost:5173**.
+| clip length | positions used | what's left for your script |
+|---|---|---|
+| 15s | ~230 of 1024 | plenty — ~200-character chunks |
+| 27s | ~400 of 1024 | comfortable |
+| **53s** | **~860 of 1024** | **too little — output degrades** |
 
-**Always-on server** (single process/port, reachable from other devices on the network):
+When too little is left, the app is forced into chunk sizes below the point where this model starts padding
+and dragging — which you hear as murmuring, long pauses, and dropped words. The backend logs a warning when
+a preset is in that state. The hard limit is 60s, but **longer is not better**: 15 seconds of clean speech
+clones better than 60 seconds of anything.
 
-```bash
-cd frontend && npm run build   # one-time, and again after any frontend change
-```
+**2. Record dry and close-mic.** Voice cloning copies the *room*, not just the voice. A reverberant clip
+produces reverberant output — measurably so: a clip with a 0.618 reverb tail generated audio at 0.474. No
+setting removes it. Record close to the microphone, in a soft-furnished room, and never over speakerphone.
 
-Then run `start_server.bat` (already at the repo root, no need to create it yourself), which starts
-`python -m uvicorn main:app --host 0.0.0.0 --port 8000` from `backend/`. This builds one process that
-serves both the API and the built frontend from the same port, so it's reachable at
-`http://<this-machine's-LAN-IP>:8000` (find that IP with `ipconfig`) from any device on the network —
-no separate frontend server, no CORS to configure.
+**3. The transcript must match the audio exactly.** Leave the transcript field blank to auto-transcribe with
+faster-whisper, or type it yourself — but a wrong or placeholder transcript is the single most common cause
+of bad output. The app rejects transcripts that are implausibly short or long for the clip's duration (under
+3 or over 22 characters per second), which catches most mistakes.
 
-*Running it:*
-- **Manually**: double-click `start_server.bat` in File Explorer, or run it from a terminal
-  (`.\start_server.bat`). The console window stays open showing server logs — closing it stops the server.
-- **Desktop shortcut**: right-click `start_server.bat` → *Show more options* → *Send to* →
-  *Desktop (create shortcut)*. Rename it and, optionally, right-click → *Properties* → *Change Icon*
-  to give it its own icon. Double-clicking that shortcut is then equivalent to running the `.bat` directly.
-- **Auto-start at login** (no manual click needed): use `start_server_silent.vbs` instead, which runs the
-  same `.bat` with no visible console window — point a Windows Task Scheduler task at it with an
-  "At log on" trigger, e.g. (run as Administrator, adjust the path to match where you cloned this repo):
-  ```powershell
-  schtasks /create /tn "VoiceCloneStudio" /tr "wscript.exe \"C:\path\to\repo\start_server_silent.vbs\"" /sc onlogon /rl highest /f
-  ```
-- **Allowing other devices to connect**: Windows Firewall blocks inbound connections by default, so LAN
-  devices can't reach it until you allow the port once (run as Administrator):
-  ```powershell
-  New-NetFirewallRule -DisplayName "Voice Clone Studio" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
-  ```
+Accent is **not** a factor. A non-native English clip at the right length performs as well as a native one —
+in a direct comparison it produced *less* silence and finished faster.
 
-## Using it
+---
 
-1. **Saved presets** — lists previously saved voice presets; click "Use" to select one for generation, or
-   "Delete" to remove it (and its reference audio) permanently.
-2. **New preset** — name a preset, upload a short reference `.wav`/`.mp3` and its exact transcript, click
-   "Save preset". It's immediately selected and persisted to disk (`backend/storage/presets.json`).
-3. **Style & stability** — Natural/Clear/Expressive/Dramatic maps to the model's `instruct` prompt;
-   Stable/Balanced/Creative maps to temperature/top-p/top-k.
-4. **Script** — pick a language (populated from what the loaded model actually supports) and enter text
-   (capped at 60,000 characters total — see the chunked pipeline below for how long scripts are actually
-   generated on this hardware).
-5. **Generate** — kicks off a generation job and shows live progress (`Generating... chunk N/M`) on the
-   button while it runs; once done, produces a playable/downloadable `.wav` and adds an entry to History.
-6. **History** — every generation is logged (preset used, text, style/stability, duration, timestamp)
-   with inline playback, download, and delete, persisted to disk (`backend/storage/history.json`).
+## Using the app
 
-## Long-form generation: chunked pipeline
+### Voices
 
-`max_seq_len=1024` bounds how much a *single* CUDA-graphed generation call can prefill+decode on this
-4GB card. Past that, generation either hard-stops or — worse — audio quality degrades as the talker's
-rotary position embeddings extrapolate past the range this model/config was validated for (it starts
-slowing down, then trails off into non-speech noise). Rather than raising that number (which doesn't
-fix the quality problem, and still caps the script length hard), long scripts are split into pieces and
-generated independently:
+- **New preset** — name it, upload a `.wav`/`.mp3` reference clip (2–60s), optionally add a mood tag. Leave
+  the transcript blank to auto-transcribe. Saved to `backend/storage/presets.json`, clip to
+  `backend/storage/references/`.
+- **Preview** — the play button on a card plays the *reference clip itself*, not a live generation.
+- **Delete** — removes the preset and its reference audio permanently.
+
+### Scripts
+
+Each script block has its own voice dropdown, its own text (up to 60,000 characters), a live estimated-time
+readout, and reorder/remove buttons. "+ Add another script" adds more blocks; **Generate** submits every
+valid block to the queue at once.
+
+Language is populated from what the loaded model actually reports supporting.
+
+### Currently Generating
+
+Only one job runs at a time — one worker thread, one GPU lock — so this section shows exactly one row for
+the job on the GPU, with a progress bar that advances smoothly between chunk completions rather than jumping.
+
+Anything waiting sits underneath as a compact line you can reorder (^/v) or cancel. A running job can be
+canceled too; it stops after the current chunk, within about a second. Failed and canceled jobs stay here
+with their error message until you dismiss them.
+
+### Generations
+
+Every finished job: inline playback, download (with a rename field so the file lands with a sensible name),
+delete, and **re-queue** (wand icon), which pulls that job's script and voice back into a fresh script block.
+
+Persisted to `backend/storage/history.json`, so it survives a restart.
+
+---
+
+## How generation works
 
 ```
-Text  -->  Chunker  -->  TTS (per chunk, fresh KV cache)  -->  Stitcher  -->  Final .wav
+script -> chunk_text() -> per-chunk generate -> resample if degenerate -> trim edges -> stitch (200ms gaps) -> .mp3
 ```
 
-- **Chunker** (`backend/text_chunker.py`) splits the script at sentence boundaries, greedily packing
-  multiple sentences into each chunk up to `CHUNK_MAX_CHARS` (800 chars — the empirically-tested-safe
-  size for `max_seq_len=1024` with a short reference clip, see `qwen/HOW_TO_RUN.md`). A single sentence
-  longer than that falls back to clause boundaries, then word boundaries — text is never split mid-word.
-- **Per-chunk generation** (`backend/main.py`, `_run_generate_job`) calls `generate_voice_clone` once per
-  chunk. Each call gets its own fresh KV cache and rope state (this is what keeps quality stable no
-  matter how many chunks came before — no chunk's cache position ever approaches `max_seq_len`). One
-  retry per chunk on failure; a chunk that still fails aborts the job with a clear
-  `"Chunk N/M failed: ..."` error rather than silently producing corrupt/partial output.
-  - **v1 has no cross-chunk context carryover** — chunks are fully independent, so there's no prosody
-    continuity across a chunk boundary (voice/style stay consistent since preset+style+stability are
-    reapplied per chunk, but pacing/intonation resets per chunk). A short trailing-context-with-audio-trim
-    approach was considered but deferred as unnecessarily fragile for v1; correctness over seamlessness.
-- **Stitcher** (`backend/audio_stitcher.py`) concatenates the per-chunk audio with a 200ms silence gap
-  between chunks to avoid clicky seams, and writes one final `.wav`.
+- **Chunk size is per-preset, not fixed.** `_seq_budget()` works out how many characters fit alongside *this*
+  preset's reference clip, using the clip's own measured speaking rate. `CHUNK_MAX_CHARS=800` is only a
+  ceiling; a second ceiling caps chunks at 200 characters, above which the model starts skipping clauses.
+- **Chunks are balanced, not greedily packed**, so there is no undersized final chunk — those are the ones
+  that misbehave.
+- **Each chunk gets a fresh KV cache**, which is what keeps quality stable however long the script is.
+- **Degenerate output is resampled.** Roughly one chunk in three comes out wrong on this model — babbling, or
+  stopping short. Each chunk's audio is checked against how long its text should take and regenerated (up to
+  3 attempts) if it is wildly off.
+- **No partial delivery.** You get audio when the whole job finishes; progress is chunk-level.
 
-Because a 60,000-character script can take well over an hour to generate sequentially on this GPU,
-`/api/generate` returns immediately with a `job_id` instead of blocking:
+Time estimates come from a rolling average of characters/second over the last 20 completed jobs, seeded from
+`history.json` at startup. The queue survives a restart (`queue.json`), resuming from the *start* of an
+interrupted job.
 
-- `POST /api/generate` → `{"job_id": "...", "total_chunks": N}` (job runs in a background thread)
-- `GET /api/jobs/{job_id}` → `{"status": "running"|"done"|"error", "chunks_done": i, "total_chunks": N, "audio_url": ..., "error": ...}`
+---
 
-The frontend polls the job endpoint once a second and reflects `chunks_done`/`total_chunks` directly on
-the Generate button.
+## API
 
-## Known limitations (by design, for this local MVP)
+All routes are under `/api`, and every request is the same single local user.
 
-- **No accounts/credits/billing.** Presets and history are global to this single local instance — there's
-  no concept of separate users.
-- **Single GPU, serialized requests.** `PredictorGraph`/`TalkerGraph`'s CUDA graphs and static buffers
-  aren't reentrant, so the backend holds a global lock during generation — concurrent requests (and
-  concurrent chunks within and across jobs) queue up rather than running in parallel. Fine for one local
-  user, not for real multi-user traffic.
-- **60,000 character script limit, but real wall-clock time scales with it.** Long scripts are chunked
-  (see above) so they no longer degrade into noise or hard-fail, but generation is still sequential —
-  60,000 characters is roughly 75 chunks and can take **over an hour** on this GPU. There's no cross-chunk
-  prosody carryover in v1 (see above) and no partial-audio delivery — the frontend only gets audio once
-  the whole job finishes; `chunks_done`/`total_chunks` progress is the only feedback during that time.
-- **In-memory job state.** `_jobs` (job status/progress) lives in the backend process's memory, not on
-  disk — restarting the backend mid-job loses that job's progress (though already-completed jobs' History
-  entries are unaffected, since those are persisted separately).
-- **Streaming used for cancellation, not delivery.** Each chunk now calls `generate_voice_clone_streaming`
-  (`qwen/streaming.py`) internally so a canceled job stops within about a second instead of waiting for
-  the whole chunk, but the client still only receives audio once a chunk (and the whole job) finishes --
-  streaming finished audio to the client as it's generated is a natural next step, just deferred.
-- **No pagination/search.** Preset and history lists render in full — fine at local, single-user scale.
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/api/health` | `model_loaded`, `sample_rate`, `device`, `device_reason` |
+| GET | `/api/languages` | Languages the loaded model supports |
+| GET | `/api/estimate?chars=N` | Estimated seconds for a script of N characters |
+| GET | `/api/presets` | List voice presets |
+| POST | `/api/presets` | Create one (multipart: `audio`, `name`, `ref_text`, `language`, `tag`) |
+| DELETE | `/api/presets/{id}` | Delete a preset and its reference clip |
+| POST | `/api/generate` | Queue a job → `{job_id, total_chunks, estimated_s, queue_position}` |
+| GET | `/api/jobs/{id}` | One job's status |
+| GET | `/api/queue` | The queue, in real processing order |
+| POST | `/api/queue/{id}/cancel` | Cancel a queued or running job |
+| DELETE | `/api/queue/{id}` | Dismiss a finished or failed job |
+| POST | `/api/queue/reorder` | Reorder queued jobs |
+| GET | `/api/history` | Completed generations |
+| DELETE | `/api/history/{id}` | Delete an entry and its audio |
+| GET | `/api/download/{filename}?name=` | Download with a chosen filename |
 
-## Verified
+Static mounts: `/audio` (generated clips) and `/refs` (reference clips). The SPA catch-all is registered
+last, so it can never shadow `/api`.
 
-Backend endpoints (`/api/health`, `/api/languages`, `/api/presets` CRUD, `/api/history` list/delete,
-`/api/generate`, `/api/jobs/{id}`), the concurrency lock, **persistence of presets and history across a
-backend restart**, and the full browser flow (create preset → select → style/stability → script →
-generate → history → delete) have all been exercised end-to-end, producing real, non-silent generated
-speech.
+---
 
-The chunked pipeline specifically was verified against the real model (not mocked): a multi-sentence
-script correctly split into multiple chunks, each generated independently, stitched into one valid
-non-silent `.wav`, with the Generate button showing live `chunk N/M` progress in a real browser session
-(Playwright) and reverting to `Generate` on completion, zero console errors.
+## Configuration
+
+`backend/.env` (copy from `backend/.env.example`):
+
+| Variable | Purpose |
+|---|---|
+| `MODEL_PATH` | Path to the model snapshot. Written by `setup.sh`. |
+| `ALLOWED_ORIGINS` | CORS origins — only needed when the frontend is on a different origin (dev mode). |
+| `RUNPOD_API_KEY` / `RUNPOD_POD_ID` | Optional; RunPod idle auto-stop only. |
+| `IDLE_CHECK_INTERVAL_MIN` / `IDLE_STOP_THRESHOLD_MIN` | Idle-stop tuning. |
+
+Environment overrides:
+
+| Variable | Purpose |
+|---|---|
+| `VITE_BACKEND_URL` | Frontend only, **baked in at build time**. Unset means relative paths, which is what LAN mode needs. |
+| `DECODE_CHUNK_FRAMES` | Vocoder frames per GPU launch (default 100). Lower it if a slower display GPU trips its watchdog. |
+| `REQUIRE_GPU=1` | Makes `setup.sh` fail instead of accepting the CPU fallback. |
+| `MODEL_DIR` / `PIP_CACHE_DIR` / `TMP_OVERRIDE` | `setup.sh` paths. |
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `ERR_ADDRESS_INVALID` on `0.0.0.0:8000` | That is a bind address. Use `localhost` or the LAN IP. |
+| LAN devices cannot connect | Add the firewall rule above, and bind `0.0.0.0`, not `127.0.0.1`. |
+| LAN clients load the UI but every action fails | `VITE_BACKEND_URL` was set when you built. Empty `frontend/.env.local` and rebuild. |
+| `no kernel image is available for execution on the device` | The torch build has no kernels for your GPU. cu126 covers `sm_50`–`sm_90`; Blackwell needs cu128. |
+| `CUDA error: the launch timed out and was terminated` | Windows TDR killed a GPU batch running over ~2s on a display-attached card. Lower `DECODE_CHUNK_FRAMES`, and do not run two model processes at once. |
+| Yellow "Running on CPU" banner | No usable GPU was found; the reason is in the banner and in `/api/health`. |
+| Output murmurs, drags, or drops words | Almost always the reference clip — see "Making a voice preset that actually works". |
+| Output has echo | Reverb in your reference clip. Re-record dry and close-mic. |
+| Port already in use | Another app owns it. Start with `--port 8010`. |
+| Jobs are slow | Normal on a small GPU. A shorter reference clip gives bigger chunks, fewer of them, and a much faster job. |
+
+---
+
+## Known limitations
+
+- **No accounts.** `auth.py`'s `get_current_user` returns the constant `"local-user"`; presets and history
+  are global to the instance.
+- **Single GPU, serialized.** CUDA graphs are not reentrant, so all generation sits behind one lock.
+  Multiple users share one FIFO queue.
+- **In-memory job state.** Finished and failed job status lives in process memory, so a restart loses it.
+  Queued work and completed history are on disk.
+- **No cross-chunk prosody.** Chunks are independent, so pacing resets at each boundary.
+- **No partial audio delivery.** Streaming is used internally so cancel lands quickly, not to stream to the
+  client.
+- **Not reproducible.** Sampling is unseeded — see the note at the top.
+- **No test suite.** There is no pytest, no vitest, no test files. Verification is `npm run lint`,
+  `npm run build` (which is also the typecheck), and running the app. Do not trust any claim that tests pass.
+- **No pagination or search** in the preset and history lists.
+
+---
+
+## Repo layout
+
+```
+qwen/          Vendored FasterQwen3TTS (CUDA-graph Qwen3-TTS wrapper). Treat as third-party.
+backend/
+  main.py            FastAPI app: model load, REST API, job queue, worker thread
+  text_chunker.py    Splits scripts into chunks (sentence -> clause -> word fallback), balanced
+  audio_stitcher.py  Trims chunk edge silence, concatenates with a gap
+  audio_convert.py   wav/mp3 conversion
+  auth.py            Single-user stub
+  storage/           presets.json, history.json, queue.json, generated/, references/  (gitignored)
+frontend/      React 19 + Vite + TypeScript dashboard
+launcher/      Frozen-app launcher (PyInstaller)
+installer/     NSIS installer script
+setup.sh       One-shot idempotent installer
+start_server.bat / start_server_silent.vbs   LAN server launchers
+```
+
+Further reading: `CLAUDE.md` (architecture and the hard-won gotchas), `workflow.md` (day-to-day usage),
+`DEPLOYMENT.md` (Vercel + RunPod), `qwen/HOW_TO_RUN.md` (the model wrapper itself).
