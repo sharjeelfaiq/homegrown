@@ -33,3 +33,9 @@ launcher/build/
 
 # Packaged installer output
 installer.zip
+
+# setup.sh working dirs -- kept on the repo's drive so multi-GB pip wheels and
+# model weights don't fill the system drive (see setup.sh header)
+.pip-cache/
+.tmp/
+models/

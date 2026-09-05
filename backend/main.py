@@ -34,6 +34,7 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from auth import get_current_user, get_last_activity
 from qwen import FasterQwen3TTS
+from qwen.utils import resolve_device
 from audio_convert import wav_to_mp3, write_mp3
 from audio_stitcher import stitch_audio
 from text_chunker import chunk_text
@@ -158,6 +159,11 @@ _store_lock = threading.Lock()
 # preflight check in lifespan(), which lets the process keep serving
 # /api/health for the desktop launcher instead of crashing on startup.
 _tts: Optional["FasterQwen3TTS"] = None
+
+# Which device the model actually ended up on, and why. Surfaced via
+# /api/health so the UI can warn that a CPU run will be extremely slow.
+_device: str = "unknown"
+_device_reason: str = ""
 
 # Job store + FIFO queue. A single dedicated worker thread processes
 # _pending_job_ids in order -- this matches the single-GPU reality (the
@@ -594,32 +600,48 @@ def _idle_stop_loop() -> None:
 async def lifespan(app: FastAPI):
     global _tts
 
-    if not torch.cuda.is_available():
+    global _device, _device_reason
+
+    # NOT torch.cuda.is_available(): that returns True for a GPU this torch
+    # build has no kernels for (e.g. a Maxwell sm_52 card under a cu128 build),
+    # and the failure then surfaces as a mid-generation "no kernel image is
+    # available" crash instead of at startup. resolve_device() actually runs a
+    # test op, and picks CPU when the GPU can't do the work.
+    _device, _device_reason = resolve_device("auto")
+    if _device == "cpu":
+        logger.warning(
+            "No usable GPU (%s). Falling back to CPU: generation still works "
+            "but is dramatically slower -- expect many minutes per chunk.",
+            _device_reason,
+        )
+    else:
+        logger.info("Using GPU: %s", _device_reason)
+
+    _seed_timing_from_history()
+    try:
+        _tts = FasterQwen3TTS.from_pretrained(
+            MODEL_PATH,
+            device=_device,
+            # On CPU the wrapper downgrades this to float32 itself.
+            dtype=torch.bfloat16,
+            attn_implementation="sdpa",
+            max_seq_len=1024,
+        )
+    except Exception as e:
         # Fail soft, not hard: an uncaught exception here would crash uvicorn
         # before it ever binds the port, so the desktop launcher's health-poll
         # would just see "connection refused" and report a generic timeout.
         # Instead keep serving (model_loaded stays False) and drop a flag file
         # the launcher checks for a specific, actionable error message.
-        logger.error(
-            "CUDA not available -- Voice Clone Studio requires an NVIDIA GPU "
-            "with up-to-date drivers. See https://www.nvidia.com/drivers"
-        )
+        logger.exception("Model failed to load")
         STORAGE_DIR.mkdir(parents=True, exist_ok=True)
         (STORAGE_DIR / "cuda_error.flag").write_text(
-            "CUDA not available. Install NVIDIA GPU drivers from https://www.nvidia.com/drivers",
+            "Voice Clone Studio could not load the TTS model." + os.linesep * 2 + str(e),
             encoding="utf-8",
         )
         yield
         return
 
-    _seed_timing_from_history()
-    _tts = FasterQwen3TTS.from_pretrained(
-        MODEL_PATH,
-        device="cuda",
-        dtype=torch.bfloat16,
-        attn_implementation="sdpa",
-        max_seq_len=1024,
-    )
     _restore_queue_on_startup()
     threading.Thread(target=_worker_loop, daemon=True).start()
     threading.Thread(target=_idle_stop_loop, daemon=True).start()
@@ -685,7 +707,12 @@ def download_audio(filename: str, name: str = "voice_clone"):
 
 @app.get("/api/health")
 def health():
-    return {"model_loaded": _tts is not None, "sample_rate": _tts.sample_rate if _tts else None}
+    return {
+        "model_loaded": _tts is not None,
+        "sample_rate": _tts.sample_rate if _tts else None,
+        "device": _device,
+        "device_reason": _device_reason,
+    }
 
 
 @app.get("/api/languages")

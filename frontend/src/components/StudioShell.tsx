@@ -17,6 +17,7 @@ import {
   createPreset,
   deleteHistoryEntry,
   deletePreset,
+  getHealth,
   getLanguages,
   listHistory,
   listPresets,
@@ -54,6 +55,7 @@ export default function StudioShell() {
   const [wakeNonce, setWakeNonce] = useState(0)
   const [warmingUp, setWarmingUp] = useState(false)
   const [languages, setLanguages] = useState<string[]>([])
+  const [cpuNotice, setCpuNotice] = useState<string | null>(null)
 
   const [presets, setPresets] = useState<Preset[]>([])
 
@@ -108,6 +110,16 @@ export default function StudioShell() {
         setWakeMessage(null)
         getLanguages()
           .then((r) => !cancelled && setLanguages(r.languages))
+          .catch(() => {})
+        // The backend runs on CPU when no usable GPU was found. It still works,
+        // but generation is orders of magnitude slower -- say so up front rather
+        // than letting the first job look like it hung.
+        getHealth()
+          .then((h) => {
+            if (!cancelled && h.device === 'cpu') {
+              setCpuNotice(h.device_reason ?? 'No usable GPU found.')
+            }
+          })
           .catch(() => {})
         refreshPresets()
         refreshHistory()
@@ -279,6 +291,11 @@ export default function StudioShell() {
                   ? (wakeMessage ?? 'Loading model...')
                   : (wakeMessage ?? 'Backend unreachable')}
             </span>
+            {cpuNotice && (
+              <p className="cpu-notice">
+                Running on CPU &mdash; generation will be very slow. {cpuNotice}
+              </p>
+            )}
             {modelStatus === 'down' && (
               <button
                 type="button"

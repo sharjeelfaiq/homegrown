@@ -1,6 +1,10 @@
 export interface HealthResponse {
   model_loaded: boolean
   sample_rate: number | null
+  /** 'cuda' | 'cpu'. Optional: older backends don't send it. */
+  device?: string
+  /** Human-readable explanation of the device choice (GPU name, or why it fell back). */
+  device_reason?: string
 }
 
 export interface LanguagesResponse {

@@ -84,7 +84,10 @@ def fast_generate(
         effective_lengths = torch.where(has_stop_token, stop_indices, talker_codes.shape[1])
         talker_codes_list = [talker_codes[i, :length, :] for i, length in enumerate(effective_lengths)]
 
-        torch.cuda.synchronize()
+        # Parity mode is the CPU fallback path too, where there is nothing to
+        # synchronize -- calling it unguarded would raise on a CPU-only machine.
+        if talker_input_embeds.is_cuda:
+            torch.cuda.synchronize()
         total_time = time.time() - t_start
         steps = int(talker_codes_list[0].shape[0]) if talker_codes_list else 0
         timing = {

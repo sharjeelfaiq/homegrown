@@ -5,6 +5,7 @@ Wrapper class that provides a Qwen3-TTS API while using
 CUDA graphs for 6-10x speedup.
 """
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
@@ -12,9 +13,59 @@ import numpy as np
 import soundfile as sf
 import torch
 
-from .utils import suppress_flash_attn_warning
+from .utils import resolve_device, suppress_flash_attn_warning
 
 logger = logging.getLogger(__name__)
+
+# How many codec frames the vocoder may decode in a single GPU launch.
+#
+# The vendored tokenizer's chunked_decode() defaults to 300 frames, which at the
+# 12Hz codec frame rate is 25 SECONDS of audio pushed through the transformer +
+# upsample + conv stack in one shot. On a display-attached GPU under Windows,
+# WDDM's TDR watchdog kills any batch that runs longer than TdrDelay (default
+# 2 seconds) and the process's CUDA context dies with:
+#
+#     CUDA error: the launch timed out and was terminated   (cudaErrorLaunchTimeout)
+#
+# Measured on a GTX 970 (sm_52), single launch, bfloat16:
+#
+#      25 frames ->  0.158s      150 frames -> 1.110s
+#      50 frames ->  0.238s      200 frames -> 1.887s   <-- 2.0s limit is here
+#     100 frames ->  0.522s      300 frames -> ~4s      <-- vendored default, always killed
+#
+# Cost is superlinear (the decoder's pre_transformer is O(n^2) in frames), so
+# halving the chunk more than halves the launch time. 100 frames leaves ~2.5x
+# headroom under the default TDR budget even once the 25-frame left context is
+# added, while keeping the redundant context overhead at 25%.
+#
+# This is a cap on work per *launch*, not on total audio length: chunked_decode
+# still walks the whole sequence, it just does so in more, shorter launches.
+# Lower it for a slower display GPU; raising it past ~150 risks the watchdog.
+DECODE_CHUNK_FRAMES = int(os.environ.get("DECODE_CHUNK_FRAMES", "100"))
+
+
+def _cap_decode_chunk_size(speech_tokenizer, chunk_size: int) -> bool:
+    """Bound the vocoder's per-launch decode work. Returns True if applied.
+
+    The tokenizer's decode() calls `self.decoder.chunked_decode(codes)` with no
+    arguments, so the only way to reach chunk_size is to rebind the method with
+    a smaller default. left_context_size keeps the vendored value -- it exists
+    to hide chunk-boundary artifacts and shrinking it would reintroduce pops.
+    """
+    decoder = getattr(getattr(speech_tokenizer, "model", None), "decoder", None)
+    original = getattr(decoder, "chunked_decode", None)
+    if original is None:
+        logger.warning(
+            "Could not reach the codec decoder to cap decode chunk size; leaving "
+            "the vendored default in place (long decodes may trip a GPU watchdog)."
+        )
+        return False
+
+    def chunked_decode(codes, chunk_size=chunk_size, left_context_size=25):
+        return original(codes, chunk_size=chunk_size, left_context_size=left_context_size)
+
+    decoder.chunked_decode = chunked_decode
+    return True
 
 
 
@@ -45,6 +96,28 @@ class FasterQwen3TTS:
         self.sample_rate = self._infer_sample_rate(base_model)
         self._warmed_up = False
         self._voice_prompt_cache = {}  # Cache (ref_audio, ref_text) -> (vcp, ref_ids)
+
+    @property
+    def _graphs_enabled(self) -> bool:
+        """False on the CPU fallback path, where from_pretrained built no graphs."""
+        return self.predictor_graph is not None and self.talker_graph is not None
+
+    def _resolve_parity(self, parity_mode: bool = False) -> bool:
+        """Force parity (dynamic-cache) decoding when CUDA graphs are absent.
+
+        The graph-based path dereferences predictor_graph/talker_graph, so on
+        CPU it is not merely slower -- it cannot run at all. Parity mode is the
+        same decode via the talker's own HF generate(), so results are
+        equivalent, just without the graph speedup."""
+        return bool(parity_mode) or not self._graphs_enabled
+
+    def _require_graphs(self, method: str) -> None:
+        if not self._graphs_enabled:
+            raise RuntimeError(
+                f"{method}() has no CPU fallback -- it only supports CUDA-graph "
+                "decoding. Use generate_voice_clone()/generate_voice_clone_streaming(), "
+                "which fall back to parity decoding, or run on a usable GPU."
+            )
 
     @staticmethod
     def _get_speech_tokenizer(base_model):
@@ -94,7 +167,7 @@ class FasterQwen3TTS:
     def from_pretrained(
         cls,
         model_name: str,
-        device: str = "cuda",
+        device: str = "auto",
         dtype: Union[str, torch.dtype] = torch.bfloat16,
         attn_implementation: str = "sdpa",
         max_seq_len: int = 2048,
@@ -104,7 +177,8 @@ class FasterQwen3TTS:
 
         Args:
             model_name: Model path or HuggingFace Hub ID
-            device: Device to use ("cuda" or "cpu")
+            device: "auto" (use the GPU when genuinely usable, else CPU),
+                "cuda" (require a usable GPU, raise otherwise), or "cpu"
             dtype: Data type for inference
             attn_implementation: Attention implementation ("sdpa" or "flash_attention_2")
             max_seq_len: Maximum sequence length for static cache
@@ -115,8 +189,24 @@ class FasterQwen3TTS:
         if isinstance(dtype, str):
             dtype = getattr(torch, dtype)
             
-        if not device.startswith("cuda") or not torch.cuda.is_available():
-            raise ValueError("CUDA graphs require CUDA device")
+        # CUDA graphs need a working CUDA device, but "working" is not the same
+        # as torch.cuda.is_available() -- see resolve_device(). When no usable
+        # GPU is present this falls back to CPU, where the graphs are skipped
+        # entirely and decoding runs through the dynamic-cache (parity) path.
+        device, device_reason = resolve_device(device)
+        on_cpu = device == "cpu"
+        if on_cpu:
+            if dtype in (torch.bfloat16, torch.float16):
+                # Half precision on CPU is either unsupported or pathologically
+                # slow for these ops; fp32 is the only sane choice there.
+                logger.info("CPU fallback: using float32 instead of %s", dtype)
+                dtype = torch.float32
+            logger.warning(
+                "Running on CPU (%s). CUDA graphs are disabled and generation "
+                "will be far slower than on a GPU.", device_reason,
+            )
+        else:
+            logger.info("Using CUDA device: %s", device_reason)
         
         logger.info(f"Loading Qwen3-TTS model: {model_name}")
         
@@ -153,29 +243,46 @@ class FasterQwen3TTS:
         pred_config = predictor.model.config
         talker_hidden = talker_config.hidden_size
 
-        # Build CUDA graphs
-        logger.info("Building CUDA graphs...")
-        predictor_graph = PredictorGraph(
-            predictor,
-            pred_config,
-            talker_hidden,
-            device=device,
-            dtype=dtype,
-            do_sample=True,
-            top_k=50,
-            temperature=0.9,
-        )
+        # Build CUDA graphs (GPU only -- on CPU both stay None, which is what
+        # _graphs_enabled/_resolve_parity key off of to pick the parity path).
+        predictor_graph = talker_graph = None
+        if on_cpu:
+            logger.info("CPU fallback: skipping CUDA graph construction")
+        else:
+            logger.info("Building CUDA graphs...")
+            predictor_graph = PredictorGraph(
+                predictor,
+                pred_config,
+                talker_hidden,
+                device=device,
+                dtype=dtype,
+                do_sample=True,
+                top_k=50,
+                temperature=0.9,
+            )
+
+            talker_graph = TalkerGraph(
+                talker.model,
+                talker_config,
+                device=device,
+                dtype=dtype,
+                max_seq_len=max_seq_len,
+            )
+
+            logger.info("CUDA graphs initialized (will capture on first run)")
         
-        talker_graph = TalkerGraph(
-            talker.model,
-            talker_config,
-            device=device,
-            dtype=dtype,
-            max_seq_len=max_seq_len,
-        )
-        
-        logger.info("CUDA graphs initialized (will capture on first run)")
-        
+        # Keep every vocoder launch short enough to survive a GPU watchdog.
+        # Applied on CPU too: there is no watchdog there, but smaller launches
+        # also mean a smaller peak allocation, which matters on 4GB cards.
+        speech_tokenizer = cls._get_speech_tokenizer(base_model)
+        if speech_tokenizer is not None and _cap_decode_chunk_size(
+            speech_tokenizer, DECODE_CHUNK_FRAMES
+        ):
+            logger.info(
+                "Vocoder decode capped at %d frames (~%.1fs audio) per launch",
+                DECODE_CHUNK_FRAMES, DECODE_CHUNK_FRAMES / 12,
+            )
+
         return cls(
             base_model=base_model,
             predictor_graph=predictor_graph,
@@ -186,8 +293,10 @@ class FasterQwen3TTS:
         )
     
     def _warmup(self, prefill_len: int):
-        """Warm up and capture CUDA graphs with given prefill length."""
-        if self._warmed_up:
+        """Warm up and capture CUDA graphs with given prefill length.
+
+        No-op on the CPU fallback path, where there are no graphs to capture."""
+        if self._warmed_up or not self._graphs_enabled:
             return
             
         logger.info("Warming up CUDA graphs...")
@@ -825,6 +934,8 @@ class FasterQwen3TTS:
             trailing_text_hiddens=tth,
             tts_pad_embed=tpe,
             config=config,
+            # Falls back to dynamic-cache decoding when there are no CUDA graphs (CPU).
+            parity_mode=self._resolve_parity(),
             predictor_graph=self.predictor_graph,
             talker_graph=self.talker_graph,
             max_new_tokens=max_new_tokens,
@@ -968,6 +1079,8 @@ class FasterQwen3TTS:
         prev_gen_audio_len = 0  # tracks position within the generated (non-ref) audio
         samples_per_frame = None
 
+        # Without CUDA graphs (CPU fallback) parity decoding is the only option.
+        parity_mode = self._resolve_parity(parity_mode)
         stream_fn = parity_generate_streaming if parity_mode else fast_generate_streaming
         stream_kwargs = dict(
             talker=talker,
@@ -1096,6 +1209,8 @@ class FasterQwen3TTS:
             trailing_text_hiddens=tth,
             tts_pad_embed=tpe,
             config=config,
+            # Falls back to dynamic-cache decoding when there are no CUDA graphs (CPU).
+            parity_mode=self._resolve_parity(),
             predictor_graph=self.predictor_graph,
             talker_graph=self.talker_graph,
             max_new_tokens=max_new_tokens,
@@ -1165,6 +1280,8 @@ class FasterQwen3TTS:
             instruct = None
 
         from .streaming import fast_generate_streaming
+
+        self._require_graphs("generate_custom_voice_streaming")
 
         m, talker, config, tie, tam, tth, tpe = self._prepare_generation_custom(
             text=text,
@@ -1280,6 +1397,8 @@ class FasterQwen3TTS:
             trailing_text_hiddens=tth,
             tts_pad_embed=tpe,
             config=config,
+            # Falls back to dynamic-cache decoding when there are no CUDA graphs (CPU).
+            parity_mode=self._resolve_parity(),
             predictor_graph=self.predictor_graph,
             talker_graph=self.talker_graph,
             max_new_tokens=max_new_tokens,
@@ -1344,6 +1463,8 @@ class FasterQwen3TTS:
         )
 
         from .streaming import fast_generate_streaming
+
+        self._require_graphs("generate_voice_design_streaming")
 
         m, talker, config, tie, tam, tth, tpe = self._prepare_generation_custom(
             text=text,

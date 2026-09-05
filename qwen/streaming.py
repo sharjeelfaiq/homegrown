@@ -244,7 +244,10 @@ def parity_generate_streaming(
     effective_lengths = torch.where(has_stop_token, stop_indices, talker_codes.shape[1])
     codes = talker_codes[0, :effective_lengths[0], :]
 
-    torch.cuda.synchronize()
+    # Parity mode is the CPU fallback path too, where there is nothing to
+    # synchronize -- calling it unguarded would raise on a CPU-only machine.
+    if talker_input_embeds.is_cuda:
+        torch.cuda.synchronize()
     total_time = time.time() - t_start
     total_steps = int(codes.shape[0])
 

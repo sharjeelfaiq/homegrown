@@ -1334,3 +1334,15 @@ button {
     transition: none;
   }
 }
+
+/* Shown only when the backend reports it fell back to CPU generation. */
+.cpu-notice {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  border-radius: 0.5rem;
+  color: #f5c451;
+  background: rgba(245, 196, 81, 0.08);
+  border: 1px solid rgba(245, 196, 81, 0.25);
+}
