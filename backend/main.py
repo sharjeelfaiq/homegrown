@@ -36,7 +36,7 @@ from auth import get_current_user, get_last_activity
 from qwen import FasterQwen3TTS
 from qwen.utils import resolve_device
 from audio_convert import wav_to_mp3, write_mp3
-from audio_stitcher import stitch_audio
+from audio_stitcher import stitch_audio, trim_edge_silence
 from text_chunker import chunk_text
 
 _whisper_model = None
@@ -383,6 +383,11 @@ class _Budget(NamedTuple):
 # changed nothing. Since the failure is stochastic rather than systematic, no
 # parameter fixes it and resampling does. Good and bad samples separate cleanly,
 # which is what makes this checkable at all.
+#
+# Measure the TRIMMED audio. The model pads chunk edges with silence that
+# stitch_audio removes anyway, and judging the raw output counts that padding
+# as if it were babble: one healthy preset produced 8.8s raw for a 46-char
+# chunk that trimmed down to 4.9s. Checking raw output condemned good chunks.
 _CHUNK_MIN_DURATION_RATIO = 0.6
 _CHUNK_MAX_DURATION_RATIO = 1.6
 CHUNK_ATTEMPTS = 3
@@ -695,12 +700,25 @@ def _process_job(job_id: str) -> None:
                 if canceled_mid_chunk:
                     break
                 produced = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.float32)
+                if sr and produced.size:
+                    # Trim here, not just at stitch time, so the check below
+                    # judges speech rather than the model's edge padding.
+                    produced = trim_edge_silence(produced, sr)
                 # Resample a degenerate chunk rather than stitching it in. Only
                 # worth doing while attempts remain -- on the last one, shipping
                 # imperfect audio beats failing the whole job.
+                #
+                # Skipped entirely below PADDING_SAFE_MIN_CHARS: there the model
+                # drags every sample rather than occasionally, so resampling
+                # cannot find a good one. Observed on a 55-char chunk from a
+                # 53.5s-reference preset -- 6.2s, then 6.4s on retry, against
+                # 3.8s expected. Retrying there tripled a job's generation time
+                # (562s for 80s of audio) and changed nothing. The fix for that
+                # preset is a shorter reference clip, which _seq_budget warns about.
                 if (
                     attempt < CHUNK_ATTEMPTS - 1
                     and sr
+                    and budget.chunk_chars >= PADDING_SAFE_MIN_CHARS
                     and not _chunk_duration_is_sane(produced.size, sr, budget, chunk)
                 ):
                     logger.warning(
