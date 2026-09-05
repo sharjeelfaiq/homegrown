@@ -95,8 +95,17 @@ Three things that were each learned the hard way, all measured on this machine:
   move. Packing to a smaller limit does NOT achieve this: greedy at any limit below 195 gave nine chunks
   instead of seven. Removing the runt took total silence from 16.2s to 0.0s on the test script.
 
+- **Chunks degenerate stochastically, so bad samples are detected and regenerated.** The same chunk with
+  identical settings produced 115%, 105%, 233%, 177%, 96% and 94% of its expected duration across six runs
+  — roughly a third of samples babble (including sentences that are nowhere in the script) or stop short.
+  Punctuation is not the trigger: stripping markdown and smart quotes changed nothing. No parameter fixes a
+  coin flip, so `_process_job` checks each chunk's audio against `_chunk_duration_is_sane()` and resamples
+  outside 0.6–1.6× expected, up to `CHUNK_ATTEMPTS`. **This is why a single clean run proves nothing here**
+  — every earlier fix reduced the failure *rate*, which makes one-run verification read as a cure.
+
 Verify changes here by transcribing the output and diffing against the script, not by comparing durations —
 duration ratios cannot tell padding from a legitimately long read. `faster_whisper` is already a dependency.
+Run it more than once: with a per-chunk failure rate this high, n=1 is a coin flip, not evidence.
 
 Each chunk calls `generate_voice_clone_streaming` — **not** for delivery (the client only gets audio when
 the whole job finishes) but so a cancel lands within ~1s instead of waiting out an ~85s chunk. One retry

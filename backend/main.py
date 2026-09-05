@@ -373,6 +373,32 @@ class _Budget(NamedTuple):
     frames_per_char: float
 
 
+# A chunk whose audio lands outside this fraction of its expected duration is
+# treated as a bad sample and regenerated. Some chunks are simply unstable on
+# this model: the final chunk of the standard test script, generated six times
+# with identical settings, produced 115%, 105%, 233%, 177%, 96% and 94% of its
+# expected length -- roughly a third of samples degenerate, and the failures
+# either babble (a hallucinated sentence that is nowhere in the script) or stop
+# short. Punctuation is not the trigger; stripping markdown and smart quotes
+# changed nothing. Since the failure is stochastic rather than systematic, no
+# parameter fixes it and resampling does. Good and bad samples separate cleanly,
+# which is what makes this checkable at all.
+_CHUNK_MIN_DURATION_RATIO = 0.6
+_CHUNK_MAX_DURATION_RATIO = 1.6
+CHUNK_ATTEMPTS = 3
+
+
+def _chunk_duration_is_sane(audio_len: int, sample_rate: int, budget: _Budget, chunk: str) -> bool:
+    """False when a chunk's audio is too far from what its text should take."""
+    if not chunk or sample_rate <= 0 or audio_len <= 0:
+        return True  # nothing to judge; let the normal paths handle it
+    expected = len(chunk) * budget.frames_per_char / CODEC_FRAME_HZ
+    if expected <= 0:
+        return True
+    ratio = (audio_len / sample_rate) / expected
+    return _CHUNK_MIN_DURATION_RATIO <= ratio <= _CHUNK_MAX_DURATION_RATIO
+
+
 def _chunk_token_cap(budget: _Budget, chunk: str) -> int:
     """Frame cap for ONE chunk, sized to that chunk's own text.
 
@@ -641,7 +667,7 @@ def _process_job(job_id: str) -> None:
         last_error: Optional[Exception] = None
         audio_arrays = None
         canceled_mid_chunk = False
-        for attempt in range(2):  # one retry per chunk before giving up
+        for attempt in range(CHUNK_ATTEMPTS):  # retries for errors AND bad samples
             try:
                 pieces: list[np.ndarray] = []
                 with _gen_lock:
@@ -668,7 +694,24 @@ def _process_job(job_id: str) -> None:
                             break
                 if canceled_mid_chunk:
                     break
-                audio_arrays = [np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.float32)]
+                produced = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.float32)
+                # Resample a degenerate chunk rather than stitching it in. Only
+                # worth doing while attempts remain -- on the last one, shipping
+                # imperfect audio beats failing the whole job.
+                if (
+                    attempt < CHUNK_ATTEMPTS - 1
+                    and sr
+                    and not _chunk_duration_is_sane(produced.size, sr, budget, chunk)
+                ):
+                    logger.warning(
+                        "Job %s: chunk %d/%d produced %.1fs for %d chars (expected ~%.1fs) "
+                        "-- regenerating (attempt %d of %d)",
+                        job_id, i + 1, len(chunks), produced.size / sr, len(chunk),
+                        len(chunk) * budget.frames_per_char / CODEC_FRAME_HZ,
+                        attempt + 1, CHUNK_ATTEMPTS,
+                    )
+                    continue
+                audio_arrays = [produced]
                 last_error = None
                 break
             except RuntimeError as e:
