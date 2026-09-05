@@ -72,8 +72,24 @@ The chunk size is **not** the static `CHUNK_MAX_CHARS=800` — that value is onl
 calibrated for a ~3.5s reference clip. The reference and the script share one `max_seq_len` window, so
 `_seq_budget()` in `main.py` derives the per-chunk char budget (and `max_new_tokens`) from what the
 preset's clip actually leaves: `available = MAX_SEQ_LEN - margin - ref_frames - ref_text_tokens`. A 53.5s
-clip costs 833 of 1024 positions on its own and drops the budget to ~114 chars/chunk. When the clip leaves
-less than `MIN_GEN_FRAMES`, `/api/generate` rejects the job rather than emitting garbage.
+clip costs ~860 of 1024 positions on its own. When the clip leaves less than `MIN_GEN_FRAMES`,
+`/api/generate` rejects the job rather than emitting garbage.
+
+Three things that were each learned the hard way, all measured on this machine:
+
+- **Speaking rate is per-preset, not a constant.** `len(ref_text) / clip_duration` — two real presets
+  measured 14.4 and 11.2 chars/sec. A hardcoded rate starves the slower voice and truncates its chunks.
+- **Chunk size has a sweet spot and fails in BOTH directions.** Same text, produced vs expected:
+  380 chars → 89% (clauses silently dropped), 190 → 95%, 110 → 151% (padded, murmuring). Hence
+  `ELISION_SAFE_CHUNK_CHARS` as a second ceiling, and a warning below `PADDING_SAFE_MIN_CHARS` where the
+  real fix is a shorter reference clip. The original "murmur and long silence" reports were the low end.
+- **`max_new_tokens` must be per chunk, not per job** (`_chunk_token_cap()`). Sized from the largest chunk,
+  a short final chunk gets the whole allowance and babbles to the cap — observed as 33s of unintelligible
+  audio appended to a finished 82s read. Headroom there is additive (`_CHUNK_CAP_HEADROOM_FRAMES`), not a
+  percentage: pauses from `...` don't scale with character count, and a proportional cap cut the last line.
+
+Verify changes here by transcribing the output and diffing against the script, not by comparing durations —
+duration ratios cannot tell padding from a legitimately long read. `faster_whisper` is already a dependency.
 
 Each chunk calls `generate_voice_clone_streaming` — **not** for delivery (the client only gets audio when
 the whole job finishes) but so a cancel lands within ~1s instead of waiting out an ~85s chunk. One retry
