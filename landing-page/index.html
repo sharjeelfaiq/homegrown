@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Voice Clone Studio — clone a voice from 15 seconds</title>
+<meta name="description" content="Clone any voice from a 15-second clip and generate unlimited voiceovers on your own Windows PC. No account, no subscription, no cloud." />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Voice Clone Studio — clone a voice from 15 seconds" />
+<meta property="og:description" content="Record once. Generate unlimited voiceovers on your own Windows PC. No account, no subscription, nothing leaves your machine." />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="theme-color" content="#05070c" />
+<!-- Inline favicon so the page stays a single file with no asset dependencies. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2305070c'/%3E%3Cg fill='%234d8dff'%3E%3Crect x='6' y='13' width='2.6' height='6' rx='1.3'/%3E%3Crect x='11' y='8' width='2.6' height='16' rx='1.3'/%3E%3Crect x='16' y='4' width='2.6' height='24' rx='1.3'/%3E%3Crect x='21' y='9' width='2.6' height='14' rx='1.3'/%3E%3Crect x='26' y='14' width='2.6' height='4' rx='1.3'/%3E%3C/g%3E%3C/svg%3E" />
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     The download button points at the Google Drive share for
+     VoiceCloneStudio-1.0.0.exe -- 1.66 GB, built 2026-09-05.
+     If you re-upload a new build, update BOTH the href and the size text.
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --ink: #05070c;
+    --ink-raised: #0a0e17;
+    --line: #17202f;
+    --text: #e8edf6;
+    --muted: #78859c;
+    --accent: #4d8dff;
+    --accent-hot: #7fb2ff;
+    --display: 'Archivo', 'Archivo Variable', 'Helvetica Neue', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+    --pad: clamp(1.5rem, 3.2vmin, 3.25rem);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    /* The whole point: this page never scrolls. */
+    overflow: hidden;
+  }
+
+  body {
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--display);
+    -webkit-font-smoothing: antialiased;
+    /* Two soft pools of light so the field reads as depth, not flat black. */
+    background-image:
+      radial-gradient(70vmin 55vmin at 12% 8%, rgba(77, 141, 255, 0.13), transparent 70%),
+      radial-gradient(55vmin 45vmin at 92% 96%, rgba(77, 141, 255, 0.07), transparent 70%);
+  }
+
+  /* Fine grain over everything, so large dark areas aren't dead flat. */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    z-index: 3;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.42'/%3E%3C/svg%3E");
+  }
+
+  .shell {
+    position: relative;
+    z-index: 2;
+    height: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    grid-template-rows: 1fr auto;
+  }
+
+  /* ── left: the pitch and the one button ───────────────────────────── */
+
+  .stage {
+    padding: var(--pad);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: clamp(0.9rem, 1.9vh, 1.75rem);
+    min-width: 0;
+  }
+
+  .brandline {
+    display: flex;
+    align-items: baseline;
+    gap: 0.85rem;
+    font-family: var(--mono);
+    font-size: clamp(0.6rem, 1.05vmin, 0.72rem);
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .brandline .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(77, 141, 255, 0.16);
+    align-self: center;
+  }
+  .brandline .ver { margin-left: auto; color: #566276; letter-spacing: 0.2em; }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(2.4rem, 6.6vmin, 5.1rem);
+    line-height: 0.94;
+    letter-spacing: -0.035em;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+  h1 em {
+    font-style: normal;
+    color: var(--accent);
+    /* the accent only ever lands on one phrase */
+  }
+
+  .sub {
+    margin: 0;
+    max-width: 34ch;
+    font-size: clamp(0.92rem, 1.75vmin, 1.2rem);
+    line-height: 1.5;
+    color: #a9b4c7;
+    font-weight: 400;
+  }
+
+  .cta-row {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.85rem, 2vmin, 1.6rem);
+    flex-wrap: wrap;
+  }
+
+  .download {
+    --shift: 0;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: clamp(0.8rem, 1.7vmin, 1.15rem) clamp(1.4rem, 2.8vmin, 2.2rem);
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    background: var(--accent);
+    color: #04070d;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(0.85rem, 1.55vmin, 1.02rem);
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    overflow: hidden;
+    transition: transform 0.25s cubic-bezier(.2,.8,.2,1), box-shadow 0.25s ease, background 0.25s ease;
+    box-shadow: 0 0 0 0 rgba(77, 141, 255, 0.45), 0 10px 30px -12px rgba(77, 141, 255, 0.8);
+  }
+  .download:hover, .download:focus-visible {
+    transform: translateY(-2px);
+    background: var(--accent-hot);
+    box-shadow: 0 0 0 5px rgba(77, 141, 255, 0.14), 0 16px 38px -12px rgba(77, 141, 255, 0.95);
+    outline: none;
+  }
+  .download:active { transform: translateY(0); }
+  /* light sweeping across the face on hover */
+  .download::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: -60%;
+    width: 40%;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,0.5), transparent);
+    transform: translateX(0);
+    transition: transform 0.6s ease;
+  }
+  .download:hover::after { transform: translateX(420%); }
+  .download svg { flex: none; }
+
+  .cta-meta {
+    font-family: var(--mono);
+    font-size: clamp(0.64rem, 1.15vmin, 0.78rem);
+    line-height: 1.7;
+    color: var(--muted);
+  }
+  .cta-meta b { color: #b9c4d6; font-weight: 500; }
+
+  /* ── the waveform: the thing you remember ─────────────────────────── */
+
+  .wave {
+    display: flex;
+    align-items: center;
+    gap: clamp(2px, 0.42vmin, 4px);
+    height: clamp(28px, 5.2vh, 54px);
+    opacity: 0.9;
+  }
+  .wave i {
+    display: block;
+    width: clamp(2px, 0.34vmin, 3px);
+    height: 12%;
+    border-radius: 2px;
+    background: linear-gradient(180deg, var(--accent-hot), var(--accent));
+    animation: pulse 1.9s ease-in-out infinite;
+    transform-origin: center;
+  }
+  @keyframes pulse {
+    0%, 100% { height: 10%; opacity: 0.35; }
+    50%      { height: 100%; opacity: 1; }
+  }
+
+  .privacy {
+    margin: 0;
+    font-size: clamp(0.78rem, 1.4vmin, 0.95rem);
+    color: #8f9cb2;
+    max-width: 40ch;
+    line-height: 1.55;
+  }
+  .privacy strong { color: var(--text); font-weight: 500; }
+
+  /* Unsigned-binary warning. Deliberately quieter than .privacy -- it is
+     reassurance, not a headline, but omitting it loses people at the last step. */
+  .note {
+    margin: 0;
+    max-width: 44ch;
+    font-family: var(--mono);
+    font-size: clamp(0.62rem, 1.1vmin, 0.76rem);
+    line-height: 1.65;
+    color: #6b7788;
+  }
+  .note b { color: #97a3b6; font-weight: 500; }
+
+  /* ── right: everything you must know before a 1.7 GB download ─────── */
+
+  .rail {
+    padding: var(--pad) var(--pad) var(--pad) 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: clamp(0.7rem, 1.7vh, 1.5rem);
+    min-width: 0;
+  }
+  .card {
+    border-left: 1px solid var(--line);
+    padding-left: clamp(0.9rem, 1.9vmin, 1.6rem);
+  }
+  .card h2 {
+    margin: 0 0 clamp(0.4rem, 0.9vh, 0.7rem);
+    font-family: var(--mono);
+    font-size: clamp(0.58rem, 1vmin, 0.7rem);
+    font-weight: 500;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .card ul { margin: 0; padding: 0; list-style: none; }
+  .card li {
+    display: flex;
+    gap: 0.7rem;
+    font-size: clamp(0.75rem, 1.42vmin, 0.95rem);
+    line-height: 1.62;
+    color: #b4bfd0;
+  }
+  .card li span.k {
+    flex: none;
+    font-family: var(--mono);
+    font-size: 0.82em;
+    color: #4e5b70;
+    min-width: 1.6em;
+  }
+  .card li b { color: var(--text); font-weight: 500; }
+
+  /* ── footer strip ─────────────────────────────────────────────────── */
+
+  .strip {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+    padding: clamp(0.6rem, 1.5vh, 1rem) var(--pad);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    font-family: var(--mono);
+    font-size: clamp(0.6rem, 1.05vmin, 0.74rem);
+    color: var(--muted);
+    background: rgba(10, 14, 23, 0.6);
+  }
+  .strip b { color: #b9c4d6; font-weight: 500; }
+  .strip .net { color: #5f6b80; }
+
+  /* ── entrance: one orchestrated reveal ────────────────────────────── */
+
+  .r { opacity: 0; transform: translateY(14px); animation: rise 0.85s cubic-bezier(.2,.75,.25,1) forwards; }
+  .r1 { animation-delay: 0.05s; }
+  .r2 { animation-delay: 0.14s; }
+  .r3 { animation-delay: 0.23s; }
+  .r4 { animation-delay: 0.32s; }
+  .r5 { animation-delay: 0.41s; }
+  .r6 { animation-delay: 0.50s; }
+  .r7 { animation-delay: 0.59s; }
+  .r8 { animation-delay: 0.68s; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+
+  /* Narrow windows: stack, and allow scrolling rather than crushing text. */
+  @media (max-width: 860px) {
+    html, body { overflow: auto; }
+    .shell { height: auto; min-height: 100dvh; grid-template-columns: 1fr; }
+    .rail { padding: 0 var(--pad) var(--pad); }
+    .card { border-left: none; border-top: 1px solid var(--line); padding: 1rem 0 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wave i { animation: none; height: 46%; opacity: 0.75; }
+    .r { animation: none; opacity: 1; transform: none; }
+    .download, .download::after { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<main class="shell">
+  <section class="stage">
+    <div class="brandline r r1">
+      <span class="dot" aria-hidden="true"></span>
+      <span>Voice Clone Studio</span>
+      <span class="ver">v1.0.0 · Windows</span>
+    </div>
+
+    <h1 class="r r2">Clone a voice from <em>15 seconds</em> of audio.</h1>
+
+    <p class="sub r r3">
+      Record a short sample once. Generate unlimited voiceovers from any script,
+      on your own machine, for as long as you like.
+    </p>
+
+    <div class="cta-row r r4">
+      <a class="download"
+         href="https://drive.google.com/file/d/1-cM8kHOr7VeuUZnvLTOBCcWrZ8sE5pR2/view?usp=sharing"
+         target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 1v9m0 0L4.5 6.5M8 10l3.5-3.5M2 12.5V14h12v-1.5"
+                stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Download for Windows
+      </a>
+      <div class="cta-meta">
+        <b>1.7 GB</b> download · no admin rights needed<br />
+        Windows 10 / 11 · 64-bit only
+      </div>
+    </div>
+
+    <div class="wave r r5" aria-hidden="true">
+      <i style="animation-delay:-1.70s"></i><i style="animation-delay:-0.20s"></i>
+      <i style="animation-delay:-1.10s"></i><i style="animation-delay:-0.65s"></i>
+      <i style="animation-delay:-1.45s"></i><i style="animation-delay:-0.05s"></i>
+      <i style="animation-delay:-0.95s"></i><i style="animation-delay:-1.85s"></i>
+      <i style="animation-delay:-0.45s"></i><i style="animation-delay:-1.30s"></i>
+      <i style="animation-delay:-0.80s"></i><i style="animation-delay:-1.60s"></i>
+      <i style="animation-delay:-0.30s"></i><i style="animation-delay:-1.05s"></i>
+      <i style="animation-delay:-1.90s"></i><i style="animation-delay:-0.55s"></i>
+      <i style="animation-delay:-1.25s"></i><i style="animation-delay:-0.15s"></i>
+      <i style="animation-delay:-0.90s"></i><i style="animation-delay:-1.55s"></i>
+      <i style="animation-delay:-0.40s"></i><i style="animation-delay:-1.15s"></i>
+      <i style="animation-delay:-0.70s"></i><i style="animation-delay:-1.80s"></i>
+      <i style="animation-delay:-0.25s"></i><i style="animation-delay:-1.35s"></i>
+      <i style="animation-delay:-0.60s"></i><i style="animation-delay:-1.00s"></i>
+      <i style="animation-delay:-1.75s"></i><i style="animation-delay:-0.35s"></i>
+      <i style="animation-delay:-1.20s"></i><i style="animation-delay:-0.85s"></i>
+      <i style="animation-delay:-1.50s"></i><i style="animation-delay:-0.10s"></i>
+      <i style="animation-delay:-1.65s"></i><i style="animation-delay:-0.75s"></i>
+    </div>
+
+    <p class="privacy r r6">
+      <strong>No account. No subscription. No cloud.</strong>
+      Everything runs on your computer, and your audio never leaves it.
+    </p>
+
+    <p class="note r r7">
+      Windows will warn you the app is unsigned — click <b>More info</b>, then
+      <b>Run anyway</b>. That warning appears for every app without a paid certificate.
+    </p>
+  </section>
+
+  <aside class="rail">
+    <div class="card r r5">
+      <h2>What you need</h2>
+      <ul>
+        <li><span class="k">01</span><span>Windows 10 or 11, <b>64-bit</b></span></li>
+        <li><span class="k">02</span><span><b>NVIDIA graphics card</b> — works without one, but far slower</span></li>
+        <li><span class="k">03</span><span><b>8 GB</b> free disk space</span></li>
+        <li><span class="k">04</span><span>Internet <b>on first launch only</b></span></li>
+      </ul>
+    </div>
+
+    <div class="card r r6">
+      <h2>How it works</h2>
+      <ul>
+        <li><span class="k">01</span><span>Run the file, pick a folder to unpack into</span></li>
+        <li><span class="k">02</span><span>Open that folder, run <b>VoiceCloneStudio.exe</b></span></li>
+        <li><span class="k">03</span><span>Add a voice sample, paste a script, <b>Generate</b></span></li>
+      </ul>
+    </div>
+
+    <div class="card r r7">
+      <h2>For the best voice</h2>
+      <ul>
+        <li><span class="k">→</span><span><b>10–20 seconds</b> of clean speech — longer is not better</span></li>
+        <li><span class="k">→</span><span>Close to the mic, in a <b>quiet, soft room</b> — echo gets copied</span></li>
+        <li><span class="k">→</span><span>Type <b>exactly</b> what the clip says</span></li>
+      </ul>
+    </div>
+  </aside>
+
+  <footer class="strip r r8">
+    <span>First launch downloads the <b>2.5 GB</b> voice model — once. After that it works fully offline.</span>
+    <span class="net">Roughly 45s to generate 20s of speech on a modest GPU · faster on newer cards</span>
+  </footer>
+</main>
+
+</body>
+</html>

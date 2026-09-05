@@ -1,3 +1,19 @@
+; ============================================================================
+; DOES NOT BUILD AT THE CURRENT PAYLOAD SIZE -- read before running makensis.
+;
+; NSIS caps its output at 2,147,483,647 bytes (signed 32-bit offsets). The
+; frozen backend is 4.47 GB, of which torch is 3.84 GB (torch_cuda.dll alone is
+; 999 MB). makensis does not fail on this: it compresses for ~25 minutes, parks
+; its temp file at exactly 2 GB, and keeps burning CPU while producing nothing.
+;
+; The shipping build uses a 7-Zip self-extracting archive instead -- see the
+; "Standalone Windows build" section of README.md. That trades the Start Menu
+; entry and uninstaller for the ability to exceed 2 GB.
+;
+; This script is kept, unmodified and working, for if the payload ever drops
+; back under 2 GB (a CPU-only build, or torch slimmed of unused CUDA libs).
+; ============================================================================
+
 ; Voice Clone Studio -- Windows Installer
 ; Compile with: makensis setup.nsi   (run from the installer/ folder)
 

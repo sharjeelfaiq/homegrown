@@ -124,24 +124,52 @@ That is cross-origin, so `backend/.env` also needs `ALLOWED_ORIGINS=http://local
 > is baked into the bundle at build time. If it says `127.0.0.1` when you run `npm run build`, every LAN
 > client calls *their own* localhost and the app is broken for everyone except this machine.
 
-### Windows installer (frozen desktop app)
+### Standalone Windows build (frozen desktop app)
 
-Produces a single `.exe` for a non-developer machine — no Python, no Node, no source. Build order matters
-(`backend.spec` hard-fails if `frontend/dist` is missing):
+Produces a single self-extracting `.exe` for a non-developer machine — no Python, no Node, no source. The
+last build came out at **1.66 GB**, expanding to **4.48 GB** on disk.
+
+> **`installer/setup.nsi` cannot build this.** NSIS caps its output at 2,147,483,647 bytes and the payload
+> is 4.47 GB — `torch` alone is 3.84 GB of it (`torch_cuda.dll` 999 MB, `cublasLt64_12.dll` 507 MB). Running
+> `makensis setup.nsi` does not error: it spins for ~25 minutes, parks its temp file at exactly 2 GB, and
+> produces nothing. Use the 7-Zip route below. The NSIS script is kept for the day the payload fits.
+
+Requires `pip install pyinstaller` and 7-Zip (`winget install 7zip.7zip`).
 
 ```bash
+# 1. Frontend first -- backend.spec hard-fails if frontend/dist is missing.
+#    Make sure frontend/.env.local does NOT set VITE_BACKEND_URL.
 cd frontend && npm install && npm run build && cd ..
-cd backend && pyinstaller backend.spec --clean --noconfirm && cd ..
-cd launcher && pyinstaller launcher.spec --clean --noconfirm && cd ..
-cd installer && makensis setup.nsi && cd ..
+
+# 2. Freeze. Redirect TEMP off the system drive first -- PyInstaller unpacks
+#    several GB through it and will exhaust a small C:.
+cd backend  && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe backend.spec  --clean --noconfirm && cd ..
+cd launcher && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe launcher.spec --clean --noconfirm && cd ..
+
+# 3. Stage the app in the layout launcher.py expects (<root>/backend/backend.exe).
+mkdir -p dist/VoiceCloneStudio
+cp launcher/dist/VoiceCloneStudio.exe dist/VoiceCloneStudio/
+cp -r backend/dist/backend dist/VoiceCloneStudio/backend
+mkdir -p dist/VoiceCloneStudio/storage/references dist/VoiceCloneStudio/storage/generated dist/VoiceCloneStudio/models
+
+# 4. Compress. -mx5, not -mx9: the payload is mostly incompressible CUDA DLLs,
+#    so maximum compression costs far more time for a couple of percent.
+cd dist && "/c/Program Files/7-Zip/7z.exe" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z VoiceCloneStudio
+
+# 5. Prepend the SFX module -> one double-clickable .exe.
+cat "/c/Program Files/7-Zip/7z.sfx" app.7z > VoiceCloneStudio-1.0.0.exe
 ```
 
-The installer is **not** checked into this repo — you have to build it. It installs per-user to
-`%LOCALAPPDATA%\Programs\VoiceCloneStudio` (no admin required) and downloads the model on first run.
+The result is a **self-extractor, not an installer**: the recipient runs it, picks a folder, then opens that
+folder and runs `VoiceCloneStudio.exe`. There is no Start Menu entry and no uninstaller — uninstalling means
+deleting the folder. Their machine needs **~8 GB free**: 1.66 GB download + 4.48 GB extracted (~6.1 GB peak
+with both present) plus the 2.5 GB model on first launch.
+
+The build artifact is **not** checked in — `dist/` is gitignored.
 
 Relevant files: `backend/run.py` (frozen entrypoint: path resolution, first-run model download),
-`launcher/launcher.py` (starts the backend hidden, polls `/api/health`, opens the browser),
-`installer/setup.nsi`.
+`launcher/launcher.py` (starts the backend hidden, polls `/api/health` on port 8000, opens the browser),
+`installer/setup.nsi` (unusable at current size, see above).
 
 ### Vercel + RunPod (dormant)
 

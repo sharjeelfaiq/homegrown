@@ -211,6 +211,11 @@ rely on.
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
   `natural`/`balanced`), and no preset is ever `is_builtin`, so the voice gallery's "Studio Voices" section
   never renders.
+- **The desktop build ships as a 7-Zip SFX, not an NSIS installer.** NSIS caps output at 2 GB; the frozen
+  payload is 4.47 GB (torch is 3.84 GB of it). `makensis` does not error on this -- it spins for ~25 minutes
+  at exactly 2 GB and emits nothing. `installer/setup.nsi` carries a banner saying so. Also redirect `TEMP`
+  off `C:` before running PyInstaller: it pushes several GB through it and will exhaust a small system
+  drive. Build steps are in README.md.
 - **`backend/migrate_to_multiuser.py` is dead** — a one-shot script from the abandoned Clerk multi-tenant
   detour. Don't wire it into anything.
 
