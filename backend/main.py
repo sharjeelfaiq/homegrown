@@ -175,7 +175,14 @@ _GEN_SLACK = 1.15
 # deliberate silence, and a purely proportional cap cut that chunk's last line
 # off entirely. ~6s covers punctuation-driven pauses while still bounding a
 # runaway chunk far below the job-wide allowance.
-_CHUNK_CAP_HEADROOM_FRAMES = 75
+#
+# 75 frames (~6s) proved too tight for a chunk that is both short and
+# pause-heavy: "Finally, pause... breathe... and say this naturally: <list>" is
+# 75 chars whose ellipses the model renders as ~9s of deliberate silence, so it
+# ran out of frames mid-list and dropped the tail -- intermittently, since the
+# same chunk succeeded on other samples. 125 frames (~10s) covers it while
+# still bounding a runaway chunk to well under half the job-wide allowance.
+_CHUNK_CAP_HEADROOM_FRAMES = 125
 
 # Idle auto-stop: RUNPOD_API_KEY/RUNPOD_POD_ID let this process stop its own
 # RunPod pod once nobody's using it (paired with the Vercel api/wake.ts
