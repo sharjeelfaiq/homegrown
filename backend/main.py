@@ -32,6 +32,7 @@ from pydantic import BaseModel
 
 load_dotenv(Path(__file__).parent / ".env")
 
+import boot_status
 from auth import get_current_user, get_last_activity
 from qwen import FasterQwen3TTS
 from qwen.utils import resolve_device
@@ -889,6 +890,10 @@ async def lifespan(app: FastAPI):
     # and the failure then surfaces as a mid-generation "no kernel image is
     # available" crash instead of at startup. resolve_device() actually runs a
     # test op, and picks CPU when the GPU can't do the work.
+    # Phase reporting throughout: uvicorn binds the port only after this
+    # function reaches its `yield`, so until then the launcher's browser loader
+    # is reading boot_status.json -- there is no HTTP to ask.
+    boot_status.write(STORAGE_DIR, boot_status.PHASE_PROBING_GPU)
     _device, _device_reason = resolve_device("auto")
     if _device == "cpu":
         logger.warning(
@@ -900,6 +905,11 @@ async def lifespan(app: FastAPI):
         logger.info("Using GPU: %s", _device_reason)
 
     _seed_timing_from_history()
+    boot_status.write(
+        STORAGE_DIR,
+        boot_status.PHASE_LOADING_MODEL,
+        detail=f"Loading the voice model onto {_device.upper()}",
+    )
     try:
         _tts = FasterQwen3TTS.from_pretrained(
             MODEL_PATH,
@@ -917,14 +927,14 @@ async def lifespan(app: FastAPI):
         # the launcher checks for a specific, actionable error message.
         logger.exception("Model failed to load")
         STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-        (STORAGE_DIR / "cuda_error.flag").write_text(
-            "Voice Clone Studio could not load the TTS model." + os.linesep * 2 + str(e),
-            encoding="utf-8",
-        )
+        message = "Voice Clone Studio could not load the TTS model." + os.linesep * 2 + str(e)
+        (STORAGE_DIR / "cuda_error.flag").write_text(message, encoding="utf-8")
+        boot_status.write(STORAGE_DIR, boot_status.PHASE_ERROR, detail=message)
         yield
         return
 
     _restore_queue_on_startup()
+    boot_status.write(STORAGE_DIR, boot_status.PHASE_READY)
     threading.Thread(target=_worker_loop, daemon=True).start()
     threading.Thread(target=_idle_stop_loop, daemon=True).start()
     yield
@@ -1005,12 +1015,69 @@ def languages():
     return {"languages": sorted(lang.capitalize() for lang in codec_language_id.keys())}
 
 
-@app.get("/api/estimate")
-def estimate(chars: int) -> dict:
-    """Lightweight estimate for a given character count, using the same
-    rolling average as job submission -- lets the frontend show a live
-    estimate while the user is still typing, without spamming /api/generate."""
-    return {"estimated_s": _estimate_seconds(max(chars, 0))}
+class EstimateRequest(BaseModel):
+    text: str = ""
+    preset_id: Optional[str] = None
+
+
+@app.post("/api/estimate")
+def estimate(req: EstimateRequest, user_id: str = Depends(get_current_user)) -> dict:
+    """Pre-flight cost of rendering `text` with `preset_id`.
+
+    Chunk count has to be computed here and cannot be approximated on the
+    client. Chunk size is a property of the *preset*, not a constant: the
+    reference clip's audio codes and transcript consume part of the single
+    MAX_SEQ_LEN window, and the script only gets what is left (_seq_budget).
+    A longer reference means smaller chunks, more of them, and a longer render
+    -- and since ELISION_SAFE_CHUNK_CHARS caps the result at 200, real chunks
+    land between MIN_CHUNK_CHARS (80) and 200, nowhere near CHUNK_MAX_CHARS.
+    A client mirroring 800 reported "1 chunk" for a script the backend then
+    split into 3.
+
+    This runs the same chunk_text() call the job will, so the number shown
+    before Generate is the number the progress display counts up to.
+
+    POST rather than GET because the text is needed to split on sentence
+    boundaries, and it can run to MAX_TOTAL_CHARS.
+    """
+    text = req.text or ""
+    chars = len(text.strip())
+    result: dict = {
+        "estimated_s": _estimate_seconds(chars),
+        "chunks": None,
+        "chunk_chars": None,
+        "ref_seconds": None,
+        "warning": None,
+    }
+    if chars == 0:
+        result["chunks"] = 0
+        return result
+
+    preset = _find_preset(req.preset_id) if req.preset_id else None
+    if preset is None or preset.get("user_id") != user_id:
+        return result  # no preset: time estimate only, chunking is unknowable
+
+    budget = _seq_budget(preset)
+    result["chunk_chars"] = budget.chunk_chars
+    result["chunks"] = len(chunk_text(text, budget.chunk_chars))
+
+    profile = _ref_profile(preset)
+    if profile is not None:
+        try:
+            result["ref_seconds"] = round(sf.info(preset["audio_path"]).duration, 1)
+        except Exception:
+            pass
+
+    # Surface the same condition _seq_budget only writes to the log today: a
+    # reference long enough to force chunks below the point where this model
+    # starts padding output with murmur and trailing silence.
+    if budget.chunk_chars < PADDING_SAFE_MIN_CHARS:
+        result["warning"] = (
+            f"This voice renders in {budget.chunk_chars}-character chunks, below the "
+            f"{PADDING_SAFE_MIN_CHARS}-character point where quality starts to suffer. "
+            "Re-create it from a shorter reference clip (10-20s)."
+        )
+    return result
 
 
 def _preset_response(preset: dict) -> dict:
@@ -1136,9 +1203,30 @@ def delete_preset(preset_id: str, user_id: str = Depends(get_current_user)):
     return {"ok": True}
 
 
+HISTORY_PAGE_MAX = 100
+
+
 @app.get("/api/history")
-def list_history(user_id: str = Depends(get_current_user)):
-    return {"history": [h for h in _history if h.get("user_id") == user_id]}
+def list_history(
+    limit: int = 20,
+    offset: int = 0,
+    user_id: str = Depends(get_current_user),
+):
+    """One page of this user's generations, newest first.
+
+    `_history` is newest-first already, so the slice needs no sorting. `total`
+    is the count *before* slicing -- the client needs it to know how many pages
+    exist, and computing it from the returned page is impossible.
+
+    limit/offset are clamped rather than rejected: these come from a local UI,
+    and silently returning a sane page beats a 422 the frontend would have to
+    render. HISTORY_PAGE_MAX caps how much a single request can pull, since
+    every entry carries its full script text.
+    """
+    limit = max(1, min(limit, HISTORY_PAGE_MAX))
+    offset = max(0, offset)
+    mine = [h for h in _history if h.get("user_id") == user_id]
+    return {"history": mine[offset : offset + limit], "total": len(mine)}
 
 
 @app.delete("/api/history/{entry_id}")

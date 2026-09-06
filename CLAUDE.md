@@ -216,6 +216,42 @@ rely on.
   at exactly 2 GB and emits nothing. `installer/setup.nsi` carries a banner saying so. Also redirect `TEMP`
   off `C:` before running PyInstaller: it pushes several GB through it and will exhaust a small system
   drive. Build steps are in README.md.
+## Terminology
+
+The product vocabulary is fixed. Use these words in UI copy, docs and new
+identifiers; they were made consistent deliberately and drift is a bug.
+
+| Term | Means | Do not call it |
+|---|---|---|
+| **voiceover** | the generated audio this tool produces | clip, generation, submission, render output |
+| **script** | the text the user writes to be spoken | prompt, input, text block |
+| **voice** | a cloned voice the user selects | preset *(in user-facing copy — `preset` stays the API/storage field name)* |
+| **reference clip** | the audio recording a voice is cloned from | sample, voice file — "clip" **is** correct here, and only here |
+| **chunk** | one `_seq_budget`-sized slice of a script | segment, part |
+| **generate** | producing a voiceover from a script | render *(fine in prose, not in UI labels)*, synthesise |
+
+"Clip" is the sharpest trap: it is right for the input recording and wrong for
+the output. `ClipPlayer` was renamed `VoiceoverPlayer` for exactly this reason.
+
+- **The desktop build binds `127.0.0.1`, not `0.0.0.0`, and that is load-bearing.** `backend/run.py`'s
+  `uvicorn.run` is loopback-only because a wildcard bind makes Windows Defender Firewall pop its "Allow
+  access / **Cancel**" alert the first time backend.exe runs -- and Cancel writes a *permanent Block rule*
+  for that exe path, after which the app can never start again and nothing in the UI can undo it. The
+  desktop build serves the API and the SPA from one origin, so it never needed the wildcard. LAN mode is a
+  different entrypoint (`start_server.bat` passes `--host 0.0.0.0`) and is unaffected -- don't "fix" the
+  inconsistency by unifying them.
+- **Startup progress is a file, not an endpoint.** uvicorn runs the lifespan startup (CUDA probe + model
+  load) *before* it binds the socket, and on a first run `run.py` downloads ~2.5GB before uvicorn is even
+  imported -- so for that whole window port 8000 is connection-refused and `/api/health` cannot answer.
+  `model_loaded: false` is therefore unreachable on the happy path; the browser goes straight from
+  ECONNREFUSED to ready. Phases go through `backend/boot_status.py` ->
+  `storage/boot_status.json`, which `launcher/launcher.py` serves at `/status` on its own ephemeral
+  loopback port. Anything that wants to report startup progress belongs there, not in `/api/health`.
+- **Never probe the local backend through `localhost` from Python.** It resolves to `::1` first and
+  `127.0.0.1` second, and a connect to a dead loopback port here is *dropped, not refused*, so
+  `urllib.request.urlopen` burns its full timeout once per family. Measured with nothing listening: 4.05s
+  via `localhost` vs 2.01s via `127.0.0.1`. `launcher.py` probes `127.0.0.1` and gates the HTTP call behind
+  a short TCP connect, which is what lets its loader poll at a 0.5s cadence.
 - **`backend/migrate_to_multiuser.py` is dead** — a one-shot script from the abandoned Clerk multi-tenant
   detour. Don't wire it into anything.
 

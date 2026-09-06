@@ -1,0 +1,82 @@
+import { useEffect, useRef } from 'react'
+
+interface Handlers {
+  /** Ctrl/Cmd+Enter. Fires even while typing -- that is the point of it. */
+  onGenerate?: () => void
+  /** Space. Suppressed while typing. */
+  onPlayPause?: () => void
+  /** Escape. Fires anywhere; also blurs the focused field first. */
+  onCancel?: () => void
+  /** "/" . Suppressed while typing. */
+  onFocusScript?: () => void
+}
+
+/** True when the event came from somewhere the user is entering text.
+ *
+ * Without this check, "/" and Space become unusable inside the script box --
+ * the single most likely way to make the app feel broken, since typing a
+ * script is the app's primary activity. contentEditable is included because a
+ * rich-text field would otherwise slip through the tagName test. */
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
+/** Global keyboard shortcuts.
+ *
+ * Handlers are held in a ref so the listener is attached once and never
+ * re-bound as the parent re-renders (which it does on every keystroke in the
+ * script box). */
+export function useHotkeys(handlers: Handlers): void {
+  const ref = useRef(handlers)
+  ref.current = handlers
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const h = ref.current
+      const typing = isTyping(e.target)
+
+      // Ctrl/Cmd+Enter is deliberately allowed while typing: finishing a
+      // script and submitting it without reaching for the mouse is the whole
+      // reason this shortcut exists.
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (h.onGenerate) {
+          e.preventDefault()
+          h.onGenerate()
+        }
+        return
+      }
+
+      if (e.key === 'Escape') {
+        if (typing && e.target instanceof HTMLElement) e.target.blur()
+        h.onCancel?.()
+        return
+      }
+
+      // Everything below is a bare key, so it must never fire while typing --
+      // and never when a modifier is held, or it would hijack browser
+      // shortcuts like Ctrl+/ .
+      if (typing || e.ctrlKey || e.metaKey || e.altKey) return
+
+      if (e.key === ' ') {
+        if (h.onPlayPause) {
+          e.preventDefault() // stop the page scrolling
+          h.onPlayPause()
+        }
+        return
+      }
+
+      if (e.key === '/') {
+        if (h.onFocusScript) {
+          e.preventDefault() // stop Firefox's quick-find
+          h.onFocusScript()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+}

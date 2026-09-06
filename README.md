@@ -1,8 +1,8 @@
 # Voice Clone Studio
 
 A local/LAN web dashboard for voice cloning, built around a vendored copy of `FasterQwen3TTS`
-(Qwen3-TTS-12Hz-0.6B with CUDA-graph acceleration). Upload a short reference clip, save it as a named voice
-preset, paste a script, get an `.mp3` back.
+(Qwen3-TTS-12Hz-0.6B with CUDA-graph acceleration). Upload a short reference clip, save it as a named voice,
+write a script, get a voiceover back as an `.mp3`.
 
 No accounts, no credits, no billing — every request runs as a single local user.
 
@@ -44,7 +44,7 @@ Open **http://localhost:8000**.
 |---|---|
 | OS | Windows 10/11 (64-bit). The code is cross-platform; the launcher scripts are Windows. |
 | GPU | NVIDIA, or none — see below |
-| Disk | ~10GB (3GB dependencies + 2.5GB model + generated audio) |
+| Disk | ~10GB (3GB dependencies + 2.5GB model + generated voiceovers) |
 | Python | 3.11+ |
 | Node | 18+ (frontend build) |
 
@@ -167,8 +167,25 @@ with both present) plus the 2.5 GB model on first launch.
 
 The build artifact is **not** checked in — `dist/` is gitignored.
 
-Relevant files: `backend/run.py` (frozen entrypoint: path resolution, first-run model download),
-`launcher/launcher.py` (starts the backend hidden, polls `/api/health` on port 8000, opens the browser),
+**What the user sees on launch.** Double-clicking `VoiceCloneStudio.exe` opens a browser loader within a
+second or two, which shows the real startup phase — model download percentage on a first run, then library
+load, GPU check, model load — and redirects to the app once the backend is healthy. Double-clicking again
+while it is already running just reopens the tab; it never restarts a backend that might be mid-generation.
+If startup fails, the loader shows the backend's own error and a **Try again** button, and the backend's
+output is kept at `<install>/storage/backend.log`.
+
+**The desktop build listens on `127.0.0.1` only** (`backend/run.py`) and is *not* reachable from other
+machines. That is deliberate: binding `0.0.0.0` makes Windows Defender Firewall show an "Allow access /
+Cancel" alert on first run, and Cancel writes a permanent Block rule that leaves the app broken with no way
+to recover from inside the app. For LAN access use the single-port mode above (`start_server.bat`), which
+passes `--host 0.0.0.0` itself and is unaffected.
+
+The `.exe` is unsigned, so Windows SmartScreen still shows "Windows protected your PC → More info → Run
+anyway" the first time. Only an Authenticode certificate removes that.
+
+Relevant files: `backend/run.py` (frozen entrypoint: path resolution, first-run model download, loopback
+bind), `backend/boot_status.py` (startup phases published to `storage/boot_status.json`),
+`launcher/launcher.py` (serves the loader, starts the backend hidden, polls `/api/health`, redirects),
 `installer/setup.nsi` (unusable at current size, see above).
 
 ### Vercel + RunPod (dormant)
@@ -179,7 +196,7 @@ See `DEPLOYMENT.md`. Not used by the LAN or installer paths.
 
 ---
 
-## Making a voice preset that actually works
+## Making a voice that actually works
 
 This matters more than any setting in the app. Three rules, all measured on this hardware.
 

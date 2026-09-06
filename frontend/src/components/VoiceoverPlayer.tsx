@@ -13,13 +13,13 @@ interface Props {
   label: string
 }
 
-/** Custom transport for a generated clip: play/pause, 2.5D waveform ribbon
+/** Custom transport for a generated voiceover: play/pause, 2.5D waveform ribbon
  * (doubles as the seek slider), and a mono data readout. The hidden <audio>
  * reports into AudioActivityContext exactly like the old native controls,
  * so the orb and live meter keep reacting. */
-export default function ClipPlayer({ src, durationS, entryKey, label }: Props) {
+export default function VoiceoverPlayer({ src, durationS, entryKey, label }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null)
-  const { setActiveAudio } = useAudioActivity()
+  const { setActiveAudio, releaseAudio } = useAudioActivity()
   const [playing, setPlaying] = useState(false)
   const [peaks, setPeaks] = useState<Float32Array>(() => proceduralPeaks(entryKey))
   const [sampleRate, setSampleRate] = useState<number | null>(null)
@@ -51,10 +51,10 @@ export default function ClipPlayer({ src, durationS, entryKey, label }: Props) {
   const duration = durationS ?? decodedDuration
 
   return (
-    <div className="clip-player">
+    <div className="voiceover-player">
       <button
         type="button"
-        className="icon-btn clip-play-btn"
+        className="icon-btn voiceover-play-btn"
         aria-label={playing ? `Pause ${label}` : `Play ${label}`}
         onClick={toggle}
       >
@@ -67,7 +67,7 @@ export default function ClipPlayer({ src, durationS, entryKey, label }: Props) {
         durationS={duration}
         label={label}
       />
-      <span className="mono clip-readout">
+      <span className="mono voiceover-readout">
         {duration != null ? formatDuration(duration) : '--:--'}
         {sampleRate != null && ` · ${(sampleRate / 1000).toFixed(1)} kHz`}
       </span>
@@ -81,13 +81,13 @@ export default function ClipPlayer({ src, durationS, entryKey, label }: Props) {
           setPlaying(true)
           setActiveAudio(e.currentTarget)
         }}
-        onPause={() => {
+        onPause={(e) => {
           setPlaying(false)
-          setActiveAudio(null)
+          releaseAudio(e.currentTarget)
         }}
-        onEnded={() => {
+        onEnded={(e) => {
           setPlaying(false)
-          setActiveAudio(null)
+          releaseAudio(e.currentTarget)
         }}
         style={{ display: 'none' }}
       />

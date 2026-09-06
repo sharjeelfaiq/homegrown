@@ -12,9 +12,9 @@ interface Props {
 const W = 220
 const H = 36
 
-/** 2.5D waveform ribbon on a 2D canvas: extruded underside, gradient body,
- * top-edge highlight. Doubles as the seek slider. Draws statically; a rAF
- * loop runs only while this row's audio is playing. */
+/** Waveform for one voiceover, on a 2D canvas. Doubles as the seek slider:
+ * click or drag to scrub, arrow keys to nudge. Draws statically; a rAF loop
+ * runs only while this row's audio is playing. */
 export default function WaveRibbon({ peaks, audioRef, playing, durationS, label }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const draggingRef = useRef(false)
@@ -41,6 +41,17 @@ export default function WaveRibbon({ peaks, audioRef, playing, durationS, label 
     const step = W / n
     const barW = Math.max(1.5, step - 1.2)
 
+    // Canvas can't read CSS custom properties, so the three colours the
+    // waveform needs are mirrored from tokens.css here. Keep them in step.
+    // The waveform is coloured AT REST, not only once played. An earlier pass
+    // painted unplayed audio neutral white and reserved cyan for the played
+    // portion -- which meant a voiceover you had not played was grey, and
+    // since that is most of them most of the time, the page had no colour in it
+    // at all. Unplayed is now dim cyan; playing brightens it.
+    const BASE = 'rgba(77, 212, 232, 0.34)' // --accent-2, unplayed
+    const ACCENT = '#7ee4f3' // brightened --accent-2, played
+    const PLAYHEAD = 'rgba(255, 255, 255, 0.9)'
+
     const drawEnvelope = (from: number, to: number, style: 'base' | 'played') => {
       const x0 = from * W
       const x1 = to * W
@@ -49,38 +60,19 @@ export default function WaveRibbon({ peaks, audioRef, playing, durationS, label 
       ctx.rect(x0, 0, x1 - x0, H)
       ctx.clip()
 
+      // Flat bars: no extrusion, no glow, no gradient. The waveform is the
+      // most saturated thing in the app, so it carries the audio accent -- but
+      // it still has to sit on the page without shouting. Unplayed is dim cyan,
+      // and the played portion brightens behind the playhead, which makes
+      // position legible at a glance down a list of voiceovers.
+      ctx.shadowBlur = 0
       for (let i = 0; i < n; i++) {
         const x = i * step
         if (x + barW < x0 || x > x1) continue
         const h = Math.max(2, peaks[i] * (H - 8))
 
-        if (style === 'played') {
-          ctx.shadowColor = 'rgba(59, 130, 246, 0.5)'
-          ctx.shadowBlur = 8
-        } else {
-          ctx.shadowBlur = 0
-        }
-
-        // Pass 1: extrusion underside, offset down.
-        ctx.fillStyle = style === 'played' ? 'rgba(30, 58, 138, 0.8)' : 'rgba(0, 0, 0, 0.45)'
-        ctx.fillRect(x, mid - h / 2 + 2, barW, h)
-
-        // Pass 2: body with vertical light->dark gradient.
-        const grad = ctx.createLinearGradient(0, mid - h / 2, 0, mid + h / 2)
-        if (style === 'played') {
-          grad.addColorStop(0, 'rgba(147, 197, 253, 0.95)')
-          grad.addColorStop(1, 'rgba(37, 99, 235, 0.85)')
-        } else {
-          grad.addColorStop(0, 'rgba(180, 182, 188, 0.55)')
-          grad.addColorStop(1, 'rgba(92, 95, 102, 0.4)')
-        }
-        ctx.fillStyle = grad
+        ctx.fillStyle = style === 'played' ? ACCENT : BASE
         ctx.fillRect(x, mid - h / 2, barW, h)
-
-        // Pass 3: top-edge highlight.
-        ctx.shadowBlur = 0
-        ctx.fillStyle = style === 'played' ? 'rgba(219, 234, 254, 0.5)' : 'rgba(255, 255, 255, 0.25)'
-        ctx.fillRect(x, mid - h / 2, barW, 1)
       }
       ctx.restore()
     }
@@ -88,8 +80,8 @@ export default function WaveRibbon({ peaks, audioRef, playing, durationS, label 
     drawEnvelope(0, 1, 'base')
     if (progress > 0) {
       drawEnvelope(0, progress, 'played')
-      ctx.fillStyle = 'rgba(59, 130, 246, 0.95)'
-      ctx.fillRect(progress * W - 1, 2, 2, H - 4)
+      ctx.fillStyle = PLAYHEAD
+      ctx.fillRect(progress * W - 1, 0, 1, H)
     }
   }, [peaks, audioRef, durationS])
 

@@ -1,64 +1,166 @@
-/* Mastering Suite design tokens — the studio's single source of truth.
-   The legacy teal/periwinkle block at the top of App.css remains only for
-   LandingPage.css; studio styles must use these.
+/* Voice Clone Studio design tokens — the single source of truth.
+   Every colour in the app resolves here; nothing below the token layer should
+   hardcode a hex value.
 
-   Palette: Runtime Gurus brand theme. The bg, blue, text, amber, green and
-   danger variables below are the canonical brand variables; every other
-   variable in this file is an alias onto them so the rest of the
-   stylesheet (written against these semantic names) re-themes for free. */
+   This is the second palette pass. The first went fully near-monochrome and
+   overcorrected: near-black surfaces plus tight contrast steps plus a single
+   accent read as dull greyscale. Three corrections, together:
+
+     1. The base is lifted off near-black to a charcoal, so the page stops
+        feeling oppressive.
+     2. Surfaces carry a slight cool cast (hue ~230) rather than being neutral
+        grey, and the steps between them are widened so panels actually
+        separate from the page.
+     3. Colour is back, but rationed by meaning rather than sprinkled. Two
+        accents, each with exactly one job:
+          --accent   (amber) = work in progress
+          --accent-2 (cyan)  = audio
+        Green stays "healthy", red stays "destructive". Nothing else is
+        coloured, which is what keeps the accents legible as signals instead of
+        decoration -- the failure mode of the blue-everything theme these
+        replaced.
+
+   Typography is self-hosted via @fontsource (see main.tsx). Nothing loads from
+   a CDN -- this app ships as a desktop install and must render with the network
+   unplugged. */
 :root {
-  /* Brand tokens */
-  --bg-deepest: #060b1a; /* darkest bg, footer, stats bar */
-  --bg-nav: #080d1f; /* navbar */
-  --bg-base: #0a1228; /* main page background */
-  --bg-hero: #0d1535; /* hero / card mid-tone */
-  --bg-card: #0d1535; /* panel / card background */
+  color-scheme: dark;
 
-  --blue-primary: #2563eb; /* CTA buttons */
-  --blue-accent: #3b82f6; /* heading accent, active states */
-  --blue-dark: #1e3a8a; /* borders, badge outlines */
-  --blue-light: #93c5fd; /* badge text, pill labels */
+  /* ---- Surfaces. Cool-tinted, widely stepped, never gradients. ---------- */
+  --bg-deepest: #0d0e13; /* page gutter, behind everything */
+  --bg-base: #14151a; /* app background */
+  --bg-nav: #16171f; /* header / inset wells */
+  --bg-card: #1d1f28; /* raised panels, result rows */
+  --bg-hero: #1d1f28;
+  --bg-raised: #242732; /* inputs, controls */
+  --bg-hover: #2d3140; /* hover state on interactive surfaces */
 
-  --text-primary: #ffffff;
-  --text-muted: #94a3b8;
+  /* ---- Hairlines. Still the only separator -- no shadows, no glows. ----- */
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.17);
+  --line-focus: rgba(255, 255, 255, 0.28);
 
-  --amber: #f59e0b; /* ratings */
-  --green: #22c55e; /* success / guarantee */
-  --danger: #ef4444; /* delete / error */
+  /* ---- Text ------------------------------------------------------------
+     Every one of these must clear WCAG AA (4.5:1) against --bg-base,
+     --bg-card AND --bg-raised, not just the page background. The previous
+     --text-faint (#71768a) measured 4.05 / 3.64 / 3.30:1 and failed on all
+     three, which is what made the whole app read as washed out -- it colours
+     nearly all secondary text (empty states, counters, timestamps, voiceover
+     readouts, field labels, the shortcut legend). Re-measure before changing.
+       current: 16.86 / 8.14 / 5.75:1 on base. */
+  --text-primary: #f5f6f8;
+  --text-muted: #a9adba;
+  --text-faint: #8b90a4;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  /* ---- Accent 1: amber = work in progress ------------------------------ */
+  --accent: #ffb43a;
+  --accent-dim: #c98a26;
+  --accent-soft: rgba(255, 180, 58, 0.14);
+  --accent-line: rgba(255, 180, 58, 0.4);
 
-  /* Studio aliases -- existing rules are written against these */
-  --bg-panel: var(--bg-card); /* opaque now; blur stays harmless on solid bg */
-  --bg-panel-solid: var(--bg-card);
-  --bg-inset: var(--bg-nav); /* inputs, wells */
-  --accent-amber: var(--blue-accent);
-  --accent-amber-soft: rgba(37, 99, 235, 0.08);
-  --accent-red: var(--danger);
-  --accent-red-soft: rgba(239, 68, 68, 0.16);
-  --accent-green: var(--green);
-  --accent-green-soft: rgba(34, 197, 94, 0.16);
-  --panel-border: var(--blue-dark);
-  --panel-border-strong: var(--blue-dark);
-  --blur-panel: 20px;
+  /* ---- Accent 2: cyan = audio ------------------------------------------ */
+  /* Waveforms are most of what is on screen once you have generated
+     anything, so this is the colour that actually stops the page reading as
+     greyscale. */
+  --accent-2: #4dd4e8;
+  /* Played portion of a waveform, and the landing page's hot accent. Mirrored
+     by hand in WaveRibbon.tsx (canvas cannot read custom properties) -- the
+     drift check in scripts/ is what keeps the two in step. */
+  --accent-2-bright: #7ee4f3;
+  --accent-2-soft: rgba(77, 212, 232, 0.14);
+  --accent-2-line: rgba(77, 212, 232, 0.4);
 
-  --shadow-float: 0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 12px 32px rgba(0, 0, 0, 0.55);
-  --shadow-press: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 3px 10px rgba(0, 0, 0, 0.5);
-  --glow-amber: 0 0 0 1px var(--blue-dark), 0 8px 28px rgba(37, 99, 235, 0.25);
+  /* ---- Status ---------------------------------------------------------- */
+  --danger: #ff6169;
+  /* Error body text: --danger is a border/icon weight and drops below AA as a
+     paragraph colour on a tinted error panel. */
+  --danger-text: #ffc9cc;
+  --danger-soft: rgba(255, 97, 105, 0.14);
+  --green: #4ade80;
+  --amber: var(--accent);
 
-  --font-display: 'Archivo Variable', 'Inter', system-ui, sans-serif;
+  /* ---- Geometry. Small radii read as precision; pills read as toys. ---- */
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* ---- Type ------------------------------------------------------------ */
+  --font-display: 'Archivo Variable', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  /* ---- Layout ---------------------------------------------------------- */
+  --shell: 1180px; /* max width of the two-column workspace */
+  --aside: 400px; /* the voiceovers column */
+  --gutter: 24px;
+
+  /* ---- Motion. One curve, three durations. Honour reduced-motion. ------ */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --fast: 120ms;
+  --base: 200ms;
+  --slow: 420ms;
+
+  /* ==== Legacy aliases =================================================
+     Older rules are written against these names. They are repointed onto
+     the palette above rather than deleted, so a retheme lands everywhere at
+     once. Prefer the canonical names above in new styles. */
+  --bg-panel: var(--bg-card);
+  --bg-panel-solid: var(--bg-card);
+  --bg-inset: var(--bg-nav);
+  --bg-primary: var(--bg-base);
+  --bg-secondary: var(--bg-card);
+  --bg-tertiary: var(--bg-nav);
+  --text: var(--text-primary);
+
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-amber: var(--accent);
+  --accent-amber-soft: var(--accent-soft);
+  --accent-secondary-soft: var(--accent-2-soft);
+  --accent-red: var(--danger);
+  --accent-red-soft: var(--danger-soft);
+  --accent-green: var(--green);
+  --accent-green-soft: rgba(74, 222, 128, 0.14);
+
+  --blue-primary: var(--accent-2);
+  --blue-accent: var(--accent-2);
+  --blue-dark: var(--line-strong);
+  --blue-light: var(--text-muted);
+
+  --border: var(--line);
+  --border-strong: var(--line-strong);
+  --panel-border: var(--line);
+  --panel-border-strong: var(--line-strong);
+
+  --warning: var(--accent);
+  --warning-soft: var(--accent-soft);
+
+  /* Shadows and glows are deliberately neutralised rather than removed --
+     any rule still referencing them renders as a hairline, not a halo. */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-float: none;
+  --shadow-press: none;
+  --glow-accent: 0 0 0 1px var(--line-strong);
+  --glow-amber: 0 0 0 1px var(--accent-line);
+  --blur-panel: 0px;
 }
 
 :focus-visible {
-  outline: 2px solid var(--blue-accent);
+  outline: 2px solid var(--accent-2);
   outline-offset: 2px;
 }
 
 .mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'zero' 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fast: 0ms;
+    --base: 0ms;
+    --slow: 0ms;
+  }
 }

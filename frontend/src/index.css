@@ -13,12 +13,12 @@
 /* Painted before any stylesheet-driven background resolves — kills the
    white flash on load. */
 html {
-  background: #060b1a;
+  background: #14151a;
 }
 
 body {
   margin: 0;
-  font-family: Inter, var(--font-body);
+  font-family: var(--font-body);
 }
 
 #root {
@@ -29,10 +29,12 @@ p {
   margin: 0;
 }
 
-/* Scrollbars — thin, blue-dark track, blue-primary thumb. */
+/* Scrollbars — neutral on purpose. The accents mean "in progress" (amber) and
+   "audio" (cyan); a coloured scrollbar would spend one of those signals on
+   chrome that carries no meaning. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--blue-primary) var(--blue-dark);
+  scrollbar-color: var(--bg-hover) transparent;
 }
 
 ::-webkit-scrollbar {
@@ -41,14 +43,14 @@ p {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--blue-dark);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--blue-primary);
+  background: var(--bg-hover);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--blue-accent);
+  background: var(--line-focus);
 }

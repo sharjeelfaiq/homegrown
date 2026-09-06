@@ -10,7 +10,14 @@ interface WakeResponse {
 const POLL_INTERVAL_MS = 3000
 // Small buffer over api/wake.ts's own ~120s server-side timeout, so the
 // server's timeout message (more specific) wins the race in the common case.
-const CLIENT_TIMEOUT_MS = 130_000
+const RUNPOD_TIMEOUT_MS = 130_000
+// Locally there is no pod to bill for, and a cold start legitimately takes a
+// while: torch faults ~3.8GB of DLLs off disk, then the model loads. Nothing
+// is gained by giving up early, so wait far longer than the RunPod path.
+const LOCAL_TIMEOUT_MS = 10 * 60_000
+
+const USING_RUNPOD_WAKE = Boolean(import.meta.env.VITE_USE_RUNPOD_WAKE)
+const CLIENT_TIMEOUT_MS = USING_RUNPOD_WAKE ? RUNPOD_TIMEOUT_MS : LOCAL_TIMEOUT_MS
 
 async function callWake(startedAt: number): Promise<WakeResponse> {
   // `/api/wake` is a Vercel Edge Function that only exists when this frontend
@@ -22,12 +29,20 @@ async function callWake(startedAt: number): Promise<WakeResponse> {
   // VITE_USE_RUNPOD_WAKE is the explicit opt-in, set only in the Vercel
   // project's env (see DEPLOYMENT.md) -- everywhere else, go straight to the
   // backend's own health check.
-  if (!import.meta.env.VITE_USE_RUNPOD_WAKE) {
+  if (!USING_RUNPOD_WAKE) {
     try {
       const health = await getHealth()
       return { status: health.model_loaded ? 'ready' : 'starting' }
     } catch {
-      return { status: 'error', message: 'Could not reach the local backend. Is it running?' }
+      // A refused connection is the *normal* state while the backend starts,
+      // not a failure: uvicorn binds the port only after lifespan() finishes
+      // loading the model, so there is no "up but not ready" window to
+      // observe -- model_loaded:false is unreachable on the happy path and
+      // the browser goes straight from ECONNREFUSED to ready. Reporting
+      // 'error' here made the poll loop below give up on its first attempt,
+      // so anyone opening the app URL directly (bookmark, Back button) got
+      // "Could not reach the local backend" instantly instead of a loader.
+      return { status: 'starting' }
     }
   }
   const res = await fetch(`/api/wake?startedAt=${startedAt}`)
@@ -51,7 +66,11 @@ export function wakeBackend(
       const elapsedMs = Date.now() - startedAt
       if (elapsedMs > CLIENT_TIMEOUT_MS) {
         onStatus?.('error', elapsedMs)
-        reject(new Error('Timed out waiting for the backend to start. Check the RunPod dashboard.'))
+        reject(new Error(
+          USING_RUNPOD_WAKE
+            ? 'Timed out waiting for the backend to start. Check the RunPod dashboard.'
+            : 'Timed out waiting for the backend to start. Is Voice Clone Studio running?',
+        ))
         return
       }
       let result: WakeResponse

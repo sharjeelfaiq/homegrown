@@ -154,8 +154,21 @@ export function deletePreset(presetId: string): Promise<{ ok: boolean }> {
   )
 }
 
-export function listHistory(): Promise<{ history: HistoryEntry[] }> {
-  return authFetch(apiUrl('/api/history')).then(parseOrThrow<{ history: HistoryEntry[] }>)
+export interface HistoryPage {
+  history: HistoryEntry[]
+  /** Total entries for this user across all pages, before slicing. */
+  total: number
+}
+
+export const HISTORY_PAGE_SIZE = 20
+
+export function listHistory(
+  limit: number = HISTORY_PAGE_SIZE,
+  offset = 0,
+): Promise<HistoryPage> {
+  return authFetch(apiUrl(`/api/history?limit=${limit}&offset=${offset}`)).then(
+    parseOrThrow<HistoryPage>,
+  )
 }
 
 export function deleteHistoryEntry(entryId: string): Promise<{ ok: boolean }> {
@@ -186,8 +199,30 @@ export function getJobStatus(jobId: string): Promise<JobStatus> {
   return authFetch(apiUrl(`/api/jobs/${jobId}`)).then(parseOrThrow<JobStatus>)
 }
 
-export function getEstimate(chars: number): Promise<{ estimated_s: number }> {
-  return fetch(apiUrl(`/api/estimate?chars=${chars}`)).then(parseOrThrow<{ estimated_s: number }>)
+export interface Estimate {
+  estimated_s: number
+  /** Exact chunk count from the backend's own chunker, or null with no voice. */
+  chunks: number | null
+  /** This voice's chunk size. Derived from its reference clip, not a constant. */
+  chunk_chars: number | null
+  ref_seconds: number | null
+  /** Set when the voice's reference is long enough to hurt output quality. */
+  warning: string | null
+}
+
+/** Pre-flight cost for a script under a given voice.
+ *
+ * POST, and the full text, because chunk count depends on sentence boundaries
+ * AND on the preset -- the reference clip and the script share one sequence
+ * window, so a longer reference yields smaller, more numerous chunks. It
+ * cannot be computed on the client; an earlier attempt to mirror the backend
+ * constant reported "1 chunk" for a 3-chunk script. */
+export function getEstimate(text: string, presetId: string | null): Promise<Estimate> {
+  return authFetch(apiUrl('/api/estimate'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, preset_id: presetId }),
+  }).then(parseOrThrow<Estimate>)
 }
 
 /** Downloads always come back as a renamed .mp3 (converted server-side from
