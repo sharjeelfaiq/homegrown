@@ -31,21 +31,38 @@ export default function Modal({ open, title, onClose, children }: Props) {
   const reduced = usePrefersReducedMotion()
   const titleId = useId()
 
+  // onClose is held in a ref so the effect below can depend on `open` ALONE.
+  //
+  // Callers pass an inline arrow (`onClose={() => setVoicesOpen(false)}`), so
+  // its identity changes on every render of the parent -- and the parent
+  // re-renders on every keystroke, because the form's text lives in its state.
+  // With onClose in the dependency array, that made the effect tear down and
+  // re-run per character: the cleanup returned focus to the element that opened
+  // the modal, then setup moved it to the panel's first control. Typing a voice
+  // name was impossible; focus left the field after every letter.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
   useEffect(() => {
     if (!open) return
 
     restoreTo.current = document.activeElement as HTMLElement | null
 
-    // Move focus inside: first focusable control, else the panel itself.
+    // Move focus to the first control in the BODY, not the panel -- the panel's
+    // first focusable is the header's ✕, and opening a dialog with the close
+    // button focused invites you to dismiss what you just opened. Falls back to
+    // the panel itself when the body has nothing focusable.
     const panel = panelRef.current
-    const first = panel?.querySelector<HTMLElement>(FOCUSABLE)
+    const body = panel?.querySelector<HTMLElement>('.modal-body')
+    const first =
+      body?.querySelector<HTMLElement>(FOCUSABLE) ?? panel?.querySelector<HTMLElement>(FOCUSABLE)
     ;(first ?? panel)?.focus()
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.stopPropagation()
         e.preventDefault()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (e.key !== 'Tab') return
@@ -77,7 +94,7 @@ export default function Modal({ open, title, onClose, children }: Props) {
       document.body.style.overflow = previousOverflow
       restoreTo.current?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   return createPortal(
     <AnimatePresence>
