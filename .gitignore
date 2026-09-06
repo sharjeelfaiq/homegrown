@@ -39,3 +39,4 @@ installer.zip
 .pip-cache/
 .tmp/
 models/
+.env*
