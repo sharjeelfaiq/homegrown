@@ -12,6 +12,32 @@ text.
 
 ---
 
+## The one command
+
+```bash
+bash build.sh
+```
+
+Runs every step below in order and ends by printing the `.exe` path, its size
+and its SHA-256. Expect ~45 minutes and ~10 GB free.
+
+It also **stashes `frontend/.env.local` and restores it afterwards**. That file
+must be absent while Vite builds — `VITE_BACKEND_URL` is baked into the bundle,
+so a stale `127.0.0.1` makes every LAN client call its own loopback — but
+leaving it deleted silently breaks local development. The restore runs from an
+`EXIT` trap, so it happens whether the build succeeds, fails, or you Ctrl-C it.
+If no file was there to stash, it writes the default dev value, so the tree is
+always left usable. `frontend/.env.local.example` is the committed reference.
+
+Two gates abort the build rather than warn: a `backend/.env` reaching the staged
+tree (it carries an absolute `MODEL_PATH` that exists on no other machine), and
+a non-empty `models/`.
+
+The steps below are the same pipeline by hand — for when a stage fails and you
+need to re-run just that part.
+
+---
+
 ## 0. Prerequisites (once per machine)
 
 | Need | Check | Install |

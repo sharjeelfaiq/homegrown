@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .vercel
 .env*
+# ...but the example must be tracked, or the only record of what belongs
+# in .env.local is prose in the README. build.sh restores from this.
+!.env.local.example
