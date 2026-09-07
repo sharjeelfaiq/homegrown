@@ -17,6 +17,11 @@ There is **no test suite** in this repo — no pytest, no vitest, no test files.
 run.
 
 ```bash
+# Both dev processes at once, from the repo root -- preflights the venv and both
+# env files, tails both logs, waits for /api/health, stops both on Ctrl-C.
+bash dev.sh
+
+# ...or the same two processes by hand, in two terminals:
 # Backend dev (loads the model on startup; needs CUDA + backend/.env with MODEL_PATH)
 cd backend && python -m uvicorn main:app --host 127.0.0.1 --port 8000
 
@@ -153,8 +158,8 @@ rely on.
    opens the browser; `installer/setup.nsi` is the per-user NSIS installer.
 4. **Vercel + RunPod split (dormant)** — `frontend/api/wake.ts` resumes a stopped pod, backend's
    `_idle_stop_loop` stops it again when idle *and* the queue is empty. Gated client-side by
-   `VITE_USE_RUNPOD_WAKE`; unset everywhere except the Vercel project. See `DEPLOYMENT.md`. Whether to keep
-   this path is an open decision (`HANDOFF.md` §6) — don't delete it unprompted.
+   `VITE_USE_RUNPOD_WAKE`; unset everywhere except the Vercel project. See `docs/DEPLOYMENT.md`. Whether to keep
+   this path is an open decision (`docs/history/HANDOFF.md` §6) — don't delete it unprompted.
 
 ## Gotchas
 
@@ -186,7 +191,7 @@ rely on.
 - **`setup.sh` is the one-shot installer.** Idempotent, and it keeps pip's cache/temp plus the model on the
   repo's own drive — the defaults live on `C:` and this project pulls ~5GB.
 - **`CHUNK_MAX_CHARS=800` / `max_seq_len=1024` / `MAX_REF_AUDIO_SECS=60` are empirical, GPU-specific
-  numbers**, tuned on a 4GB GTX 960 (see `gpu.txt`, `qwen/HOW_TO_RUN.md`). Raising them is plausible on
+  numbers**, tuned on a 4GB GTX 960 (see `docs/gpu-notes.md`, `qwen/HOW_TO_RUN.md`). Raising them is plausible on
   bigger cards but untested; reference clips over ~23s previously produced garbled/looping output.
   `CHUNK_MAX_CHARS` is now only a ceiling — `_seq_budget()` lowers it per preset (see above). The failure
   it fixes: a 53.5s clip + an 876-char script asked for ~1729 positions against 1024, and the output came
@@ -203,10 +208,13 @@ rely on.
   with a reason.
 - **`/api/queue` sorts by real position in `_pending_job_ids`**, not `_jobs` insertion order; reorder only
   splices the requesting user's own jobs so a shared FIFO can't be jumped.
-- **Doc hierarchy.** `README.md` (setup, features, troubleshooting) and this file are the maintained docs;
-  `workflow.md` covers day-to-day usage and is current. `HANDOFF.md` and `DEPLOY_SPEC.md` carry explicit
-  "historical" banners and `DEPLOYMENT.md` documents the dormant Vercel+RunPod path -- treat those three as
-  context, not current behaviour, and verify against source.
+- **Doc hierarchy.** `README.md` (setup, features, troubleshooting) and this file are the maintained docs
+  and stay at the repo root; all other prose lives under `docs/`. `docs/workflow.md` covers day-to-day
+  usage and is current; `docs/BUILD.md` is the build procedure; `docs/gpu-notes.md` holds the measurements
+  behind the empirical constants. `docs/history/HANDOFF.md` and `docs/history/DEPLOY_SPEC.md` carry
+  explicit "historical" banners and `docs/DEPLOYMENT.md` documents the dormant Vercel+RunPod path -- treat
+  those three as context, not current behaviour, and verify against source. Doc references in prose are
+  written relative to the repo root.
 - **Two things the UI does not do, despite appearances.** `startGenerate()` sends only
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
   `natural`/`balanced`), and no preset is ever `is_builtin`, so the voice gallery's "Studio Voices" section
@@ -252,8 +260,6 @@ the output. `ClipPlayer` was renamed `VoiceoverPlayer` for exactly this reason.
   `urllib.request.urlopen` burns its full timeout once per family. Measured with nothing listening: 4.05s
   via `localhost` vs 2.01s via `127.0.0.1`. `launcher.py` probes `127.0.0.1` and gates the HTTP call behind
   a short TCP connect, which is what lets its loader poll at a 0.5s cadence.
-- **`backend/migrate_to_multiuser.py` is dead** — a one-shot script from the abandoned Clerk multi-tenant
-  detour. Don't wire it into anything.
 
 ## Other agent configs
 

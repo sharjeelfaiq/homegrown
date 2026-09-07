@@ -3,10 +3,10 @@
 #
 #   bash build.sh
 #
-# Runs everything documented in BUILD.md. Expect ~45 minutes and ~10 GB free on
-# this drive. Git Bash, not PowerShell: setup.sh needs bash, and the final SFX
-# step concatenates two binaries, which PowerShell's `>` corrupts by rewriting
-# them as text.
+# Runs everything documented in docs/BUILD.md. Expect ~45 minutes and ~10 GB
+# free on this drive. Git Bash, not PowerShell: setup.sh needs bash, and the
+# final SFX step concatenates two binaries, which PowerShell's `>` corrupts by
+# rewriting them as text.
 #
 # frontend/.env.local is stashed before the frontend build and restored from an
 # EXIT trap, so it survives a failure or a Ctrl-C as well as a clean run. That

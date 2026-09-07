@@ -27,8 +27,8 @@ async function callWake(startedAt: number): Promise<WakeResponse> {
   // origin build served directly by the FastAPI backend, via start_server.bat)
   // is DEV=false too, and has no /api/wake route, which just 404s forever.
   // VITE_USE_RUNPOD_WAKE is the explicit opt-in, set only in the Vercel
-  // project's env (see DEPLOYMENT.md) -- everywhere else, go straight to the
-  // backend's own health check.
+  // project's env (see docs/DEPLOYMENT.md) -- everywhere else, go straight
+  // to the backend's own health check.
   if (!USING_RUNPOD_WAKE) {
     try {
       const health = await getHealth()

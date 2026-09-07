@@ -102,8 +102,23 @@ schtasks /create /tn "VoiceCloneStudio" /tr "wscript.exe \"C:\path\to\repo\start
 
 ### Local development (hot reload)
 
-Two terminals, two ports. **`vite.config.ts` has no dev proxy, on purpose**, so the frontend must be told
-where the backend is:
+One command from the repo root:
+
+```bash
+bash dev.sh
+```
+
+It preflights the venv and both env files, starts uvicorn on `127.0.0.1:8000` and Vite on `:5173`, tails
+both logs side by side with `[backend]` / `[frontend]` prefixes, polls `/api/health` and prints when the
+model is actually ready (which the frontend does not wait for), and stops both processes on Ctrl-C —
+including the orphaned node child that `kill` alone leaves holding `:5173` on Windows. Logs stay at
+`.tmp/dev-backend.log` and `.tmp/dev-frontend.log`.
+
+No `--reload` on the backend, deliberately: the model takes tens of seconds to minutes to load, and a
+watcher would pay that on every edit. Restart `dev.sh` by hand after backend changes.
+
+The same thing by hand is two terminals, two ports. **`vite.config.ts` has no dev proxy, on purpose**, so
+the frontend must be told where the backend is:
 
 ```bash
 # frontend/.env.local
@@ -118,7 +133,10 @@ cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 -
 cd frontend && npm run dev        # http://localhost:5173
 ```
 
-That is cross-origin, so `backend/.env` also needs `ALLOWED_ORIGINS=http://localhost:5173`.
+That is cross-origin, so `backend/.env` also needs
+`ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173`. Both spellings: they are the same socket but
+*different origins* to CORS, so listing only one makes the app work at one URL and fail every API call at
+the other.
 
 > ⚠️ **Delete or empty `frontend/.env.local` before building for LAN or the installer.** `VITE_BACKEND_URL`
 > is baked into the bundle at build time. If it says `127.0.0.1` when you run `npm run build`, every LAN
@@ -192,7 +210,7 @@ bind), `backend/boot_status.py` (startup phases published to `storage/boot_statu
 
 A split deployment: static frontend on Vercel, backend on a RunPod pod that sleeps when idle and is woken by
 `frontend/api/wake.ts`. Gated behind `VITE_USE_RUNPOD_WAKE`, which is unset everywhere except that project.
-See `DEPLOYMENT.md`. Not used by the LAN or installer paths.
+See `docs/DEPLOYMENT.md`. Not used by the LAN or installer paths.
 
 ---
 
@@ -376,6 +394,21 @@ Environment overrides:
 ## Repo layout
 
 ```
+README.md      This file
+CLAUDE.md      Architecture and the hard-won gotchas (agent instructions)
+dev.sh         Local development: uvicorn :8000 + Vite :5173 together, one command
+build.sh       Source -> VoiceCloneStudio-<ver>.exe, one command
+setup.sh       One-shot idempotent installer (venv, deps, model, backend/.env)
+start_server.bat / start_server_silent.vbs   LAN server launchers (host 0.0.0.0)
+vercel.json    Deploys landing-page/ only; main-branch deploys disabled
+
+docs/
+  BUILD.md       Build procedure, step by step
+  DEPLOYMENT.md  Vercel + RunPod split (dormant)
+  workflow.md    Day-to-day usage, end to end
+  gpu-notes.md   GPU measurements behind the empirical constants
+  history/       Superseded, kept for rationale -- HANDOFF.md, DEPLOY_SPEC.md
+
 qwen/          Vendored FasterQwen3TTS (CUDA-graph Qwen3-TTS wrapper). Treat as third-party.
 backend/
   main.py            FastAPI app: model load, REST API, job queue, worker thread
@@ -383,13 +416,20 @@ backend/
   audio_stitcher.py  Trims chunk edge silence, concatenates with a gap
   audio_convert.py   wav/mp3 conversion
   auth.py            Single-user stub
+  backend.spec       PyInstaller spec (hard-fails without frontend/dist)
   storage/           presets.json, history.json, queue.json, generated/, references/  (gitignored)
-frontend/      React 19 + Vite + TypeScript dashboard
+frontend/      React 19 + Vite + TypeScript dashboard (the app)
+landing-page/  Marketing page -- the only thing Vercel deploys; separate release cadence
 launcher/      Frozen-app launcher (PyInstaller)
-installer/     NSIS installer script
-setup.sh       One-shot idempotent installer
-start_server.bat / start_server_silent.vbs   LAN server launchers
+installer/     NSIS installer script (unusable at current payload size, see above)
+scripts/       Dev/ops utilities (check_design_tokens.py)
+assets/        Build-time binaries: icon.ico, consumed by launcher.spec and setup.nsi
 ```
 
-Further reading: `CLAUDE.md` (architecture and the hard-won gotchas), `workflow.md` (day-to-day usage),
-`DEPLOYMENT.md` (Vercel + RunPod), `qwen/HOW_TO_RUN.md` (the model wrapper itself).
+Directory depth here is load-bearing: `backend/main.py`, both `.spec` files, `launcher/launcher.py`,
+`scripts/check_design_tokens.py`, `build.sh`, `setup.sh` and `installer/setup.nsi` each resolve paths by
+counting parents from their own location. Moving a top-level directory means editing all of them.
+
+Further reading: `CLAUDE.md` (architecture and the hard-won gotchas), `docs/workflow.md` (day-to-day
+usage), `docs/BUILD.md` (building the .exe), `docs/DEPLOYMENT.md` (Vercel + RunPod),
+`qwen/HOW_TO_RUN.md` (the model wrapper itself).

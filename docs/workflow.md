@@ -1,10 +1,13 @@
 # Workflow — Voice Clone Studio
 
-How this app is actually used day-to-day, end to end. For architecture/limitations, see `README.md`; for cloud GPU options, see `gpu.txt`.
+How this app is actually used day-to-day, end to end. For architecture/limitations, see `README.md`; for cloud GPU options, see `docs/gpu-notes.md`.
 
 ## 1. Start the app
 
-Two terminals (see `README.md` "Running it" for exact commands):
+`bash dev.sh` from the repo root starts both processes, tails both logs, and prints when the model has
+finished loading. Ctrl-C stops both.
+
+Or the same thing in two terminals by hand (see `README.md` "Running it" for exact commands):
 - Backend: `../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000` from `backend/`
 - Frontend: `npm run dev` from `frontend/` (needs `frontend/.env.local` with
   `VITE_BACKEND_URL=http://127.0.0.1:8000` -- there is no dev proxy)

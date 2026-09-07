@@ -1,7 +1,7 @@
 # DEPLOY_SPEC.md
 
 > **Historical.** This is the original written spec for the Vercel + RunPod split, kept for intent and
-> rationale. For what was actually built, see `DEPLOYMENT.md`; that path is dormant and unused by the
+> rationale. For what was actually built, see `docs/DEPLOYMENT.md`; that path is dormant and unused by the
 > LAN and installer deployments described in `README.md`.
 
 I'm restructuring deployment for Voice Clone Studio:

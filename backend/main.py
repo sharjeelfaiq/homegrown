@@ -591,7 +591,7 @@ def _restore_queue_on_startup() -> None:
             _jobs[job_id] = {
                 # .get(), not [] -- queue.json written before the multiuser
                 # migration won't have this key. Such orphaned jobs just won't
-                # surface in any user's queue until migrate_to_multiuser.py runs.
+                # surface in any user's queue. The legacy migration path is gone.
                 "user_id": record.get("user_id"),
                 "status": "queued",
                 "preset_id": preset["id"],

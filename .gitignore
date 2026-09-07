@@ -40,3 +40,5 @@ installer.zip
 .tmp/
 models/
 .env*
+!*.env.example
+!*.env.local.example
