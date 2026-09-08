@@ -40,8 +40,9 @@ anywhere in the window — that opens the same dialog with the file already load
 The dialog also lists your saved voices, each with **▶** to hear its reference clip and a two-step delete
 (the row flips to Delete/Keep). Deleting the voice you had selected clears the selection.
 
-Every row of the voice **dropdown** carries the same ▶ and delete controls, so you rarely need the dialog
-after the first time.
+Every row of the voice **dropdown** carries the same ▶, so you can audition without opening the dialog.
+Delete is only in the dialog — it is destructive, and it does not belong on a menu you open to pick a
+voice.
 
 > ▶ plays the stored reference clip, never a live generation — a real generation takes ~85s+ per chunk on
 > this hardware.

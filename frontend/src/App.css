@@ -55,15 +55,25 @@ h3 {
    once and then gets out of the way.
    Tracking is 0.1em, not the 0.18em the 11px wordmark used -- that spacing was
    tuned for small caps and reads as gappy at this size. */
+/* A full-width hairline beneath, not an underline on the text: it separates the
+   title from the workspace the way the old sticky header's border did, without
+   putting a rule through the wordmark's wide tracking. */
 .studio-title {
-  padding: 40px var(--gutter) 0;
+  /* Equal padding top and bottom, so the wordmark sits centred between the
+     window edge and the rule below it. line-height: 1 is what makes that true
+     rather than approximate -- at the inherited 1.55 the line box adds ~7px of
+     half-leading, and since uppercase has no descenders the glyphs then read as
+     sitting high in their own box. */
+  padding: 30px var(--gutter);
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 600;
+  line-height: 1;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   text-align: center;
   color: var(--text-muted);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Kept even though the status dots are gone -- .generating-dot in the voice
@@ -764,12 +774,14 @@ h3 {
   color: var(--text-faint);
 }
 
-/* Position / total. min-width is load-bearing: it is set for the wider of the
-   two states ("-0:54 / 1:06") so toggling elapsed<->remaining cannot move the
-   script preview sitting next to it. .mono supplies tabular-nums. */
+/* Position / total.
+   Width stability does NOT come from a min-width here -- that was tried at 84px
+   and the content outgrew it, which is what shifted the preview beside it on
+   every toggle. It comes from .result-time-sign reserving the minus, the one
+   character that differs between the two states. .mono supplies tabular-nums,
+   so the digits are already equal width. */
 .result-time {
   flex: none;
-  min-width: 84px;
   padding: 0;
   font-size: 11px;
   color: var(--text-faint);
@@ -780,6 +792,12 @@ h3 {
 
 .result-time:hover {
   color: var(--text-muted);
+}
+
+/* Always occupies one character, whether or not it holds one. */
+.result-time-sign {
+  display: inline-block;
+  width: 1ch;
 }
 
 .result-voice {

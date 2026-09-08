@@ -3,13 +3,12 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { mediaUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
-import { PauseIcon, PlayIcon, TrashIcon } from './Icons'
+import { PauseIcon, PlayIcon } from './Icons'
 
 interface Props {
   presets: Preset[]
   selectedPresetId: string | null
   onSelect: (id: string) => void
-  onDelete: (id: string) => void
 }
 
 /** Voice picker: a trigger button plus a popover list, each row carrying its
@@ -28,10 +27,9 @@ interface Props {
  *
  * The generating indicator shows in two places on purpose: on the trigger for
  * the selected voice, and on any row whose voice is mid-job. */
-export default function VoicePicker({ presets, selectedPresetId, onSelect, onDelete }: Props) {
+export default function VoicePicker({ presets, selectedPresetId, onSelect }: Props) {
   const [open, setOpen] = useState(false)
   const [previewingId, setPreviewingId] = useState<string | null>(null)
-  const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -49,7 +47,6 @@ export default function VoicePicker({ presets, selectedPresetId, onSelect, onDel
 
   const close = useCallback(() => {
     setOpen(false)
-    setConfirmingId(null)
     // A preview belongs to the open menu. Leaving it playing under a closed
     // popover gives audio with no visible source and no way to stop it.
     stopPreview()
@@ -79,9 +76,8 @@ export default function VoicePicker({ presets, selectedPresetId, onSelect, onDel
   // menu. Without this, a stale confirm row survives and a preview keeps
   // playing audio the backend no longer serves.
   useEffect(() => {
-    if (confirmingId && !presets.some((p) => p.id === confirmingId)) setConfirmingId(null)
     if (previewingId && !presets.some((p) => p.id === previewingId)) stopPreview()
-  }, [presets, confirmingId, previewingId, stopPreview])
+  }, [presets, previewingId, stopPreview])
 
   function togglePreview(preset: Preset) {
     const audio = audioRef.current
@@ -160,49 +156,20 @@ export default function VoicePicker({ presets, selectedPresetId, onSelect, onDel
                 )}
               </button>
 
+              {/* Audition only. Deleting a voice is destructive and lives in
+                  the Voices dialog, where voices are managed -- it does not
+                  belong on a dropdown you open to pick one. */}
               <span className="voice-menu-actions">
-                {confirmingId === p.id ? (
-                  <>
-                    <button
-                      type="button"
-                      className="ghost-btn ghost-btn-danger"
-                      onClick={() => {
-                        onDelete(p.id)
-                        setConfirmingId(null)
-                      }}
-                    >
-                      Delete
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-btn"
-                      onClick={() => setConfirmingId(null)}
-                    >
-                      Keep
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={
-                        previewingId === p.id ? `Stop preview of ${p.name}` : `Preview ${p.name}`
-                      }
-                      onClick={() => togglePreview(p)}
-                    >
-                      {previewingId === p.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn icon-btn-danger"
-                      aria-label={`Delete ${p.name}`}
-                      onClick={() => setConfirmingId(p.id)}
-                    >
-                      <TrashIcon size={13} />
-                    </button>
-                  </>
-                )}
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={
+                    previewingId === p.id ? `Stop preview of ${p.name}` : `Preview ${p.name}`
+                  }
+                  onClick={() => togglePreview(p)}
+                >
+                  {previewingId === p.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
+                </button>
               </span>
             </li>
           ))}

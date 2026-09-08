@@ -65,20 +65,31 @@ function TransportTime({
   }, [audioRef])
 
   const total = decoded ?? fallbackDurationS ?? 0
-  const left = showRemaining
-    ? `-${formatClock(Math.max(0, total - position))}`
-    : formatClock(position)
+  const left = showRemaining ? formatClock(Math.max(0, total - position)) : formatClock(position)
 
   return (
     <button
       type="button"
       className="mono result-time"
-      aria-label={showRemaining ? 'Showing time remaining. Show time played' : 'Showing time played. Show time remaining'}
+      aria-label={
+        showRemaining
+          ? 'Showing time remaining. Show time played'
+          : 'Showing time played. Show time remaining'
+      }
       onClick={(e) => {
         e.stopPropagation()
         setShowRemaining((v) => !v)
       }}
     >
+      {/* The minus gets a permanently reserved 1ch slot rather than being
+          prepended to the string. It is the ONLY character that differs
+          between the two states -- the digits are tabular -- so reserving it
+          makes both states exactly the same width, at any duration. A
+          min-width guess cannot do that: 84px was already too narrow for
+          "-0:54 / 1:06", and any fixed number breaks again past ten minutes. */}
+      <span className="result-time-sign" aria-hidden="true">
+        {showRemaining ? '-' : ''}
+      </span>
       {left} / {formatClock(total)}
     </button>
   )

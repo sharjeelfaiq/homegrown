@@ -262,8 +262,9 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
   `backend/storage/references/`.
 - **Play** — the ▶ on a row plays that voice's *reference clip*, not a live generation. Available both in
   the dialog and on each row of the voice dropdown.
-- **Delete** — two-step (the row flips to Delete/Keep). Removes the voice and its reference audio
-  permanently. Deleting the selected voice clears the selection.
+- **Delete** — in the dialog only, and two-step (the row flips to Delete/Keep). Removes the voice and its
+  reference audio permanently. Deleting the selected voice clears the selection. The dropdown deliberately
+  has no delete: it is a menu you open to pick a voice, not to destroy one.
 
 ### Script
 

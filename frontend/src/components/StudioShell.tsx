@@ -380,7 +380,6 @@ export default function StudioShell() {
               presets={presets}
               selectedPresetId={voiceId}
               onSelect={setVoiceId}
-              onDelete={handleDeletePreset}
             />
 
             <GenerateButton
