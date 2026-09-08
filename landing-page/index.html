@@ -39,7 +39,13 @@
     --line: rgba(255, 255, 255, 0.09);
     --line-strong: rgba(255, 255, 255, 0.16);
     --text: #f5f6f8;
-    --muted: #b6bac6;     /* lifted from #a9adba: this carries all body prose */
+    /* Mirrors tokens.css --text-muted exactly. scripts/check_design_tokens.py
+       scans this file and matches hex literals ANYWHERE in it, comments
+       included -- so never name an off-palette colour here even in prose, or
+       build.sh dies at its pre-build gate. This was briefly lifted for a
+       little more contrast; 8.14:1 already clears AA, and the readability fix
+       was the 16px/1.65 type and the 62ch measure, not the extra points. */
+    --muted: #a9adba;     /* carries all body prose */
     --label: #8b90a4;     /* labels and hairline captions only, never a sentence */
     --accent: #4dd4e8;
     --accent-hot: #7ee4f3;
