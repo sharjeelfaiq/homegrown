@@ -1,4 +1,4 @@
-# Voice Clone Studio
+# Homegrown
 
 A local/LAN web dashboard for voice cloning, built around a vendored copy of `FasterQwen3TTS`
 (Qwen3-TTS-12Hz-0.6B with CUDA-graph acceleration). Upload a short reference clip, save it as a named voice,
@@ -84,7 +84,7 @@ Or double-click **`start_server.bat`** in the repo root, which runs that second 
 **Let other devices through the firewall** (once, as Administrator):
 
 ```powershell
-New-NetFirewallRule -DisplayName "Voice Clone Studio" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
+New-NetFirewallRule -DisplayName "Homegrown" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
 ```
 
 **If port 8000 is already taken** on your machine, pick another and tell clients the new port — nothing on
@@ -97,7 +97,7 @@ cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 0.0.0.0 --p
 **Auto-start at login** — use `start_server_silent.vbs` (same thing, no console window) with Task Scheduler:
 
 ```powershell
-schtasks /create /tn "VoiceCloneStudio" /tr "wscript.exe \"C:\path\to\repo\start_server_silent.vbs\"" /sc onlogon /rl highest /f
+schtasks /create /tn "Homegrown" /tr "wscript.exe \"C:\path\to\repo\start_server_silent.vbs\"" /sc onlogon /rl highest /f
 ```
 
 ### Local development (hot reload)
@@ -165,27 +165,27 @@ cd backend  && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe backend
 cd launcher && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe launcher.spec --clean --noconfirm && cd ..
 
 # 3. Stage the app in the layout launcher.py expects (<root>/backend/backend.exe).
-mkdir -p dist/VoiceCloneStudio
-cp launcher/dist/VoiceCloneStudio.exe dist/VoiceCloneStudio/
-cp -r backend/dist/backend dist/VoiceCloneStudio/backend
-mkdir -p dist/VoiceCloneStudio/storage/references dist/VoiceCloneStudio/storage/generated dist/VoiceCloneStudio/models
+mkdir -p dist/Homegrown
+cp launcher/dist/Homegrown.exe dist/Homegrown/
+cp -r backend/dist/backend dist/Homegrown/backend
+mkdir -p dist/Homegrown/storage/references dist/Homegrown/storage/generated dist/Homegrown/models
 
 # 4. Compress. -mx5, not -mx9: the payload is mostly incompressible CUDA DLLs,
 #    so maximum compression costs far more time for a couple of percent.
-cd dist && "/c/Program Files/7-Zip/7z.exe" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z VoiceCloneStudio
+cd dist && "/c/Program Files/7-Zip/7z.exe" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z Homegrown
 
 # 5. Prepend the SFX module -> one double-clickable .exe.
-cat "/c/Program Files/7-Zip/7z.sfx" app.7z > VoiceCloneStudio-1.0.0.exe
+cat "/c/Program Files/7-Zip/7z.sfx" app.7z > Homegrown-1.0.0.exe
 ```
 
 The result is a **self-extractor, not an installer**: the recipient runs it, picks a folder, then opens that
-folder and runs `VoiceCloneStudio.exe`. There is no Start Menu entry and no uninstaller — uninstalling means
+folder and runs `Homegrown.exe`. There is no Start Menu entry and no uninstaller — uninstalling means
 deleting the folder. Their machine needs **~8 GB free**: 1.66 GB download + 4.48 GB extracted (~6.1 GB peak
 with both present) plus the 2.5 GB model on first launch.
 
 The build artifact is **not** checked in — `dist/` is gitignored.
 
-**What the user sees on launch.** Double-clicking `VoiceCloneStudio.exe` opens a browser loader within a
+**What the user sees on launch.** Double-clicking `Homegrown.exe` opens a browser loader within a
 second or two, which shows the real startup phase — model download percentage on a first run, then library
 load, GPU check, model load — and redirects to the app once the backend is healthy. Double-clicking again
 while it is already running just reopens the tab; it never restarts a backend that might be mid-generation.
@@ -231,8 +231,9 @@ The reference clip and your script share a single 1024-position context window. 
 
 When too little is left, the app is forced into chunk sizes below the point where this model starts padding
 and dragging — which you hear as murmuring, long pauses, and dropped words. The backend logs a warning when
-a preset is in that state. The hard limit is 60s, but **longer is not better**: 15 seconds of clean speech
-clones better than 60 seconds of anything.
+a voice is in that state. The hard limit is 60s, but **longer is not better**: 10–20 seconds of clean
+speech clones better than 60 seconds of anything, and past ~23s output has been observed to garble
+regardless of the budget arithmetic.
 
 **2. Record dry and close-mic.** Voice cloning copies the *room*, not just the voice. A reverberant clip
 produces reverberant output — measurably so: a clip with a 0.618 reverb tail generated audio at 0.474. No
@@ -252,33 +253,50 @@ in a direct comparison it produced *less* silence and finished faster.
 
 ### Voices
 
-- **New preset** — name it, upload a `.wav`/`.mp3` reference clip (2–60s), optionally add a mood tag. Leave
-  the transcript blank to auto-transcribe. Saved to `backend/storage/presets.json`, clip to
+The **✚** button beside the voice dropdown opens the Voices dialog.
+
+- **Add a voice** — drop or pick a `.wav`/`.mp3` reference clip (2–60s accepted, **10–20s recommended**),
+  set a name and a language. The name pre-fills from the filename; the language is stamped onto the voice
+  and is what generation uses, so there is no language control on the compose path. The transcript is
+  always auto-transcribed with faster-whisper. Saved to `backend/storage/presets.json`, clip to
   `backend/storage/references/`.
-- **Preview** — the play button on a card plays the *reference clip itself*, not a live generation.
-- **Delete** — removes the preset and its reference audio permanently.
+- **Play** — the ▶ on a row plays that voice's *reference clip*, not a live generation. Available both in
+  the dialog and on each row of the voice dropdown.
+- **Delete** — two-step (the row flips to Delete/Keep). Removes the voice and its reference audio
+  permanently. Deleting the selected voice clears the selection.
 
-### Scripts
+### Script
 
-Each script block has its own voice dropdown, its own text (up to 60,000 characters), a live estimated-time
-readout, and reorder/remove buttons. "+ Add another script" adds more blocks; **Generate** submits every
-valid block to the queue at once.
+One script box, up to 60,000 characters, fixed height — drag the corner grip to resize it. The footer shows
+a word count and nothing else. Below it sits one action row: **✚**, the voice dropdown, and **Generate** at
+the right.
 
-Language is populated from what the loaded model actually reports supporting.
+Keyboard shortcuts still work but are no longer advertised on screen: **Ctrl+Enter** generates, **Space**
+plays the newest voiceover, **/** focuses the script, **Escape** dismisses an error.
 
-### Currently Generating
+### While it generates
 
-Only one job runs at a time — one worker thread, one GPU lock — so this section shows exactly one row for
-the job on the GPU, with a progress bar that advances smoothly between chunk completions rather than jumping.
+Only one job runs at a time — one worker thread, one GPU lock. The **Generate** button *becomes* the
+progress display: state, voice, time remaining, and a bar with hairline ticks at the chunk boundaries that
+advances smoothly between chunk completions rather than jumping. Anything queued behind it is shown as a
+`(+N queued)` count. **Cancel** stops a running job after the current chunk, within about a second.
 
-Anything waiting sits underneath as a compact line you can reorder (^/v) or cancel. A running job can be
-canceled too; it stops after the current chunk, within about a second. Failed and canceled jobs stay here
-with their error message until you dismiss them.
+The voice dropdown stays usable throughout, so you can line up the next voice while one job runs.
 
-### Generations
+There is no queue list and no reorder control in the UI, though `POST /api/queue/reorder` exists and works
+— see the API table below.
 
-Every finished job: inline playback, download (with a rename field so the file lands with a sensible name),
-delete, and **re-queue** (wand icon), which pulls that job's script and voice back into a fresh script block.
+### Voiceovers
+
+Every finished job, newest first, as a three-line row:
+
+1. Its name — **`Voiceover 1`** is the oldest, numbered by position — and, on the right, the voice that
+   spoke it. The name is click-to-edit: type, click away to save, Escape to revert, clear it to fall back
+   to `Voiceover N`. Whatever you call it is also the download filename. The field is sized to its text.
+2. Play and the waveform, which doubles as the seek bar. Actions sit at the right, dimmed until you hover
+   the row: download, re-queue (wand — pulls that script and voice back into the script box), and delete.
+3. A `0:12 / 1:06` clock — click the left half to count down the time remaining instead — and the first
+   words of the script.
 
 Persisted to `backend/storage/history.json`, so it survives a restart.
 
@@ -325,7 +343,7 @@ All routes are under `/api`, and every request is the same single local user.
 | POST | `/api/queue/{id}/cancel` | Cancel a queued or running job |
 | DELETE | `/api/queue/{id}` | Dismiss a finished or failed job |
 | POST | `/api/queue/reorder` | Reorder queued jobs |
-| GET | `/api/history` | Completed generations |
+| GET | `/api/history` | Completed voiceovers |
 | DELETE | `/api/history/{id}` | Delete an entry and its audio |
 | GET | `/api/download/{filename}?name=` | Download with a chosen filename |
 
@@ -366,7 +384,7 @@ Environment overrides:
 | `no kernel image is available for execution on the device` | The torch build has no kernels for your GPU. cu126 covers `sm_50`–`sm_90`; Blackwell needs cu128. |
 | `CUDA error: the launch timed out and was terminated` | Windows TDR killed a GPU batch running over ~2s on a display-attached card. Lower `DECODE_CHUNK_FRAMES`, and do not run two model processes at once. |
 | Yellow "Running on CPU" banner | No usable GPU was found; the reason is in the banner and in `/api/health`. |
-| Output murmurs, drags, or drops words | Almost always the reference clip — see "Making a voice preset that actually works". |
+| Output murmurs, drags, or drops words | Almost always the reference clip — see "Making a voice that actually works". |
 | Output has echo | Reverb in your reference clip. Re-record dry and close-mic. |
 | Port already in use | Another app owns it. Start with `--port 8010`. |
 | Jobs are slow | Normal on a small GPU. A shorter reference clip gives bigger chunks, fewer of them, and a much faster job. |
@@ -387,7 +405,7 @@ Environment overrides:
 - **Not reproducible.** Sampling is unseeded — see the note at the top.
 - **No test suite.** There is no pytest, no vitest, no test files. Verification is `npm run lint`,
   `npm run build` (which is also the typecheck), and running the app. Do not trust any claim that tests pass.
-- **No pagination or search** in the preset and history lists.
+- **No search** in the voice list; voiceovers are paginated 20 at a time.
 
 ---
 
@@ -397,7 +415,7 @@ Environment overrides:
 README.md      This file
 CLAUDE.md      Architecture and the hard-won gotchas (agent instructions)
 dev.sh         Local development: uvicorn :8000 + Vite :5173 together, one command
-build.sh       Source -> VoiceCloneStudio-<ver>.exe, one command
+build.sh       Source -> Homegrown-<ver>.exe, one command
 setup.sh       One-shot idempotent installer (venv, deps, model, backend/.env)
 start_server.bat / start_server_silent.vbs   LAN server launchers (host 0.0.0.0)
 vercel.json    Deploys landing-page/ only; main-branch deploys disabled

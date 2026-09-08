@@ -10,7 +10,7 @@ verify directly are marked **TODO: verify**.
 
 ## 1. Project Summary
 
-**Voice Clone Studio** is a local/LAN voice-cloning dashboard built around a vendored `FasterQwen3TTS`
+**Homegrown** is a local/LAN voice-cloning dashboard built around a vendored `FasterQwen3TTS`
 (Qwen3-TTS-12Hz-0.6B) model: users create named voice presets from a short reference clip, write scripts,
 and generate cloned-voice audio with style/stability controls, a processing queue, and generation history.
 Modeled after clonevoiceprompt.online's dashboard flow, but intentionally without real multi-user

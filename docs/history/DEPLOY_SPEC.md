@@ -4,7 +4,7 @@
 > rationale. For what was actually built, see `docs/DEPLOYMENT.md`; that path is dormant and unused by the
 > LAN and installer deployments described in `README.md`.
 
-I'm restructuring deployment for Voice Clone Studio:
+I'm restructuring deployment for Homegrown:
 - Frontend: deploy to Vercel (separate from the backend now)
 - Backend: stays on my existing RunPod Pod, but should be STOPPED by default 
   and only started when a user clicks "Generate" — auto-stop after idle time

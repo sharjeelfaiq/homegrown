@@ -1,6 +1,7 @@
-# Workflow — Voice Clone Studio
+# Workflow — Homegrown
 
-How this app is actually used day-to-day, end to end. For architecture/limitations, see `README.md`; for cloud GPU options, see `docs/gpu-notes.md`.
+How this app is actually used day-to-day, end to end. For architecture and limitations, see `README.md`;
+for cloud GPU options, see `docs/gpu-notes.md`.
 
 ## 1. Start the app
 
@@ -12,62 +13,95 @@ Or the same thing in two terminals by hand (see `README.md` "Running it" for exa
 - Frontend: `npm run dev` from `frontend/` (needs `frontend/.env.local` with
   `VITE_BACKEND_URL=http://127.0.0.1:8000` -- there is no dev proxy)
 
-Open `http://localhost:5173`. For the single-port LAN setup instead, see `README.md`. The header badge shows model load status — wait for "Model ready" before generating (the model + CUDA graphs take a few seconds to a minute to warm up on first request).
+Open `http://localhost:5173` — **`localhost`, not `127.0.0.1`**, unless `backend/.env`'s `ALLOWED_ORIGINS`
+lists both; they are different origins to CORS. For the single-port LAN setup instead, see `README.md`.
 
-## 2. Manage voices (Studio tab → Voices)
+There is no status badge to wait for. uvicorn runs the model load *before* it binds the socket, so until
+the model is ready the port simply refuses connections and every API call fails — that is expected, not a
+fault. `dev.sh` prints `model ready on <device>` when it is safe to generate. Until then the Generate
+button reads **"Waiting for the voice model"**.
 
-Every preset here is one you created — the gallery has a **Studio Voices** section for built-in
-presets, but the backend ships none, so in practice you only ever see **My Voices**.
+## 2. Add a voice
 
-To add a voice:
-1. "New preset" → name it, upload a reference clip (**10-20 seconds is the sweet spot**; 2-60s is accepted). Longer is not
-   better: the clip and your script share one context window, so a long clip crowds out the script and
-   the output starts murmuring and dropping words. Record dry and close-mic -- room reverb gets cloned
-   along with the voice. See README.md's preset section for the measurements.
-2. Leave the transcript field **blank** to auto-transcribe with faster-whisper, or type the exact words spoken in the clip yourself. This must match the audio precisely — a placeholder or wrong transcript is the single most common cause of bad voice-clone output.
-3. Optionally add a mood/style tag (e.g. "Cinematic") — shown on the card, purely descriptive.
-4. "Save preset."
+The **✚** button beside the voice dropdown opens the **Voices** dialog. You can also drop an audio file
+anywhere in the window — that opens the same dialog with the file already loaded.
 
-Click the play button on any card to **instantly preview the reference clip itself** (not a live generation — a real generation takes ~85s+ per chunk on this hardware, so previews play the stored sample instead).
+1. Drop or pick a reference clip. **10–20 seconds is the sweet spot**; 2–60s is accepted. Longer is not
+   better: the clip and your script share one 1024-position context window, so a long clip crowds out the
+   script and the output starts murmuring and dropping words. Past ~23s it has been observed to garble
+   regardless. Record dry and close-mic — room reverb gets cloned along with the voice. Measurements are in
+   `README.md`, "Making a voice that actually works".
+2. The **name** pre-fills from the filename, with separators turned into spaces. Edit it if you like.
+3. Pick a **language**. This is stamped onto the voice and is what generation uses — there is no language
+   control on the compose path, and re-queueing an old voiceover does not restore a per-job language.
+4. **Save voice.** The transcript is always produced automatically with faster-whisper; there is no
+   transcript field to fill in.
 
-Clicking a card body assigns that voice to the next script block that doesn't have one yet (a shortcut — the dropdown on each script block is the explicit way to assign voices).
+The dialog also lists your saved voices, each with **▶** to hear its reference clip and a two-step delete
+(the row flips to Delete/Keep). Deleting the voice you had selected clears the selection.
 
-## 3. Write and queue scripts (Studio tab → Scripts)
+Every row of the voice **dropdown** carries the same ▶ and delete controls, so you rarely need the dialog
+after the first time.
 
-Each **script block** is independent:
-- Its own voice dropdown
-- Its own text (up to 60,000 characters, with a live estimated-time readout that updates as you type)
-- Its own reorder (^/v) and remove buttons
+> ▶ plays the stored reference clip, never a live generation — a real generation takes ~85s+ per chunk on
+> this hardware.
 
-"+ Add another script" adds more blocks — write as many voiceovers as you want in one sitting, each with a different voice if needed. Language applies to the whole batch, not per-block. (Style and Stability still exist in the backend
-and default to natural/balanced, but the current UI does not send them.)
+## 3. Write a script and generate
 
-Click **Generate** — every valid block (non-empty text, a voice picked, under the char limit) gets submitted to the queue at once.
+One script box, up to 60,000 characters, fixed height — drag the corner grip to resize. The footer shows a
+**word count** and nothing else.
 
-## 4. Monitor the queue (Currently Generating)
+Underneath sits one action row: **✚**, the **voice dropdown**, and **Generate** at the right.
 
-Jobs process **one at a time** (this is a single-GPU setup — the model can't run two generations concurrently, so there's no point pretending otherwise). **Currently Generating** shows the one job actually on the GPU, as a single row with a progress bar; anything waiting sits under it as a compact line you can reorder (^/v) or cancel (trash icon). Statuses:
-- **Queued** — waiting, with an estimated wait time (accounts for the job currently running plus everything ahead of it in line)
-- **Processing** — chunk N/M complete, with a live "time remaining" estimate and a progress bar
-- **Failed** — error message shown directly (e.g. a GPU driver reset, or a chunk that failed every attempt)
-- **Canceled** — you canceled it before it started
+Style and Stability still exist in the backend and default to `natural`/`balanced`, but nothing in the UI
+sends them.
 
-Finished jobs do **not** stay here — they move to **Generations**, playable inline and downloadable. A running job can be canceled (it stops after the current chunk); a queued one can be canceled before it starts.
+Shortcuts work but are not shown on screen: **Ctrl+Enter** generates, **Space** plays the newest voiceover,
+**/** focuses the script, **Escape** dismisses an error.
 
-## 5. Review past generations
+## 4. Watch it run
 
-Every finished job lands in **Generations** below the queue: preset used, stability, estimated vs. actual
-generation time, inline playback, download, and a rename field for the downloaded file name.
+Jobs process **one at a time** — single GPU, one worker thread, one lock. The **Generate** button *becomes*
+the progress display: state, voice, time remaining, and a bar with hairline ticks at the chunk boundaries.
+Anything queued behind it shows as a `(+N queued)` count.
 
-**Re-queue with edits** (wand icon) pulls that job's script and voice back into a fresh Studio script block and switches you back to the Studio tab — the fastest way to tweak and regenerate something.
+**Cancel** stops a running job after the current chunk, within about a second.
+
+The voice dropdown stays usable while a job runs, so you can line up the next one.
+
+There is no queue list and no reorder control in the UI, although `POST /api/queue/reorder` exists and
+works. If the backend becomes unreachable, an error row with a **Retry** button appears above the script.
+
+## 5. Review past voiceovers
+
+Finished jobs land in **Voiceovers** in the right-hand column, newest first, 20 per page. Each is three
+lines:
+
+1. Its **name**, and on the right the **voice** that spoke it. `Voiceover 1` is the oldest — the number
+   comes from position, so deleting one renumbers the rest. The name is click-to-edit: type, click away to
+   save, **Escape** to revert, clear it to fall back to `Voiceover N`. Whatever you call it is also the
+   download filename, and the rename persists in `localStorage`. The field hugs its own text.
+2. **Play** and the waveform, which doubles as the seek bar (click or arrow-key). Actions sit at the
+   right, dimmed until you hover the row: **download**, **re-queue** (wand — pulls that script and voice
+   back into the script box), and **delete**.
+3. A **`0:12 / 1:06`** clock and the first words of the script. Click the left half to switch it to time
+   remaining (`-0:54`); the total on the right stays put.
+
+Hover the name to see when it was created. Persisted to `backend/storage/history.json`, so it survives a
+restart.
 
 ## What's happening underneath (brief)
 
 - **Long scripts are chunked**, not sent as one giant generation — each chunk gets a fresh KV cache, which
-  is what prevents audio degrading into noise on long text. Chunk size is computed per preset from what
-  its reference clip leaves in the context window, and chunks are size-balanced so there is no runt final
+  is what prevents audio degrading into noise on long text. Chunk size is computed per voice from what its
+  reference clip leaves in the context window, and chunks are size-balanced so there is no runt final
   chunk. A chunk whose audio comes out wildly longer or shorter than its text warrants is regenerated.
   See `README.md`'s "How generation works".
-- **Time estimates** come from a rolling average of chars/second across the last 20 completed jobs (seeded from `history.json` on restart, so estimates are sane immediately, not just after the first job of a session).
-- **The queue survives a backend restart** — `queue.json` persists queued/in-flight jobs and resumes them (from the start of that job, not mid-chunk) on the next startup.
-- **The waveform visual** on the Studio tab is decorative except when something is actually playing, at which point it reflects real audio amplitude via the Web Audio API.
+- **Time estimates** come from a rolling average of chars/second across the last 20 completed jobs (seeded
+  from `history.json` on restart, so estimates are sane immediately, not just after the first job of a
+  session). They are no longer displayed next to the script box; the estimate is still used for the queue's
+  time-remaining readout, and its `warning` field is what surfaces the long-reference-clip notice.
+- **The queue survives a backend restart** — `queue.json` persists queued/in-flight jobs and resumes them
+  (from the start of that job, not mid-chunk) on the next startup.
+- **The waveform** reflects real audio amplitude via the Web Audio API while something plays. Only one
+  element plays at a time; starting a second stops the first.

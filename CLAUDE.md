@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Voice Clone Studio: a local/LAN voice-cloning dashboard around a **vendored** `FasterQwen3TTS`
+Homegrown: a local/LAN voice-cloning dashboard around a **vendored** `FasterQwen3TTS`
 (Qwen3-TTS-12Hz-0.6B) wrapper. Users create named voice presets from a short reference clip, batch-submit
 scripts, and get generated `.mp3` back through a queue + history UI. No accounts, no billing — `auth.py`'s
 `get_current_user` is a stub that returns the constant `"local-user"` for every request, and every stored
@@ -66,8 +66,10 @@ routes. The other backend modules are small and single-purpose (`text_chunker`, 
 ### Generation pipeline — why it's chunked
 
 `max_seq_len=1024` bounds one CUDA-graphed generation call. Past that, audio doesn't just stop — quality
-collapses as rope positions extrapolate out of validated range. So long scripts are split, never streamed
-as one call:
+collapses. **The mechanism is unverified**: this used to say "rope positions extrapolate out of validated
+range", but the model config allows `max_position_embeddings: 65536` (32768 for the talker), so rope
+extrapolation cannot be it at a 1024 window. The *effect* is measured and reliable; the cause is not
+established. Either way, long scripts are split, never streamed as one call:
 
 ```
 text -> chunk_text(_seq_budget(preset)) -> per-chunk generate (fresh KV cache each) -> stitch_audio(200ms gap) -> write_mp3
@@ -138,11 +140,17 @@ Time estimates are a rolling `chars/second` average over the last 20 completed j
 
 ### Frontend
 
-React 19 + Vite + TS. Two routes only (`App.tsx`): `/` LandingPage, `/studio` StudioShell. No state library —
-`StudioShell.tsx` holds most state, plus two contexts:
+React 19 + Vite + TS. Two routes (`App.tsx`), both rendering `StudioShell`: `/` and `/studio`. There is no
+in-app landing page — the app opens straight into the tool, and `/studio` survives only as an alias for
+old bookmarks. (Marketing lives in `landing-page/index.html`, a standalone file deployed separately.)
+No state library — `StudioShell.tsx` holds most state, plus two contexts:
 - `GenerationActivityContext` — the **single** queue poller for the whole app (1s while active, 4s idle,
   paused in background tabs). Add queue reads there, not as new polls.
-- `AudioActivityContext` — playback amplitude for the decorative waveform/orb visuals.
+- `AudioActivityContext` — one-element-at-a-time playback plus the analyser that drives `WaveRibbon`.
+  **Every `<audio>` it adopts is routed through `audio/AudioEngine.ts`'s `createMediaElementSource`,
+  so each one needs `crossOrigin="anonymous"`** — a cross-origin source without CORS is tainted and
+  plays silent while the transport still advances. This bit twice; there are three such elements
+  (`VoiceoverPlayer`, `VoicePicker`, `NewVoiceModal`).
 
 All API calls go through `src/api.ts`, which prefixes every path with `VITE_BACKEND_URL` when it's set —
 an absolute URL, since `vite.config.ts` deliberately has no dev proxy, so dev mode needs it. Unset, the
@@ -191,7 +199,9 @@ rely on.
 - **`setup.sh` is the one-shot installer.** Idempotent, and it keeps pip's cache/temp plus the model on the
   repo's own drive — the defaults live on `C:` and this project pulls ~5GB.
 - **`CHUNK_MAX_CHARS=800` / `max_seq_len=1024` / `MAX_REF_AUDIO_SECS=60` are empirical, GPU-specific
-  numbers**, tuned on a 4GB GTX 960 (see `docs/gpu-notes.md`, `qwen/HOW_TO_RUN.md`). Raising them is plausible on
+  numbers**, tuned on a 4GB Maxwell card — `docs/gpu-notes.md` records a GTX 960, while the machine this
+  runs on now reports a **GTX 970 (sm_52)** via `/api/health`; both are 4GB `sm_52`, so the constants hold
+  either way (see `docs/gpu-notes.md`, `qwen/HOW_TO_RUN.md`). Raising them is plausible on
   bigger cards but untested; reference clips over ~23s previously produced garbled/looping output.
   `CHUNK_MAX_CHARS` is now only a ceiling — `_seq_budget()` lowers it per preset (see above). The failure
   it fixes: a 53.5s clip + an 876-char script asked for ~1729 positions against 1024, and the output came
@@ -210,15 +220,20 @@ rely on.
   splices the requesting user's own jobs so a shared FIFO can't be jumped.
 - **Doc hierarchy.** `README.md` (setup, features, troubleshooting) and this file are the maintained docs
   and stay at the repo root; all other prose lives under `docs/`. `docs/workflow.md` covers day-to-day
-  usage and is current; `docs/BUILD.md` is the build procedure; `docs/gpu-notes.md` holds the measurements
+  usage and was rewritten against the current UI; `docs/BUILD.md` is the build procedure;
+  `docs/gpu-notes.md` holds the measurements
   behind the empirical constants. `docs/history/HANDOFF.md` and `docs/history/DEPLOY_SPEC.md` carry
   explicit "historical" banners and `docs/DEPLOYMENT.md` documents the dormant Vercel+RunPod path -- treat
   those three as context, not current behaviour, and verify against source. Doc references in prose are
   written relative to the repo root.
 - **Two things the UI does not do, despite appearances.** `startGenerate()` sends only
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
-  `natural`/`balanced`), and no preset is ever `is_builtin`, so the voice gallery's "Studio Voices" section
-  never renders.
+  `natural`/`balanced`). And `is_builtin` is dead weight: the backend hardcodes it `False`
+  (`main.py`), no "Studio Voices" gallery section exists in the frontend any more, and
+  `NewVoiceModal` no longer filters on it -- the field survives only in `Preset` on both sides.
+- **`language` is a property of the voice, not of a script.** `handleGenerate` reads it from the
+  selected preset; the new-voice modal is the only place it is set. There is no language control on
+  the compose path, and `handleRequeue` deliberately does not restore a per-job language.
 - **The desktop build ships as a 7-Zip SFX, not an NSIS installer.** NSIS caps output at 2 GB; the frozen
   payload is 4.47 GB (torch is 3.84 GB of it). `makensis` does not error on this -- it spins for ~25 minutes
   at exactly 2 GB and emits nothing. `installer/setup.nsi` carries a banner saying so. Also redirect `TEMP`

@@ -1,9 +1,12 @@
-GPU / CLOUD RECOMMENDATION — Voice Clone Studio (Qwen3-TTS-12Hz-0.6B)
+GPU / CLOUD RECOMMENDATION — Homegrown (Qwen3-TTS-12Hz-0.6B)
 ======================================================================
 
 CURRENT SETUP (baseline for comparison)
 ----------------------------------------
 - GTX 960, 4GB VRAM, bfloat16, sdpa attention (no flash-attn installed)
+  NB: these measurements were taken on a GTX 960. The machine running
+  the app now reports a GTX 970 (sm_52) via /api/health. Both are 4GB
+  sm_52 Maxwell, so the constants below hold, but the numbers are 960 numbers.
 - Model itself is small: 0.6B params, ~1.2GB weights in bf16
 - But VRAM sits at ~3989-3991MB used out of 4096MB during generation --
   basically maxed out just from CUDA-graph static buffers + KV cache
@@ -90,7 +93,7 @@ this app isn't a 24/7 always-on service.
 
 WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
 ----------------------------------------
-- Raise max_seq_len in webapp/backend/main.py (currently 1024) --
+- Raise max_seq_len in backend/main.py (currently 1024) --
   8-12GB+ cards can go to 2048-4096 safely, 16GB+ to 4096-8192.
 - Raise CHUNK_MAX_CHARS accordingly (currently 800, tuned specifically
   for the 4GB/1024 config) -- fewer, larger chunks means fewer seams
@@ -99,10 +102,14 @@ WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
   slower "manual PyTorch version" fallback per its own startup warning).
   This alone is a meaningful speedup on any modern datacenter GPU
   (T4/L4/A10G/A100 all support it; RTX 4090 does too).
-- MAX_REF_AUDIO_SECS (currently 15s, in webapp/backend/main.py) can
-  likely be raised somewhat too, since the instability observed this
-  session was tied to the tight max_seq_len budget on the 4GB card --
-  worth re-validating empirically on the new GPU rather than assuming.
+- MAX_REF_AUDIO_SECS (currently 60.0, in backend/main.py) is no longer
+  the binding limit -- _seq_budget() derives the real per-preset budget
+  from what the reference clip leaves of max_seq_len, so raising the
+  guard alone just starves generation. Raise max_seq_len first. Note
+  also that the practical ceiling is quality, not capacity: clips over
+  ~23s have produced garbled output on this card regardless of budget,
+  and 10-20s remains the recommended range.
+  (This line previously read "currently 15s", which was wrong by 4x.)
 - If you want real concurrent multi-user throughput (not just bigger/
   faster single requests), the global _gen_lock serialization needs to
   become a small worker pool (one model instance per GPU, or multiple

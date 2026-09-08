@@ -1,4 +1,4 @@
-# Building a fresh `VoiceCloneStudio-1.0.0.exe`
+# Building a fresh `Homegrown-1.0.0.exe`
 
 Every step needed to turn the current source into a distributable executable, in
 the order they must run. Run everything in **Git Bash** from the repo root
@@ -132,13 +132,13 @@ only the launcher leaves a stale `backend.exe` with the old API and bind address
 ## 6. Stage the install layout
 
 ```bash
-rm -rf dist/VoiceCloneStudio
-mkdir -p dist/VoiceCloneStudio
-cp launcher/dist/VoiceCloneStudio.exe dist/VoiceCloneStudio/
-cp -r backend/dist/backend dist/VoiceCloneStudio/backend
-mkdir -p dist/VoiceCloneStudio/storage/references \
-         dist/VoiceCloneStudio/storage/generated \
-         dist/VoiceCloneStudio/models
+rm -rf dist/Homegrown
+mkdir -p dist/Homegrown
+cp launcher/dist/Homegrown.exe dist/Homegrown/
+cp -r backend/dist/backend dist/Homegrown/backend
+mkdir -p dist/Homegrown/storage/references \
+         dist/Homegrown/storage/generated \
+         dist/Homegrown/models
 ```
 
 `launcher.py` looks for `backend/backend.exe` beside itself; this is that layout.
@@ -151,8 +151,8 @@ mkdir -p dist/VoiceCloneStudio/storage/references \
 ## 7. Portability gate
 
 ```bash
-ls dist/VoiceCloneStudio/backend/.env 2>/dev/null && echo "^^ DELETE THIS" || echo "OK: no .env shipped"
-ls -A dist/VoiceCloneStudio/models    # must print nothing
+ls dist/Homegrown/backend/.env 2>/dev/null && echo "^^ DELETE THIS" || echo "OK: no .env shipped"
+ls -A dist/Homegrown/models    # must print nothing
 ```
 
 If `.env` is present, delete it. It carries an absolute
@@ -165,14 +165,14 @@ If `.env` is present, delete it. It carries an absolute
 Cheaper to catch a bad build here than after compressing 1.8 GB.
 
 ```bash
-./dist/VoiceCloneStudio/VoiceCloneStudio.exe
+./dist/Homegrown/Homegrown.exe
 ```
 
 Expect, in order:
 
 1. A browser **loader within ~2 seconds** — not a blank desktop.
-2. `dist/VoiceCloneStudio/storage/boot_status.json` appears during startup.
-3. `dist/VoiceCloneStudio/storage/backend.log` gets written.
+2. `dist/Homegrown/storage/boot_status.json` appears during startup.
+3. `dist/Homegrown/storage/backend.log` gets written.
 4. **No Windows firewall prompt** — the backend binds `127.0.0.1` only.
 5. The loader redirects to the app once the model has loaded.
 
@@ -192,9 +192,9 @@ Stop the app before continuing.
 
 ```bash
 cd dist
-rm -f app.7z VoiceCloneStudio-1.0.0.exe
-"/c/Program Files/7-Zip/7z.exe" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z VoiceCloneStudio
-cat "/c/Program Files/7-Zip/7z.sfx" app.7z > VoiceCloneStudio-1.0.0.exe
+rm -f app.7z Homegrown-1.0.0.exe
+"/c/Program Files/7-Zip/7z.exe" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z Homegrown
+cat "/c/Program Files/7-Zip/7z.sfx" app.7z > Homegrown-1.0.0.exe
 rm -f app.7z
 cd ..
 ```
@@ -202,15 +202,15 @@ cd ..
 `-mx5`, not `-mx9`: the payload is mostly incompressible CUDA DLLs, so maximum
 compression costs far more time for a couple of percent.
 
-**Output:** `dist/VoiceCloneStudio-1.0.0.exe` (~1.7 GB).
+**Output:** `dist/Homegrown-1.0.0.exe` (~1.7 GB).
 
 ---
 
 ## 10. Verify the artifact
 
 ```bash
-ls -lh dist/VoiceCloneStudio-1.0.0.exe
-sha256sum dist/VoiceCloneStudio-1.0.0.exe
+ls -lh dist/Homegrown-1.0.0.exe
+sha256sum dist/Homegrown-1.0.0.exe
 ```
 
 Record that checksum. If you publish this build on the landing page, update the
@@ -218,15 +218,15 @@ download link, the size text **and** the SHA-256 together — a stale checksum i
 worse than none.
 
 Final check: run the `.exe` on a machine that has never had this app, extract to
-a folder outside the repo, and run `VoiceCloneStudio.exe` from there.
+a folder outside the repo, and run `Homegrown.exe` from there.
 
 ---
 
 ## What the recipient experiences
 
 1. Runs the `.exe`; 7-Zip asks where to extract.
-2. `<chosen folder>/VoiceCloneStudio/` appears (~4.5 GB).
-3. Runs `VoiceCloneStudio.exe` inside it.
+2. `<chosen folder>/Homegrown/` appears (~4.5 GB).
+3. Runs `Homegrown.exe` inside it.
 4. **SmartScreen warns once** — "Windows protected your PC" → More info → Run
    anyway. The exe is unsigned; only an Authenticode certificate removes this.
 5. First launch downloads the ~2.5 GB model, with progress shown in the loader.
