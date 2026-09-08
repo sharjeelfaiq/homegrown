@@ -1,5 +1,5 @@
 """
-Voice Clone Studio launcher.
+Homegrown launcher.
 
 Double-clicked by the desktop/start-menu shortcut. Starts backend.exe hidden
 (no console window) and immediately opens the browser on a small loader page
@@ -33,7 +33,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-APP_NAME = "Voice Clone Studio"
+APP_NAME = "Homegrown"
 PORT = 8000
 BASE_URL = f"http://localhost:{PORT}"
 # Probed over 127.0.0.1, never "localhost". That name resolves to ::1 *first*
@@ -49,7 +49,7 @@ HEALTH_URL = f"http://127.0.0.1:{PORT}/api/health"
 # second double-click 20s into a cold start saw no health *and* no listener on
 # 8000, and cheerfully spawned a second backend.exe. Both then loaded torch,
 # one lost the bind and died silently into DEVNULL.
-MUTEX_NAME = "VoiceCloneStudio.Launcher.SingleInstance"
+MUTEX_NAME = "Homegrown.Launcher.SingleInstance"
 ERROR_ALREADY_EXISTS = 183
 
 # Where the running launcher advertises its loader URL, so a second launch
@@ -72,7 +72,7 @@ LOADER_HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voice Clone Studio</title>
+<title>Homegrown</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -145,7 +145,7 @@ LOADER_HTML = r"""<!doctype html>
 <body>
   <main class="card" id="card">
     <div class="mark"></div>
-    <h1 id="title">Starting Voice Clone Studio</h1>
+    <h1 id="title">Starting Homegrown</h1>
     <p class="detail" id="detail">This can take a minute the first time.</p>
     <div class="track indeterminate" id="track"><div class="fill" id="fill"></div></div>
     <p class="elapsed" id="elapsed"></p>
@@ -155,7 +155,7 @@ LOADER_HTML = r"""<!doctype html>
 <script>
   var APP_URL = "__BASE_URL__";
   var TITLES = {
-    starting: "Starting Voice Clone Studio",
+    starting: "Starting Homegrown",
     downloading: "Downloading the voice model",
     importing: "Loading libraries",
     probing_gpu: "Checking your graphics card",
@@ -204,13 +204,13 @@ LOADER_HTML = r"""<!doctype html>
     }
     if (s.phase === "error") {
       card.classList.add("is-error");
-      title.textContent = "Voice Clone Studio could not start";
+      title.textContent = "Homegrown could not start";
       detail.textContent = "";
       errorText.textContent = s.detail || "The backend stopped unexpectedly.";
       return;
     }
     card.classList.remove("is-error");
-    title.textContent = TITLES[s.phase] || "Starting Voice Clone Studio";
+    title.textContent = TITLES[s.phase] || "Starting Homegrown";
     detail.textContent = s.detail || DEFAULT_DETAIL[s.phase] || "";
     if (typeof s.percent === "number") {
       track.classList.remove("indeterminate");
@@ -267,7 +267,7 @@ def resolve_storage_dir(backend_exe: Path) -> Path:
     """Mirror how backend/run.py resolves the storage dir, .env override included.
 
     run.py defaults to <install>/storage but lets backend/.env override it via
-    VOICECLONE_STORAGE_DIR. Assuming the default here would leave the launcher
+    HOMEGROWN_STORAGE_DIR. Assuming the default here would leave the launcher
     polling a boot_status.json nobody writes, on any install that sets one.
     """
     default = backend_exe.parent.parent / "storage"
@@ -280,7 +280,7 @@ def resolve_storage_dir(backend_exe: Path) -> Path:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, _, value = line.partition("=")
-            if key.strip() == "VOICECLONE_STORAGE_DIR":
+            if key.strip() in ("HOMEGROWN_STORAGE_DIR", "VOICECLONE_STORAGE_DIR"):
                 value = value.strip().strip('"').strip("'")
                 if value:
                     return Path(value)
@@ -401,7 +401,7 @@ def main() -> None:
     if backend_exe is None:
         show_error(
             "Could not find backend.exe.\n\nThe installation may be incomplete. "
-            "Please reinstall Voice Clone Studio."
+            "Please reinstall Homegrown."
         )
         sys.exit(1)
 
@@ -536,7 +536,7 @@ def wait_for_backend(state: BootState, storage_dir: Path, log_path: Path, proc):
                 _terminate(proc)
                 return False, (
                     f"{message}\n\n"
-                    "Voice Clone Studio requires an NVIDIA GPU with CUDA drivers.\n"
+                    "Homegrown requires an NVIDIA GPU with CUDA drivers.\n"
                     "Download drivers at: https://www.nvidia.com/drivers"
                 )
             return True, None
@@ -570,7 +570,7 @@ def wait_for_backend(state: BootState, storage_dir: Path, log_path: Path, proc):
         if now > hard_deadline:
             _terminate(proc)
             return False, (
-                "Voice Clone Studio took too long to start.\n\n"
+                "Homegrown took too long to start.\n\n"
                 f"Details were written to:\n{log_path}"
             )
 

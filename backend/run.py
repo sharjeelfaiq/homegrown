@@ -1,5 +1,5 @@
 """
-PyInstaller entrypoint for the Voice Clone Studio backend.
+PyInstaller entrypoint for the Homegrown backend.
 
 In dev, nobody runs this -- `python -m uvicorn main:app` (or the Vite dev
 flow) is used instead. This file only matters once frozen into backend.exe:
@@ -28,7 +28,10 @@ APPROX_MODEL_BYTES = 2_500_000_000
 
 
 def _storage_dir() -> Path:
-    return Path(os.environ["VOICECLONE_STORAGE_DIR"])
+    # VOICECLONE_STORAGE_DIR is the pre-rebrand key, still read so an
+    # existing install keeps its storage after an in-place upgrade.
+    return Path(os.environ.get("HOMEGROWN_STORAGE_DIR")
+                or os.environ["VOICECLONE_STORAGE_DIR"])
 
 
 def _configure_frozen_env() -> None:
@@ -38,7 +41,7 @@ def _configure_frozen_env() -> None:
     # Defaults matching the installer's layout -- overridable by backend/.env
     # (written by the NSIS installer, or hand-edited by an advanced user).
     os.environ.setdefault("MODEL_PATH", str(install_dir / "models"))
-    os.environ.setdefault("VOICECLONE_STORAGE_DIR", str(install_dir / "storage"))
+    os.environ.setdefault("HOMEGROWN_STORAGE_DIR", str(install_dir / "storage"))
 
     env_path = exe_dir / ".env"
     if env_path.exists():
@@ -135,7 +138,7 @@ def _download_model_if_needed() -> None:
         boot_status.write(_storage_dir(), boot_status.PHASE_ERROR, detail=message)
         import ctypes
         ctypes.windll.user32.MessageBoxW(
-            0, message, "Voice Clone Studio -- Download Failed", 0x10,  # MB_ICONERROR
+            0, message, "Homegrown -- Download Failed", 0x10,  # MB_ICONERROR
         )
         sys.exit(1)
     finally:

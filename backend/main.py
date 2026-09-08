@@ -64,7 +64,7 @@ def _transcribe_audio(path: str) -> str:
         return " ".join(seg.text.strip() for seg in segments).strip()
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("voice_clone_studio")
+logger = logging.getLogger("homegrown")
 
 # Overridable via MODEL_PATH in backend/.env -- the default below only holds
 # on the original dev machine's local model cache. Any other host (including
@@ -78,9 +78,13 @@ if getattr(sys, "frozen", False):
     # Frozen: __file__ points inside the PyInstaller bundle, not a writable
     # location -- use the folder next to the installed exe instead (backend.exe
     # lives in <install>/backend/, so storage/ is its sibling at <install>/storage).
-    # Overridable via VOICECLONE_STORAGE_DIR (set in the installer's .env).
+    # Overridable via HOMEGROWN_STORAGE_DIR (set in the installer's .env).
     STORAGE_DIR = Path(
-        os.environ.get("VOICECLONE_STORAGE_DIR", str(Path(sys.executable).parent.parent / "storage"))
+        os.environ.get("HOMEGROWN_STORAGE_DIR")
+        # Pre-rebrand installs have the old key in their .env; honour it so an
+        # in-place upgrade does not lose its storage directory.
+        or os.environ.get("VOICECLONE_STORAGE_DIR")
+        or str(Path(sys.executable).parent.parent / "storage")
     )
 else:
     STORAGE_DIR = Path(__file__).parent / "storage"
@@ -927,7 +931,7 @@ async def lifespan(app: FastAPI):
         # the launcher checks for a specific, actionable error message.
         logger.exception("Model failed to load")
         STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-        message = "Voice Clone Studio could not load the TTS model." + os.linesep * 2 + str(e)
+        message = "Homegrown could not load the TTS model." + os.linesep * 2 + str(e)
         (STORAGE_DIR / "cuda_error.flag").write_text(message, encoding="utf-8")
         boot_status.write(STORAGE_DIR, boot_status.PHASE_ERROR, detail=message)
         yield
@@ -963,11 +967,11 @@ app.mount("/refs", StaticFiles(directory=str(REF_DIR)), name="refs")
 
 def _safe_filename(name: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_")
-    return cleaned or "voice_clone"
+    return cleaned or "homegrown"
 
 
 @app.get("/api/download/{filename}")
-def download_audio(filename: str, name: str = "voice_clone"):
+def download_audio(filename: str, name: str = "homegrown"):
     """Serve a generated clip as a renamed .mp3 download. New generations are
     written as .mp3 directly (see write_mp3 in _process_job) and are served
     as-is here. History entries from before that change still point at an

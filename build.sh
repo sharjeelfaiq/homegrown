@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Source -> VoiceCloneStudio-1.0.0.exe, in one command.
+# Source -> Homegrown-1.0.0.exe, in one command.
 #
 #   bash build.sh
 #
@@ -19,8 +19,8 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$PWD"
 
 VERSION="${VERSION:-1.0.0}"
-STAGE_DIR="dist/VoiceCloneStudio"
-OUTPUT="dist/VoiceCloneStudio-${VERSION}.exe"
+STAGE_DIR="dist/Homegrown"
+OUTPUT="dist/Homegrown-${VERSION}.exe"
 ENV_LOCAL="frontend/.env.local"
 ENV_STASH=".tmp/env.local.stash"
 SEVENZIP="/c/Program Files/7-Zip/7z.exe"
@@ -108,14 +108,14 @@ step "Building the frontend"
 step "Freezing backend.exe (this is the long one, ~15-20 min)"
 ( cd backend && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "../$PY" -m PyInstaller backend.spec --clean --noconfirm )
 
-step "Freezing VoiceCloneStudio.exe (launcher)"
+step "Freezing Homegrown.exe (launcher)"
 ( cd launcher && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "../$PY" -m PyInstaller launcher.spec --clean --noconfirm )
 
 # ---- 7. stage --------------------------------------------------------------
 step "Staging the install layout"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
-cp launcher/dist/VoiceCloneStudio.exe "$STAGE_DIR/"
+cp launcher/dist/Homegrown.exe "$STAGE_DIR/"
 cp -r backend/dist/backend "$STAGE_DIR/backend"
 mkdir -p "$STAGE_DIR/storage/references" "$STAGE_DIR/storage/generated" "$STAGE_DIR/models"
 echo "  staged at $STAGE_DIR"
@@ -133,7 +133,7 @@ fi
 if [ -n "$(ls -A "$STAGE_DIR/models" 2>/dev/null)" ]; then
   die "$STAGE_DIR/models is not empty. It must ship empty -- the app downloads the model on first run."
 fi
-[ -f "$STAGE_DIR/VoiceCloneStudio.exe" ] || die "launcher exe missing from the staged tree."
+[ -f "$STAGE_DIR/Homegrown.exe" ] || die "launcher exe missing from the staged tree."
 [ -f "$STAGE_DIR/backend/backend.exe" ]  || die "backend.exe missing from the staged tree."
 echo "  no .env shipped, models/ empty, both executables present."
 
@@ -142,9 +142,9 @@ echo "  no .env shipped, models/ empty, both executables present."
 # compression costs far more time for a couple of percent.
 step "Packing the self-extractor (~10 min)"
 ( cd dist \
-  && rm -f app.7z "VoiceCloneStudio-${VERSION}.exe" \
-  && "$SEVENZIP" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z VoiceCloneStudio >/dev/null \
-  && cat "$SFX" app.7z > "VoiceCloneStudio-${VERSION}.exe" \
+  && rm -f app.7z "Homegrown-${VERSION}.exe" \
+  && "$SEVENZIP" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z Homegrown >/dev/null \
+  && cat "$SFX" app.7z > "Homegrown-${VERSION}.exe" \
   && rm -f app.7z )
 [ -f "$OUTPUT" ] || die "packing produced no $OUTPUT"
 
@@ -160,7 +160,7 @@ cat <<'NEXT'
 
   Not verified by this script -- it needs a human:
 
-    ./dist/VoiceCloneStudio/VoiceCloneStudio.exe
+    ./dist/Homegrown/Homegrown.exe
 
   Expect a browser loader within ~2s, storage/boot_status.json and
   storage/backend.log appearing, NO Windows firewall prompt, and a redirect to
