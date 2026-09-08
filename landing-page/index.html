@@ -270,16 +270,20 @@
 
   .more-toggle { position: absolute; opacity: 0; pointer-events: none; }
 
+  /* Centred and sized to fit, not a scrolling document. overflow-y stays as a
+     safety valve only -- clipping the SHA-256 on a very short window would be
+     worse than a scrollbar -- but at ordinary heights nothing scrolls. */
   .sheet {
     position: fixed;
     inset: 0;
     z-index: 20;
     display: none;
+    place-items: center;
     padding: var(--gutter);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  .more-toggle:checked ~ .sheet { display: block; }
+  .more-toggle:checked ~ .sheet { display: grid; }
 
   .sheet-scrim {
     position: fixed;
@@ -290,9 +294,13 @@
 
   .sheet-body {
     position: relative;
-    max-width: 54rem;
-    margin: 0 auto;
-    padding: clamp(1.5rem, 4vw, 2.5rem);
+    width: 100%;
+    max-width: 58rem;
+    /* margin: auto, not `0 auto`: a centred grid item that overflows its
+       container gets its top clipped and becomes unreachable by scrolling.
+       Auto margins on the item avoid that entirely. */
+    margin: auto;
+    padding: clamp(1.25rem, 3vw, 2rem);
     background: var(--raised);
     border: 1px solid var(--line-strong);
     border-radius: 12px;
@@ -302,8 +310,8 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding-bottom: 1.25rem;
-    margin-bottom: 1.75rem;
+    padding-bottom: 0.9rem;
+    margin-bottom: 1.25rem;
     border-bottom: 1px solid var(--line);
   }
   .sheet-kicker {
@@ -327,8 +335,8 @@
 
   .sheet-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
-    gap: clamp(1.75rem, 4vw, 2.75rem);
+    grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr));
+    gap: clamp(1.1rem, 2.4vw, 1.9rem) clamp(1.5rem, 3.5vw, 2.5rem);
   }
   .sheet h3 {
     margin: 0 0 0.75rem;
@@ -465,14 +473,18 @@
       <label class="sheet-close" for="more" tabindex="0" role="button" aria-label="Close">&#10005;</label>
     </div>
 
+    <!-- Six sections, not nine. Nine made the panel scroll, which is the same
+         failure the page itself had: too many facts, not facts too large.
+         Requirements+setup merged, troubleshooting folded into the questions,
+         and the download-size explainer reduced to one line where it matters. -->
     <div class="sheet-grid">
       <section>
-        <h3>What you need</h3>
+        <h3>Requirements</h3>
         <ul>
           <li>Windows 10 or 11, <b>64-bit</b></li>
           <li>An <b>NVIDIA graphics card</b> — works without one, far slower</li>
           <li><b>8 GB</b> free disk space</li>
-          <li>Internet <b>on first launch only</b>, to fetch the 2.5 GB voice model</li>
+          <li>Internet <b>on first launch only</b></li>
         </ul>
       </section>
 
@@ -483,7 +495,7 @@
           <li>Open that folder, run <b>Homegrown.exe</b></li>
           <li>Add a voice, paste a script, <b>Generate</b></li>
         </ul>
-        <p class="tiny">Speaks 10 languages. Offline after the first launch.</p>
+        <p class="tiny">First launch fetches the 2.5 GB voice model, once.</p>
       </section>
 
       <section>
@@ -492,53 +504,27 @@
           <li><b>10–20 seconds</b> of clean speech — longer is not better</li>
           <li>Close to the mic, in a <b>quiet, soft room</b> — echo gets copied</li>
         </ul>
+        <p class="tiny">Your sample is transcribed automatically.</p>
       </section>
 
       <section>
         <h3>Verify your download</h3>
-        <p>The file is unsigned, so check it is the one that was published:</p>
         <code><span class="lbl">SHA-256</span>E3A7C34A7C83DA0014BE13DBB0A1D4BC0375C1F03D0DE7120F8CFF86EA8AA4BC</code>
         <p class="tiny">1,784,659,392 bytes. In PowerShell:</p>
-        <code>Get-FileHash .\&lt;downloaded file&gt;.exe -Algorithm SHA256</code>
-      </section>
-
-      <section>
-        <h3>Why is it 1.78 GB?</h3>
-        <ul>
-          <li>NVIDIA CUDA and PyTorch libraries — <b>3.8 GB of the 4.5 GB</b> unpacked</li>
-          <li>A bundled Python runtime, so you install nothing</li>
-          <li>The speech model wrapper and a local web interface</li>
-        </ul>
-        <p class="tiny">The voice model itself is a separate 2.5 GB download on first launch.</p>
+        <code>Get-FileHash .\&lt;file&gt;.exe -Algorithm SHA256</code>
       </section>
 
       <section>
         <h3>Questions</h3>
         <dl>
-          <dt>Does it need internet?</dt>
-          <dd>Once, to fetch the voice model. Fully offline after that.</dd>
           <dt>Is my audio uploaded anywhere?</dt>
           <dd>No. Cloning and generation happen entirely on your machine.</dd>
-          <dt>Do I need a graphics card?</dt>
-          <dd>No, but without one expect many minutes per paragraph instead of seconds.</dd>
           <dt>How fast is it?</dt>
-          <dd>On a modest 4 GB GPU, roughly four minutes of work per minute of speech.</dd>
-          <dt>How do I uninstall it?</dt>
-          <dd>Delete the folder. Nothing is written elsewhere.</dd>
-        </dl>
-      </section>
-
-      <section>
-        <h3>If something goes wrong</h3>
-        <dl>
-          <dt>“Windows protected your PC”</dt>
+          <dd>On a modest 4 GB GPU, about four minutes of work per minute of speech.</dd>
+          <dt>“Windows protected your PC”?</dt>
           <dd>Expected — the app is unsigned. More info → Run anyway.</dd>
-          <dt>“Port 8000 is already in use”</dt>
-          <dd>Another program has it. Close that program, then reopen the app.</dd>
-          <dt>A “running on CPU” banner</dt>
-          <dd>No usable GPU was found. It still works, just slowly.</dd>
-          <dt>Output mumbles or skips words</dt>
-          <dd>Almost always the reference clip. Use 10–20 seconds, recorded dry and close to the mic.</dd>
+          <dt>Output mumbles or skips words?</dt>
+          <dd>Almost always the reference clip. Use 10–20 seconds, dry and close-mic.</dd>
         </dl>
       </section>
 
@@ -546,24 +532,14 @@
         <h3>Specifications</h3>
         <ul>
           <li>Output: <b>MP3, 24 kHz</b> mono</li>
-          <li>Reference clip: 2–60 seconds (<b>10–20 s is best</b>)</li>
-          <li>Script limit: <b>60,000 characters</b> per job</li>
-          <li>Transcription of your sample is automatic</li>
-          <li>One job at a time — long scripts are split and stitched</li>
+          <li>Reference clip: 2–60 s (<b>10–20 s is best</b>)</li>
+          <li>Script limit: <b>60,000 characters</b></li>
+          <li>Speaks <b>10 languages</b>; long scripts are split and stitched</li>
+          <li>Runs only on your own machine — nothing is exposed to your network</li>
         </ul>
+        <p class="tiny">1.78 GB download, 4.5 GB unpacked; CUDA and PyTorch are 3.8 GB of it. Uninstall by deleting the folder.</p>
       </section>
 
-      <section>
-        <h3>One machine, one app</h3>
-        <p>
-          The download runs locally and listens only on your own computer — nothing
-          is exposed to your network, and no firewall prompt appears.
-        </p>
-        <p class="tiny">
-          Sharing it with other devices on your network is possible, but it is a
-          separate server mode for people running from source, not this installer.
-        </p>
-      </section>
     </div>
   </div>
 </div>
