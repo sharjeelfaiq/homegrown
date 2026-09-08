@@ -16,16 +16,12 @@
 
 <!-- ═══════════════════════════════════════════════════════════════════
      DOWNLOAD ARTIFACT. The href below points at a Google Drive share.
-     Size and SHA-256 in the details panel describe THAT FILE, which was
-     built 2026-09-06, before the product was renamed to Homegrown -- so
-     it still calls itself "Voice Clone Studio" once it runs.
 
-     After rebuilding (`bash build.sh`), update all four together:
-       1. the href
-       2. the size text in .cta-meta
-       3. the SHA-256 and byte count in the "Verify" section
-       4. the filename in the Get-FileHash example
-     A stale checksum is worse than none.
+     The page deliberately quotes NO size and NO checksum any more. Both used
+     to describe the 2026-09-06 build and went stale the moment the artifact
+     was rebuilt, and a stale checksum is worse than none. If you re-add them,
+     re-add them together with the href, and treat them as part of the build
+     -- not as copy.
      ═══════════════════════════════════════════════════════════════════ -->
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -270,9 +266,12 @@
 
   .more-toggle { position: absolute; opacity: 0; pointer-events: none; }
 
-  /* Centred and sized to fit, not a scrolling document. overflow-y stays as a
-     safety valve only -- clipping the SHA-256 on a very short window would be
-     worse than a scrollbar -- but at ordinary heights nothing scrolls. */
+  /* Centred and sized to fit, not a scrolling document. Every measurement
+     below is against the real thing: `bash scripts/measure_landing.sh` reports
+     the sheet's overflow at seven viewport sizes and must read 0 down to
+     1024x600. overflow-y stays as a safety valve only -- clipping content on a
+     freak window is worse than a scrollbar -- but no ordinary height scrolls.
+     Adding a section here is what breaks it; the cost is height, not width. */
   .sheet {
     position: fixed;
     inset: 0;
@@ -295,12 +294,12 @@
   .sheet-body {
     position: relative;
     width: 100%;
-    max-width: 58rem;
+    max-width: 60rem;
     /* margin: auto, not `0 auto`: a centred grid item that overflows its
        container gets its top clipped and becomes unreachable by scrolling.
        Auto margins on the item avoid that entirely. */
     margin: auto;
-    padding: clamp(1.25rem, 3vw, 2rem);
+    padding: clamp(1rem, 2.4vh, 1.75rem) clamp(1.25rem, 3vw, 2rem);
     background: var(--raised);
     border: 1px solid var(--line-strong);
     border-radius: 12px;
@@ -310,8 +309,8 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding-bottom: 0.9rem;
-    margin-bottom: 1.25rem;
+    padding-bottom: clamp(0.6rem, 1.4vh, 0.9rem);
+    margin-bottom: clamp(0.75rem, 1.8vh, 1.25rem);
     border-bottom: 1px solid var(--line);
   }
   .sheet-kicker {
@@ -334,25 +333,34 @@
   .sheet-close:hover { color: var(--text); border-color: var(--line-strong); }
 
   .sheet-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr));
-    gap: clamp(1.1rem, 2.4vw, 1.9rem) clamp(1.5rem, 3.5vw, 2.5rem);
+    columns: 3 13rem;
+    column-gap: clamp(1.25rem, 3vw, 2.25rem);
   }
+  .sheet-grid > section {
+    /* A section split across a column break reads as two half-topics. */
+    break-inside: avoid;
+    margin-bottom: clamp(0.9rem, 2.2vh, 1.6rem);
+  }
+  .sheet-grid > section:last-child { margin-bottom: 0; }
   .sheet h3 {
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.5rem;
     font-size: 0.9375rem;
     font-weight: 600;
     color: var(--text);
   }
-  .sheet p { margin: 0 0 0.75rem; font-size: 0.875rem; }
-  .sheet ul { margin: 0; padding-left: 1.1rem; font-size: 0.875rem; }
-  .sheet li { margin-bottom: 0.4rem; }
+  /* Body copy in the sheet is sized against viewport height, not width: the
+     panel's failure mode is vertical. */
+  .sheet p, .sheet ul, .sheet dl { font-size: clamp(0.8125rem, 1.5vh, 0.875rem); }
+  .sheet p { margin: 0 0 0.5rem; }
+  .sheet ul { margin: 0; padding-left: 1.1rem; }
+  .sheet li { margin-bottom: 0.3rem; }
   .sheet b { color: var(--text); font-weight: 500; }
-  .sheet dl { margin: 0; font-size: 0.875rem; }
-  .sheet dt { color: var(--text); font-weight: 500; margin-top: 0.75rem; }
+  .sheet dl { margin: 0; }
+  .sheet dt { color: var(--text); font-weight: 500; margin-top: 0.55rem; }
   .sheet dt:first-child { margin-top: 0; }
   .sheet dd { margin: 0.15rem 0 0; }
   .tiny { font-size: 0.8125rem; color: var(--label); }
+  .sheet .tiny { margin-bottom: 0; }
 
   code {
     display: block;
@@ -381,6 +389,33 @@
     .field { opacity: 0.35; }
     .brandline .ver { margin-left: 0; flex-basis: 100%; }
     .more-trigger { margin-left: 0; }
+    /* A phone is the one place the sheet cannot hold five sections in one
+       column and still fit, so it goes two-up rather than scrolling. Below
+       this the grid's 13rem minimum would collapse it back to one. */
+    .sheet { padding: 0.75rem; }
+    .sheet-body { padding: 0.9rem 1rem; }
+    .sheet-grid { columns: 2 9rem; column-gap: 1rem; }
+    .sheet-grid > section { margin-bottom: 0.85rem; }
+    .sheet h3 { font-size: 0.8125rem; margin-bottom: 0.35rem; }
+    .sheet p, .sheet ul, .sheet dl, .tiny { font-size: 0.75rem; }
+    .sheet ul { padding-left: 0.95rem; }
+    .sheet li { margin-bottom: 0.2rem; }
+  }
+
+  /* Wide but short -- a 600px-tall browser window, a projector, a laptop with
+     every toolbar open. Three columns over two rows needs ~510px and does not
+     fit; five columns over one row needs the height of the tallest section
+     alone. The type steps down with it. */
+  @media (min-width: 900px) and (max-height: 620px) {
+    .sheet-body { max-width: 76rem; padding: 0.85rem 1rem; }
+    .sheet-head { padding-bottom: 0.5rem; margin-bottom: 0.6rem; }
+    .sheet-grid { columns: 4 11rem; column-gap: 1.1rem; }
+    .sheet-grid > section { margin-bottom: 0.7rem; }
+    .sheet p, .sheet ul, .sheet dl, .tiny { font-size: 0.75rem; }
+    .sheet ul { padding-left: 0.95rem; }
+    .sheet li { margin-bottom: 0.15rem; }
+    .sheet h3 { margin-bottom: 0.3rem; }
+    .sheet dt { margin-top: 0.4rem; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -429,7 +464,7 @@
 
     <div class="cta r r4">
       <a class="download"
-         href="https://drive.google.com/file/d/1-cM8kHOr7VeuUZnvLTOBCcWrZ8sE5pR2/view?usp=sharing"
+         href="https://drive.google.com/file/d/1I8wlkQ5WZGz91tuwhwoEinit6ptU7duk/view?usp=sharing"
          target="_blank" rel="noopener">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M8 1v9m0 0L4.5 6.5M8 10l3.5-3.5M2 12.5V14h12v-1.5"
@@ -438,7 +473,7 @@
         Download for Windows
       </a>
       <div class="cta-meta">
-        <b>1.78 GB</b> · no admin rights needed<br />
+        <b>No admin rights</b> needed<br />
         Windows 10 / 11 · 64-bit
       </div>
     </div>
@@ -508,23 +543,12 @@
       </section>
 
       <section>
-        <h3>Verify your download</h3>
-        <code><span class="lbl">SHA-256</span>E3A7C34A7C83DA0014BE13DBB0A1D4BC0375C1F03D0DE7120F8CFF86EA8AA4BC</code>
-        <p class="tiny">1,784,659,392 bytes. In PowerShell:</p>
-        <code>Get-FileHash .\&lt;file&gt;.exe -Algorithm SHA256</code>
-      </section>
-
-      <section>
         <h3>Questions</h3>
         <dl>
           <dt>Is my audio uploaded anywhere?</dt>
           <dd>No. Cloning and generation happen entirely on your machine.</dd>
           <dt>How fast is it?</dt>
           <dd>On a modest 4 GB GPU, about four minutes of work per minute of speech.</dd>
-          <dt>“Windows protected your PC”?</dt>
-          <dd>Expected — the app is unsigned. More info → Run anyway.</dd>
-          <dt>Output mumbles or skips words?</dt>
-          <dd>Almost always the reference clip. Use 10–20 seconds, dry and close-mic.</dd>
         </dl>
       </section>
 
@@ -535,9 +559,8 @@
           <li>Reference clip: 2–60 s (<b>10–20 s is best</b>)</li>
           <li>Script limit: <b>60,000 characters</b></li>
           <li>Speaks <b>10 languages</b>; long scripts are split and stitched</li>
-          <li>Runs only on your own machine — nothing is exposed to your network</li>
         </ul>
-        <p class="tiny">1.78 GB download, 4.5 GB unpacked; CUDA and PyTorch are 3.8 GB of it. Uninstall by deleting the folder.</p>
+        <p class="tiny">Uninstall by deleting the folder.</p>
       </section>
 
     </div>
