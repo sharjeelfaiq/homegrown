@@ -57,15 +57,20 @@
 
   *, *::before, *::after { box-sizing: border-box; }
 
-  /* Scrolls, deliberately. The previous version pinned the page to one
-     viewport with overflow: hidden, which is what forced every fact on the
-     product into a single screen and made it feel packed. Room to breathe is
-     the whole fix. */
+  /* One viewport, no page scroll. The earlier attempt at this crammed every
+     fact about the product onto the screen and read as packed; the fix is
+     fewer facts, not smaller ones -- the spec lists moved into the details
+     panel, which is opt-in and may scroll all it likes.
+     No `overflow: hidden` on purpose: on a very short window clipping the
+     download button would be far worse than a scrollbar appearing. Sizes are
+     clamped against vh so ordinary laptops never see one. */
   html { scroll-behavior: smooth; }
 
   body {
     margin: 0;
-    min-height: 100%;
+    min-height: 100svh;
+    display: grid;
+    place-items: center;
     background: var(--ink);
     color: var(--muted);
     font-family: var(--display);
@@ -141,9 +146,10 @@
   .shell {
     position: relative;
     z-index: 2;
-    max-width: 60rem;
+    width: 100%;
+    max-width: 46rem;
     margin: 0 auto;
-    padding: clamp(1.75rem, 5vh, 3.5rem) var(--gutter) clamp(3rem, 10vh, 6rem);
+    padding: clamp(1.5rem, 4vh, 2.5rem) var(--gutter);
   }
 
   .brandline {
@@ -166,12 +172,12 @@
 
   /* ── hero: one statement, one action, nothing else ─────────────────────── */
 
-  .hero { padding: clamp(3.5rem, 13vh, 8rem) 0 clamp(2.5rem, 8vh, 5rem); }
+  .hero { padding: clamp(1.5rem, 5vh, 3rem) 0 0; }
 
   h1 {
     margin: 0;
-    max-width: 24ch;
-    font-size: clamp(2.4rem, 7.2vw, 4.4rem);
+    max-width: 22ch;
+    font-size: clamp(2rem, min(6.4vw, 6.2vh), 3.6rem);
     font-weight: 600;
     line-height: 1.04;
     letter-spacing: -0.028em;
@@ -181,9 +187,9 @@
   h1 em { font-style: normal; color: var(--accent); }
 
   .sub {
-    margin: clamp(1.25rem, 3vh, 2rem) 0 0;
+    margin: clamp(0.9rem, 2.4vh, 1.5rem) 0 0;
     max-width: var(--measure);
-    font-size: clamp(1.0625rem, 1.9vw, 1.25rem);
+    font-size: clamp(1rem, 1.8vw, 1.1875rem);
     line-height: 1.6;
   }
 
@@ -194,7 +200,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 1rem 1.5rem;
-    margin-top: clamp(2rem, 5vh, 3rem);
+    margin-top: clamp(1.25rem, 3.4vh, 2rem);
   }
 
   .download {
@@ -222,76 +228,29 @@
   .cta-meta b { color: var(--muted); font-weight: 500; }
 
   .assur {
-    margin: clamp(1.5rem, 4vh, 2.25rem) 0 0;
+    margin: clamp(1rem, 2.8vh, 1.5rem) 0 0;
     max-width: var(--measure);
     font-size: 0.9375rem;
   }
   .assur strong { color: var(--text); font-weight: 500; }
 
   .note {
-    margin: 1rem 0 0;
+    margin: clamp(0.6rem, 1.6vh, 0.9rem) 0 0;
     max-width: var(--measure);
     font-size: 0.875rem;
     color: var(--label);
   }
   .note b { color: var(--muted); font-weight: 500; }
 
-  /* ── facts: a spec plate, not three marketing cards ───────────────────── */
-
-  .plate {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-    gap: clamp(2rem, 5vw, 3.5rem);
-    padding-top: clamp(2.5rem, 7vh, 4.5rem);
-    border-top: 1px solid var(--line);
-  }
-
-  .plate h2 {
-    margin: 0 0 1.1rem;
-    font-family: var(--mono);
-    font-size: 0.6875rem;
-    font-weight: 500;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--label);
-  }
-
-  .plate ul { margin: 0; padding: 0; list-style: none; }
-  .plate li {
-    display: flex;
-    gap: 0.7rem;
-    padding: 0.4rem 0;
-    font-size: 0.9375rem;
-    line-height: 1.55;
-  }
-  .plate li b { color: var(--text); font-weight: 500; }
-  .plate .k {
-    flex: none;
-    font-family: var(--mono);
-    font-size: 0.75rem;
-    color: var(--accent);
-    padding-top: 0.18rem;
-  }
-
   /* ── closing line + disclosure ────────────────────────────────────────── */
 
-  .tail {
-    margin-top: clamp(2.5rem, 7vh, 4.5rem);
-    padding-top: clamp(1.5rem, 4vh, 2.25rem);
-    border-top: 1px solid var(--line);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 1rem 2rem;
-  }
-  .tail p { margin: 0; max-width: 46ch; font-size: 0.875rem; }
-  .tail b { color: var(--muted); font-weight: 500; }
+
+  .disclose { margin: clamp(1rem, 2.8vh, 1.6rem) 0 0; }
 
   .more-trigger {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
-    margin-left: auto;
     padding: 0.6rem 1rem;
     font-family: var(--mono);
     font-size: 0.75rem;
@@ -482,55 +441,20 @@
     </p>
 
     <p class="note r r6">
-      Windows will warn you the app is unsigned — click <b>More info</b>, then <b>Run anyway</b>.
-      That warning appears for every app without a paid certificate.
+      Windows warns that the app is unsigned — click <b>More info</b>, then <b>Run anyway</b>.
       Only clone voices you have permission to use.
     </p>
   </section>
 
-  <div class="plate">
-    <div>
-      <h2>What you need</h2>
-      <ul>
-        <li><span class="k">01</span><span>Windows 10 or 11, <b>64-bit</b></span></li>
-        <li><span class="k">02</span><span>An <b>NVIDIA graphics card</b> — works without one, far slower</span></li>
-        <li><span class="k">03</span><span><b>8 GB</b> free disk space</span></li>
-        <li><span class="k">04</span><span>Internet <b>on first launch only</b></span></li>
-      </ul>
-    </div>
-
-    <div>
-      <h2>How it works</h2>
-      <ul>
-        <li><span class="k">01</span><span>Run the file, pick a folder to unpack into</span></li>
-        <li><span class="k">02</span><span>Open that folder, run <b>Homegrown.exe</b></span></li>
-        <li><span class="k">03</span><span>Add a voice, paste a script, <b>Generate</b></span></li>
-      </ul>
-    </div>
-
-    <div>
-      <h2>For the best voice</h2>
-      <ul>
-        <li><span class="k">→</span><span><b>10–20 seconds</b> of clean speech — longer is not better</span></li>
-        <li><span class="k">→</span><span>Close to the mic, in a <b>quiet, soft room</b> — echo gets copied</span></li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="tail">
-    <p>
-      First launch downloads the <b>2.5 GB</b> voice model — once. Everything after
-      that works offline. Speaks <b>10 languages</b>.
-    </p>
-
+  <p class="disclose r r6">
     <label class="more-trigger" for="more" tabindex="0" role="button">
-      Verify, FAQ &amp; specs
+      What you need, setup, FAQ &amp; specs
       <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path d="M2.5 6h7m0 0L6.5 3m3 3L6.5 9" stroke="currentColor" stroke-width="1.4"
               stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </label>
-  </div>
+  </p>
 </main>
 
 <div class="sheet" role="dialog" aria-modal="true" aria-label="Details">
@@ -542,6 +466,34 @@
     </div>
 
     <div class="sheet-grid">
+      <section>
+        <h3>What you need</h3>
+        <ul>
+          <li>Windows 10 or 11, <b>64-bit</b></li>
+          <li>An <b>NVIDIA graphics card</b> — works without one, far slower</li>
+          <li><b>8 GB</b> free disk space</li>
+          <li>Internet <b>on first launch only</b>, to fetch the 2.5 GB voice model</li>
+        </ul>
+      </section>
+
+      <section>
+        <h3>Setting it up</h3>
+        <ul>
+          <li>Run the file, pick a folder to unpack into</li>
+          <li>Open that folder, run <b>Homegrown.exe</b></li>
+          <li>Add a voice, paste a script, <b>Generate</b></li>
+        </ul>
+        <p class="tiny">Speaks 10 languages. Offline after the first launch.</p>
+      </section>
+
+      <section>
+        <h3>For the best voice</h3>
+        <ul>
+          <li><b>10–20 seconds</b> of clean speech — longer is not better</li>
+          <li>Close to the mic, in a <b>quiet, soft room</b> — echo gets copied</li>
+        </ul>
+      </section>
+
       <section>
         <h3>Verify your download</h3>
         <p>The file is unsigned, so check it is the one that was published:</p>
