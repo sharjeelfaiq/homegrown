@@ -76,107 +76,112 @@ LOADER_HTML = r"""<!doctype html>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  html { background: #0d0e13; }
+  html { background: #14151a; }
   body {
-    margin: 0; min-height: 100svh; display: grid; place-items: center;
+    margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 32px;
     font-family: Inter, system-ui, "Segoe UI", Roboto, sans-serif;
-    color: #f5f6f8;
-    background: var(--bg, #14151a);
+    color: #f5f6f8; background: #14151a;
   }
-  .card {
-    width: min(440px, calc(100vw - 48px));
-    padding: 40px 36px;
-    border: 1px solid rgba(255, 255, 255, 0.13); border-radius: 12px;
-    background: #1d1f28;
-    text-align: center;
-  }
-  .mark {
-    width: 56px; height: 56px; margin: 0 auto 22px;
-    border-radius: 50%;
-    border: 3px solid rgba(255, 180, 58, 0.25);
-    border-top-color: #ffb43a;
-    animation: spin 900ms linear infinite;
-  }
-  .card.is-error .mark {
-    animation: none; border-color: rgba(255, 97, 105, 0.5); border-top-color: #ff6169;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  h1 {
-    margin: 0 0 10px; font-size: 0.72rem; font-weight: 600;
-    letter-spacing: 0.18em; text-transform: uppercase; color: #a9adba;
-  }
-  .detail { margin: 0; font-size: 0.875rem; color: #a9adba; line-height: 1.5; min-height: 1.3em; }
+  /* Progress sits on the top edge of the viewport rather than inside a card:
+     nothing else on the page competes with it, and it stays put while the
+     text under it changes phase. */
   .track {
-    margin: 24px 0 10px; height: 6px; border-radius: 3px;
-    background: rgba(255, 255, 255, 0.09); overflow: hidden;
+    position: fixed; inset: 0 0 auto; height: 3px;
+    background: rgba(255, 255, 255, 0.1); overflow: hidden;
   }
   .fill {
-    height: 100%; border-radius: 3px;
-    background: #ffb43a;
-    width: 30%; transition: width 400ms ease;
+    height: 100%; width: 2%; background: #ffb43a;
+    transition: width 400ms cubic-bezier(0.2, 0, 0, 1);
   }
-  .track.indeterminate .fill { width: 35%; animation: slide 1.4s ease-in-out infinite; }
-  @keyframes slide {
-    0% { transform: translateX(-110%); } 100% { transform: translateX(320%); }
+  .track.indeterminate .fill { width: 28%; animation: sweep 1.6s ease-in-out infinite; }
+  @keyframes sweep {
+    0% { transform: translateX(-110%); } 100% { transform: translateX(400%); }
   }
-  .elapsed {
-    font-size: 0.7rem; color: #8b90a4; margin: 0;
+  body.is-error .track { display: none; }
+  main { text-align: center; width: min(34rem, 100%); }
+  .eyebrow {
+    margin: 0; font-size: 0.68rem; font-weight: 600;
+    letter-spacing: 0.22em; text-transform: uppercase; color: #ffb43a;
+  }
+  .hero {
+    margin: 0.35em 0 0; color: #ffb43a; font-weight: 700; line-height: 1;
+    font-size: clamp(4rem, 14vw, 9rem); letter-spacing: -0.03em;
+    /* 9% -> 10% must not shift the layout under the number. */
+    font-variant-numeric: tabular-nums;
+  }
+  /* A phase word occupies the same slot as "38%". At the percentage size it
+     would wrap to three lines on a narrow window, so words get their own step. */
+  .hero.is-word { font-size: clamp(2rem, 7vw, 3.5rem); letter-spacing: -0.02em; }
+  /* The failure headline steps down: on this screen the message underneath it
+     is the useful part, and a 9rem headline buried it. */
+  body.is-error .hero { color: #ff6169; font-size: clamp(1.5rem, 4vw, 2.25rem); }
+  .tagline {
+    margin: 1.25rem auto 0; max-width: 25rem;
+    font-size: 1rem; line-height: 1.55; color: #a9adba;
+  }
+  .metric {
+    margin: 0.85rem 0 0; min-height: 1.2em; font-size: 0.75rem; color: #8b90a4;
     font-family: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
     font-variant-numeric: tabular-nums;
   }
+  body.is-error .tagline, body.is-error .metric { display: none; }
   .error-text {
-    display: none; margin: 18px 0 0; padding: 14px; text-align: left;
+    display: none; margin: 22px 0 0; padding: 14px; text-align: left;
     font-size: 0.8125rem; line-height: 1.5; color: #ffc9cc; white-space: pre-wrap;
     background: rgba(255, 97, 105, 0.14); border: 1px solid rgba(255, 97, 105, 0.4);
-    border-radius: 8px; max-height: 220px; overflow: auto;
-    font-family: inherit;
+    border-radius: 8px; max-height: 220px; overflow: auto; font-family: inherit;
   }
-  .card.is-error .error-text { display: block; }
-  .card.is-error .track, .card.is-error .elapsed { display: none; }
+  body.is-error .error-text { display: block; }
   button {
     display: none; margin: 18px auto 0; padding: 10px 22px;
-    font: inherit; font-size: 0.875rem; font-weight: 500; color: #fff;
-    background: #f5f6f8; color: #0d0e13; border: none; border-radius: 5px; cursor: pointer;
+    font: inherit; font-size: 0.875rem; font-weight: 500;
+    background: #f5f6f8; color: #14151a; border: none; border-radius: 5px; cursor: pointer;
   }
   button:hover { background: #ffffff; }
-  .card.is-error button { display: block; }
+  body.is-error button { display: block; }
+  @media (prefers-reduced-motion: reduce) {
+    .fill { transition: none; }
+    .track.indeterminate .fill { animation: none; width: 15%; }
+  }
 </style>
 </head>
 <body>
-  <main class="card" id="card">
-    <div class="mark"></div>
-    <h1 id="title">Starting Homegrown</h1>
-    <p class="detail" id="detail">This can take a minute the first time.</p>
-    <div class="track indeterminate" id="track"><div class="fill" id="fill"></div></div>
-    <p class="elapsed" id="elapsed"></p>
+  <div class="track indeterminate" id="track"><div class="fill" id="fill"></div></div>
+  <main role="status" aria-live="polite">
+    <p class="eyebrow">Homegrown</p>
+    <p class="hero is-word" id="hero">Waking up</p>
+    <p class="tagline" id="tagline">Homegrown is starting.</p>
+    <p class="metric" id="metric"></p>
     <pre class="error-text" id="errorText"></pre>
     <button id="retry" type="button">Try again</button>
   </main>
 <script>
   var APP_URL = "__BASE_URL__";
-  var TITLES = {
-    starting: "Starting Homegrown",
-    downloading: "Downloading the voice model",
-    importing: "Loading libraries",
-    probing_gpu: "Checking your graphics card",
-    loading_model: "Loading the voice model",
+  /* Two separate slots, deliberately. The backend's `detail` used to replace
+     this copy, so the entire download screen read "0.0 GB of 2.5 GB" and the
+     one reassuring sentence vanished exactly when it was needed. Prose is
+     ours; `detail` goes in the mono line underneath. */
+  var WORDS = {
+    starting: "Waking up",
+    downloading: "Setting up",
+    importing: "Warming up",
+    probing_gpu: "Tuning",
+    loading_model: "Almost there",
     ready: "Ready"
   };
-  var DEFAULT_DETAIL = {
-    starting: "This can take a minute the first time.",
-    downloading: "About 2.5 GB, once only. Later launches skip this.",
-    importing: "Reading a few gigabytes of libraries from disk.",
-    probing_gpu: "Making sure this machine can run the model.",
-    loading_model: "Almost there.",
-    ready: "Opening the app."
+  var TAGLINE = {
+    starting: "Homegrown is starting.",
+    downloading: "Setting up your voice. One time only — every launch after this is instant.",
+    importing: "Loading the engine. Nearly there.",
+    probing_gpu: "Matching the model to your graphics card.",
+    loading_model: "Your voice model is loading. Seconds away.",
+    ready: "Opening Homegrown."
   };
-  var started = Date.now();
-  var card = document.getElementById("card");
-  var title = document.getElementById("title");
-  var detail = document.getElementById("detail");
+  var hero = document.getElementById("hero");
+  var tagline = document.getElementById("tagline");
+  var metric = document.getElementById("metric");
   var track = document.getElementById("track");
   var fill = document.getElementById("fill");
-  var elapsed = document.getElementById("elapsed");
   var errorText = document.getElementById("errorText");
   var retry = document.getElementById("retry");
   var redirected = false;
@@ -184,17 +189,15 @@ LOADER_HTML = r"""<!doctype html>
   retry.addEventListener("click", function () {
     retry.disabled = true;
     fetch("/restart", { method: "POST" }).then(function () {
-      card.classList.remove("is-error");
+      document.body.classList.remove("is-error");
       retry.disabled = false;
-      started = Date.now();
     });
   });
 
-  setInterval(function () {
-    if (redirected || card.classList.contains("is-error")) return;
-    var s = Math.round((Date.now() - started) / 1000);
-    elapsed.textContent = s < 1 ? "" : s + "s elapsed";
-  }, 500);
+  function word(phase) {
+    hero.className = "hero is-word";
+    hero.textContent = WORDS[phase] || WORDS.starting;
+  }
 
   function render(s) {
     if (s.phase === "ready") {
@@ -203,22 +206,32 @@ LOADER_HTML = r"""<!doctype html>
       return;
     }
     if (s.phase === "error") {
-      card.classList.add("is-error");
-      title.textContent = "Homegrown could not start";
-      detail.textContent = "";
+      document.body.classList.add("is-error");
+      hero.className = "hero is-word";
+      hero.textContent = "Homegrown could not start";
+      tagline.textContent = "";
+      metric.textContent = "";
       errorText.textContent = s.detail || "The backend stopped unexpectedly.";
       return;
     }
-    card.classList.remove("is-error");
-    title.textContent = TITLES[s.phase] || "Starting Homegrown";
-    detail.textContent = s.detail || DEFAULT_DETAIL[s.phase] || "";
-    if (typeof s.percent === "number") {
-      track.classList.remove("indeterminate");
-      fill.style.width = Math.max(2, Math.min(100, s.percent)) + "%";
-    } else {
+    document.body.classList.remove("is-error");
+    var pct = typeof s.percent === "number" ? Math.max(0, Math.min(100, s.percent)) : null;
+    /* Under 1% is the "contacting Hugging Face" moment: a hero reading "0%"
+       over "0.0 GB of 2.5 GB" is the most discouraging frame in the whole
+       sequence, so it stays a word and an indeterminate bar until real
+       progress exists. */
+    if (pct === null || pct < 1) {
+      word(s.phase);
       track.classList.add("indeterminate");
-      fill.style.width = "35%";
+      fill.style.width = "";
+    } else {
+      hero.className = "hero";
+      hero.textContent = pct + "%";
+      track.classList.remove("indeterminate");
+      fill.style.width = Math.max(2, pct) + "%";
     }
+    tagline.textContent = TAGLINE[s.phase] || TAGLINE.starting;
+    metric.textContent = s.detail || "";
   }
 
   function poll() {
