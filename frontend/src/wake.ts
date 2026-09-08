@@ -69,7 +69,7 @@ export function wakeBackend(
         reject(new Error(
           USING_RUNPOD_WAKE
             ? 'Timed out waiting for the backend to start. Check the RunPod dashboard.'
-            : 'Timed out waiting for the backend to start. Is Voice Clone Studio running?',
+            : 'Timed out waiting for the backend to start. Is Homegrown running?',
         ))
         return
       }

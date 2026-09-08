@@ -132,19 +132,21 @@ export function listPresets(): Promise<{ presets: Preset[] }> {
   return authFetch(apiUrl('/api/presets')).then(parseOrThrow<{ presets: Preset[] }>)
 }
 
+/** `tag` is not sent: the backend accepts it, nothing in the UI ever set it to
+ * anything but '', and nothing reads it back. `ref_text` stays because the
+ * backend's manual-transcript path is real -- blank means "auto-transcribe with
+ * faster-whisper", which is what the UI relies on. */
 export function createPreset(
   name: string,
   audio: File,
   refText: string,
   language: string,
-  tag: string = '',
 ): Promise<Preset> {
   const form = new FormData()
   form.append('audio', audio)
   form.append('name', name)
   form.append('ref_text', refText)
   form.append('language', language)
-  form.append('tag', tag)
   return authFetch(apiUrl('/api/presets'), { method: 'POST', body: form }).then(parseOrThrow<Preset>)
 }
 

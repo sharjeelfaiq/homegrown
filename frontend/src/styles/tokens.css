@@ -1,4 +1,4 @@
-/* Voice Clone Studio design tokens — the single source of truth.
+/* Homegrown design tokens — the single source of truth.
    Every colour in the app resolves here; nothing below the token layer should
    hardcode a hex value.
 
@@ -46,7 +46,7 @@
      --text-faint (#71768a) measured 4.05 / 3.64 / 3.30:1 and failed on all
      three, which is what made the whole app read as washed out -- it colours
      nearly all secondary text (empty states, counters, timestamps, voiceover
-     readouts, field labels, the shortcut legend). Re-measure before changing.
+     lengths, voice names, field labels). Re-measure before changing.
        current: 16.86 / 8.14 / 5.75:1 on base. */
   --text-primary: #f5f6f8;
   --text-muted: #a9adba;
@@ -91,7 +91,12 @@
 
   /* ---- Layout ---------------------------------------------------------- */
   --shell: 1180px; /* max width of the two-column workspace */
-  --aside: 400px; /* the voiceovers column */
+  /* The voiceovers column. 400px was the binding constraint on the whole
+     layout: a voiceover row could not fit its transport, script preview, voice
+     and length on one line, so the row had to grow to three. The composer next
+     to it is a FIXED-height textarea that gains nothing from extra width, so
+     the space belongs here -- this is the column the user re-reads. */
+  --aside: 520px;
   --gutter: 24px;
 
   /* ---- Motion. One curve, three durations. Honour reduced-motion. ------ */

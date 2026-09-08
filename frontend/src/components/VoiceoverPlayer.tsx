@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { useAudioActivity } from '../AudioActivityContext'
 import { getPeaks, proceduralPeaks } from '../audio/waveformPeaks'
-import { formatDuration } from '../format'
 import { PauseIcon, PlayIcon } from './Icons'
 import WaveRibbon from './WaveRibbon'
 
@@ -11,18 +10,24 @@ interface Props {
   /** Stable key (entry/job id) seeding the placeholder waveform. */
   entryKey: string
   label: string
+  /** Owned by the row, not by this component, so a sibling readout can watch
+   * the same element. WaveRibbon already took a ref this way. */
+  audioRef: RefObject<HTMLAudioElement | null>
 }
 
-/** Custom transport for a generated voiceover: play/pause, 2.5D waveform ribbon
- * (doubles as the seek slider), and a mono data readout. The hidden <audio>
- * reports into AudioActivityContext exactly like the old native controls,
- * so the orb and live meter keep reacting. */
-export default function VoiceoverPlayer({ src, durationS, entryKey, label }: Props) {
-  const audioRef = useRef<HTMLAudioElement>(null)
+/** Custom transport for a generated voiceover: play/pause plus the 2.5D
+ * waveform ribbon, which doubles as the seek slider. The hidden <audio> reports
+ * into AudioActivityContext exactly like the old native controls, so the orb
+ * and live meter keep reacting.
+ *
+ * Deliberately carries no text readout: TransportTime renders the position and
+ * total on the row's third line, off the same audio element. The sample rate
+ * used to sit here and is gone -- it told the user nothing they could act on
+ * (it is always the model's 24kHz). */
+export default function VoiceoverPlayer({ src, durationS, entryKey, label, audioRef }: Props) {
   const { setActiveAudio, releaseAudio } = useAudioActivity()
   const [playing, setPlaying] = useState(false)
   const [peaks, setPeaks] = useState<Float32Array>(() => proceduralPeaks(entryKey))
-  const [sampleRate, setSampleRate] = useState<number | null>(null)
   const [decodedDuration, setDecodedDuration] = useState<number | null>(null)
 
   useEffect(() => {
@@ -30,7 +35,6 @@ export default function VoiceoverPlayer({ src, durationS, entryKey, label }: Pro
     getPeaks(src).then((result) => {
       if (cancelled || !result) return
       setPeaks(result.peaks)
-      setSampleRate(result.sampleRate)
       setDecodedDuration(result.duration)
     })
     return () => {
@@ -58,7 +62,7 @@ export default function VoiceoverPlayer({ src, durationS, entryKey, label }: Pro
         aria-label={playing ? `Pause ${label}` : `Play ${label}`}
         onClick={toggle}
       >
-        {playing ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
+        {playing ? <PauseIcon size={16} /> : <PlayIcon size={16} />}
       </button>
       <WaveRibbon
         peaks={peaks}
@@ -67,10 +71,6 @@ export default function VoiceoverPlayer({ src, durationS, entryKey, label }: Pro
         durationS={duration}
         label={label}
       />
-      <span className="mono voiceover-readout">
-        {duration != null ? formatDuration(duration) : '--:--'}
-        {sampleRate != null && ` · ${(sampleRate / 1000).toFixed(1)} kHz`}
-      </span>
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio
         crossOrigin="anonymous"

@@ -1,6 +1,5 @@
-import { useEffect, useState, type RefObject } from 'react'
+import { useEffect, type RefObject } from 'react'
 import { getEstimate, type Estimate } from '../api'
-import { formatDuration } from '../format'
 import { MAX_SCRIPT_CHARS } from '../constants'
 
 interface Props {
@@ -11,29 +10,24 @@ interface Props {
   /** Chunking depends on the voice, so the estimate has to be re-fetched when
    * it changes -- not only when the text does. */
   presetId: string | null
-  /** No job has finished yet this session, so timings are unreliable. */
-  firstRun?: boolean
   onEstimate?: (estimate: Estimate | null) => void
 }
-
-/** Show the character counter only as the limit gets close. "0/60000" at rest
- * is noise, and 60,000 is an alarming number out of context. */
-const COUNTER_VISIBLE_FROM = MAX_SCRIPT_CHARS * 0.8
 
 export default function ScriptBlock({
   text,
   onTextChange,
   textareaRef,
   presetId,
-  firstRun,
   onEstimate,
 }: Props) {
   const overLimit = text.length > MAX_SCRIPT_CHARS
-  const [estimate, setEstimate] = useState<Estimate | null>(null)
 
+  // The estimate is fetched but no longer displayed here. It is not dead code:
+  // onEstimate feeds StudioShell, which renders the result's `warning` as the
+  // long-reference-clip notice and uses `estimated_s` nowhere else. Deleting
+  // this request would silently remove that warning.
   useEffect(() => {
     if (text.trim().length === 0 || overLimit) {
-      setEstimate(null)
       onEstimate?.(null)
       return
     }
@@ -42,12 +36,10 @@ export default function ScriptBlock({
       getEstimate(text, presetId)
         .then((r) => {
           if (cancelled) return
-          setEstimate(r)
           onEstimate?.(r)
         })
         .catch(() => {
           if (cancelled) return
-          setEstimate(null)
           onEstimate?.(null)
         })
     }, 400)
@@ -60,7 +52,8 @@ export default function ScriptBlock({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, overLimit, presetId])
 
-  const showCounter = text.length >= COUNTER_VISIBLE_FROM || overLimit
+  const trimmed = text.trim()
+  const words = trimmed ? trimmed.split(/\s+/).length : 0
 
   return (
     <div className="block">
@@ -75,37 +68,15 @@ export default function ScriptBlock({
         onChange={(e) => onTextChange(e.target.value)}
       />
 
+      {/* Word count only. The chunk count, character counter and time estimate
+          all still exist -- the estimate request below is unchanged, because
+          StudioShell renders its `warning` field as the long-reference-clip
+          notice -- they simply are not shown here any more. */}
       <div className="block-foot">
         <span className="mono block-meta">
-          {estimate?.chunks != null && estimate.chunks > 0 && (
-            <span
-              title={
-                estimate.chunk_chars != null
-                  ? `Split into ${estimate.chunks} chunk${estimate.chunks === 1 ? '' : 's'} of up to ${estimate.chunk_chars} characters — a size set by this voice's reference clip, not a fixed limit.`
-                  : undefined
-              }
-            >
-              {estimate.chunks} chunk{estimate.chunks === 1 ? '' : 's'}
-            </span>
-          )}
-          {showCounter && (
-            <span className={overLimit ? 'over' : undefined}>
-              {text.length.toLocaleString()}/{MAX_SCRIPT_CHARS.toLocaleString()}
-            </span>
-          )}
-          {overLimit && <span className="over">too long</span>}
-          {!overLimit && estimate != null && (
-            <span
-              title={
-                firstRun
-                  ? 'The first render after starting the app also builds CUDA graphs, so it runs slower than this estimate.'
-                  : 'Estimated from how long your previous renders took.'
-              }
-            >
-              ≈{formatDuration(estimate.estimated_s)}
-              {firstRun && <span className="est-caveat"> · first run is slower</span>}
-            </span>
-          )}
+          <span className={overLimit ? 'over' : undefined}>
+            {words.toLocaleString()} word{words === 1 ? '' : 's'}
+          </span>
         </span>
       </div>
     </div>

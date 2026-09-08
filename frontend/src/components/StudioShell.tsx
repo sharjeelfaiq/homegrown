@@ -6,6 +6,8 @@ import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
 import GenerateButton from './GenerateButton'
 import { MAX_SCRIPT_CHARS } from '../constants'
+import { presetNameFromFile } from '../format'
+import { PlusIcon } from './Icons'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useHotkeys } from '../hooks/useHotkeys'
@@ -46,7 +48,10 @@ export default function StudioShell() {
   // way to create a second one. startGenerate is still called per-script below,
   // so the backend contract is unchanged.
   const [script, setScript] = useState('')
-  const [language, setLanguage] = useState('English')
+  // Only the new-voice form writes this now: it is the language stamped onto a
+  // voice at creation. Generation reads the chosen voice's own language instead
+  // (see handleGenerate), so the two can no longer disagree.
+  const [newPresetLanguage, setNewPresetLanguage] = useState('English')
 
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
@@ -56,7 +61,6 @@ export default function StudioShell() {
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [hasRendered, setHasRendered] = useState(false)
   const [estimate, setEstimate] = useState<Estimate | null>(null)
 
   const { queue, refresh: refreshQueue } = useGenerationActivity()
@@ -148,10 +152,6 @@ export default function StudioShell() {
     }
     const added = doneCount - lastDoneCount.current
     lastDoneCount.current = doneCount
-    // The first render after the backend boots also captures CUDA graphs, so it
-    // runs well slower than the history-seeded estimate. Once anything has
-    // finished, the estimate is trustworthy again and the caveat comes off.
-    setHasRendered(true)
     if (page === 0) refreshHistory()
     else setPendingNew((n) => n + added)
   }, [doneCount, page, refreshHistory])
@@ -169,13 +169,24 @@ export default function StudioShell() {
     else setPage(0)
   }
 
+  // Both routes to a reference clip go through here -- the window-wide drop and
+  // the modal's own dropzone -- so the name gets pre-filled either way. It used
+  // to be derived only on the window-drop path, which meant picking a file
+  // inside the modal left the field blank.
+  //
+  // Only fills a blank field: a name the user has already typed outranks
+  // anything guessable from a filename.
+  function handleRefFileSelected(file: File | null) {
+    setRefFile(file)
+    if (file && !newPresetName.trim()) {
+      setNewPresetName(presetNameFromFile(file.name))
+    }
+  }
+
   // Dropping an audio file anywhere opens the voices modal with it loaded.
   const dragging = useFileDrop((file) => {
-    setRefFile(file)
+    handleRefFileSelected(file)
     setVoicesOpen(true)
-    if (!newPresetName) {
-      setNewPresetName(file.name.replace(/\.[^.]+$/, '').slice(0, 40))
-    }
   })
 
   async function handleCreatePreset() {
@@ -183,7 +194,7 @@ export default function StudioShell() {
     setCreatingPreset(true)
     setError(null)
     try {
-      const preset = await createPreset(newPresetName, refFile, '', language, '')
+      const preset = await createPreset(newPresetName, refFile, '', newPresetLanguage)
       setPresets((prev) => [preset, ...prev])
       setVoiceId(preset.id) // a voice you just made is the one you want to use
       setNewPresetName('')
@@ -215,10 +226,12 @@ export default function StudioShell() {
     }
   }
 
+  // No setLanguage here any more: selecting the voice already determines the
+  // language, so restoring the entry's own would just duplicate it -- and would
+  // be wrong if the voice has since been recreated in another language.
   function handleRequeue(entry: HistoryEntry) {
     setScript(entry.text)
     setVoiceId(entry.preset_id)
-    setLanguage(entry.language)
     scriptRef.current?.focus()
   }
 
@@ -257,7 +270,8 @@ export default function StudioShell() {
 
     setSubmitting(true)
     try {
-      await startGenerate({ presetId: voiceId as string, text: script, language })
+      const voiceLanguage = presets.find((p) => p.id === voiceId)?.language || 'English'
+      await startGenerate({ presetId: voiceId as string, text: script, language: voiceLanguage })
       setScript('')
       refreshQueue()
     } catch (e) {
@@ -269,7 +283,10 @@ export default function StudioShell() {
 
   const canGenerate = modelStatus === 'ready' && scriptReady && !submitting && !warmingUp
 
-  // Say what is missing rather than presenting a mute grey slab.
+  // Say what is missing rather than presenting a mute grey slab -- but only
+  // for prerequisites the user has to go and fix elsewhere. An empty script is
+  // not one of those: the cursor is already in the box, so the button just
+  // reads "Generate" and stays disabled.
   const blockedReason =
     canGenerate || submitting || warmingUp
       ? null
@@ -279,11 +296,9 @@ export default function StudioShell() {
           ? 'Add a voice first'
           : voiceId == null
             ? 'Pick a voice'
-            : script.trim().length === 0
-              ? 'Write a script'
-              : script.length > MAX_SCRIPT_CHARS
-                ? 'Script is too long'
-                : null
+            : script.length > MAX_SCRIPT_CHARS
+              ? 'Script is too long'
+              : null
 
   useHotkeys({
     onGenerate: () => {
@@ -299,66 +314,35 @@ export default function StudioShell() {
     },
   })
 
-  const statusText =
-    modelStatus === 'ready'
-      ? 'Ready'
-      : modelStatus === 'checking'
-        ? (wakeMessage ?? 'Loading model…')
-        : (wakeMessage ?? 'Backend unreachable')
-
   return (
     <div className="studio">
-      <header className="studio-header">
-        <h1 className="wordmark">Voice Clone Studio</h1>
-        <div className="status-group">
-          <span className={`status status-${modelStatus}`}>
-            <span className="status-dot" />
-            {statusText}
-          </span>
-          {modelStatus === 'down' && (
-            <button type="button" className="ghost-btn" onClick={() => setWakeNonce((n) => n + 1)}>
-              Retry
-            </button>
-          )}
-        </div>
-      </header>
+      <h1 className="studio-title">Homegrown</h1>
 
       <main className="workspace">
         <div className="composer">
+          {/* No "Ready" indicator: GenerateButton already says what is missing
+              ("Waiting for the voice model") whenever the model is not up.
+              The DOWN state is different -- it is the only state the user can
+              act on, and Retry is the app's only recovery control, so it moved
+              here rather than disappearing with the header. */}
+          {modelStatus === 'down' && (
+            <p className="error status-down-row" role="alert">
+              <span>{wakeMessage ?? 'Backend unreachable'}</span>
+              <button type="button" className="ghost-btn" onClick={() => setWakeNonce((n) => n + 1)}>
+                Retry
+              </button>
+            </p>
+          )}
+
           {cpuNotice && (
             <p className="notice">Running on CPU — generation will be very slow. {cpuNotice}</p>
           )}
-
-          {/* One row, not two stacked label/field pairs. The old layout left a
-              ragged right edge -- the language select stretched the full width
-              while the voice select stopped short to share its row. */}
-          <section className="toolbar">
-            <VoicePicker presets={presets} selectedPresetId={voiceId} onSelect={setVoiceId} />
-
-            <select
-              className="select select-language"
-              aria-label="Language"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-            >
-              {(languages.length ? languages : [language]).map((lang) => (
-                <option key={lang} value={lang}>
-                  {lang}
-                </option>
-              ))}
-            </select>
-
-            <button type="button" className="ghost-btn" onClick={() => setVoicesOpen(true)}>
-              + New voice
-            </button>
-          </section>
 
           <ScriptBlock
             text={script}
             onTextChange={setScript}
             textareaRef={scriptRef}
             presetId={voiceId}
-            firstRun={!hasRendered}
             onEstimate={setEstimate}
           />
 
@@ -374,26 +358,41 @@ export default function StudioShell() {
             </p>
           )}
 
-          <GenerateButton
-            disabled={!canGenerate}
-            blockedReason={blockedReason}
-            busy={submitting}
-            warming={warmingUp}
-            count={scriptReady ? 1 : 0}
-            onClick={handleGenerate}
-          />
+          {/* One action row under the script: add-voice, voice, generate.
+              The voice picker sits here rather than inside the card, so the
+              script box stays the script box.
+              GenerateButton swaps itself for the progress panel while a job
+              runs; .compose-bar wraps that panel onto its own line so choosing
+              a voice stays possible during a render instead of disappearing
+              for minutes. */}
+          <section className="compose-bar">
+            <button
+              type="button"
+              className="icon-btn compose-add"
+              aria-label="Add a voice"
+              title="Add a voice"
+              onClick={() => setVoicesOpen(true)}
+            >
+              <PlusIcon size={15} />
+            </button>
 
-          <footer className="shortcuts mono">
-            <span>
-              <kbd>Ctrl ↵</kbd> generate
-            </span>
-            <span>
-              <kbd>Space</kbd> play latest
-            </span>
-            <span>
-              <kbd>/</kbd> jump to script
-            </span>
-          </footer>
+            <VoicePicker
+              presets={presets}
+              selectedPresetId={voiceId}
+              onSelect={setVoiceId}
+              onDelete={handleDeletePreset}
+            />
+
+            <GenerateButton
+              disabled={!canGenerate}
+              blockedReason={blockedReason}
+              busy={submitting}
+              warming={warmingUp}
+              count={scriptReady ? 1 : 0}
+              onClick={handleGenerate}
+            />
+          </section>
+
         </div>
 
         <aside className="aside" ref={resultsRef}>
@@ -418,7 +417,10 @@ export default function StudioShell() {
         name={newPresetName}
         onNameChange={setNewPresetName}
         file={refFile}
-        onFileSelected={setRefFile}
+        onFileSelected={handleRefFileSelected}
+        language={newPresetLanguage}
+        onLanguageChange={setNewPresetLanguage}
+        languages={languages}
         creating={creatingPreset}
         onCreate={handleCreatePreset}
         onDelete={handleDeletePreset}

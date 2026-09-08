@@ -1,6 +1,6 @@
 @import './styles/tokens.css';
 
-/* Voice Clone Studio — two columns, hairlines, two rationed accents.
+/* Homegrown — two columns, hairlines, two rationed accents.
    Rules are grouped in the order they appear down the page. */
 
 /* ── Base ────────────────────────────────────────────────────────────────── */
@@ -47,75 +47,40 @@ h3 {
   flex-direction: column;
 }
 
-/* ── Header ──────────────────────────────────────────────────────────────── */
+/* ── Title ───────────────────────────────────────────────────────────────── */
 
-.studio-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px var(--gutter);
-  background: var(--bg-base);
-  border-bottom: 1px solid var(--line);
-}
-
-/* Wide tracking and small caps: the wordmark reads as an instrument label
-   rather than a logo, so it does not compete with the content. */
-.wordmark {
+/* Replaces a sticky bar that held a wordmark and a "Ready" dot. Neither earned
+   a permanent strip across the page: the name is not a control, and readiness
+   is already on the generate button. Centred and larger, it introduces the page
+   once and then gets out of the way.
+   Tracking is 0.1em, not the 0.18em the 11px wordmark used -- that spacing was
+   tuned for small caps and reads as gappy at this size. */
+.studio-title {
+  padding: 40px var(--gutter) 0;
   font-family: var(--font-display);
-  font-size: 11px;
+  font-size: 22px;
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  text-align: center;
   color: var(--text-muted);
 }
 
-.status-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-faint);
-  flex: none;
-}
-
-.status-ready .status-dot {
-  background: var(--green);
-}
-
-/* "Checking" is genuinely work in progress, so it takes the amber accent --
-   the same meaning it carries on the generate rail. Ready is green because it
-   is a steady state, not an event. */
-.status-checking .status-dot {
-  background: var(--accent);
-  animation: pulse 1.4s var(--ease) infinite;
-}
-
-.status-down .status-dot {
-  background: var(--danger);
-}
-
+/* Kept even though the status dots are gone -- .generating-dot in the voice
+   picker animates with it. */
 @keyframes pulse {
   50% {
     opacity: 0.25;
   }
+}
+
+/* The one status the user can act on. .error supplies the colour; this only
+   puts the message and Retry on one line. */
+.status-down-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 /* ── Workspace: composer left, voiceovers right ───────────────────────────────── */
@@ -151,6 +116,14 @@ h3 {
     grid-template-columns: minmax(0, 1fr);
     gap: 34px;
   }
+
+  /* Voiceovers first in one column. Source order puts the composer on top,
+     which stacks a fixed 260px textarea above the entire history -- so on a
+     laptop you scroll past the thing you are writing with to reach the thing
+     you just made. */
+  .aside {
+    order: -1;
+  }
 }
 
 /* ── Notices ─────────────────────────────────────────────────────────────── */
@@ -175,7 +148,8 @@ h3 {
   border-radius: var(--radius-sm);
 }
 
-.hint,
+/* `.hint` was dropped from this list with the new-voice form's length advice --
+   .empty-hint and .empty-inline still use it. */
 .empty-hint,
 .empty-inline {
   margin: 0;
@@ -190,39 +164,13 @@ h3 {
 
 /* ── Setup fields ────────────────────────────────────────────────────────── */
 
-/* One row: voice, audition, language, add. The selects are self-describing
-   (they show the voice and language names), so the old mono labels were
-   spending a column of width to repeat what the control already said. */
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+/* position: relative is unscoped on purpose -- .voice-menu's popover is
+   positioned against this element, so the field must be its own containing
+   block wherever it is used. Only the flex sizing is context-specific, and
+   lives with the container (see .compose-bar .voice-field). */
+.voice-field {
+  position: relative;
   min-width: 0;
-}
-
-.toolbar .select {
-  flex: 1 1 180px;
-  min-width: 0;
-}
-
-.toolbar .select-language {
-  flex: 0 1 150px;
-}
-
-.toolbar .ghost-btn {
-  margin-left: auto;
-}
-
-.audition-btn {
-  flex: none;
-  background: var(--bg-raised);
-  border: 1px solid var(--line);
-}
-
-.audition-btn:hover:not(:disabled) {
-  color: var(--accent-2);
-  border-color: var(--accent-2-line);
 }
 
 .generating-dot {
@@ -332,6 +280,96 @@ h3 {
   border-color: var(--line-strong);
 }
 
+/* ── Voice picker menu ───────────────────────────────────────────────────── */
+
+/* A hand-rolled dropdown, because an <option> cannot hold the per-row play and
+   delete buttons. It borrows .select for the trigger so the voice field and the
+   language <select> stay visually identical. */
+.voice-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+}
+
+.voice-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  /* Under the modal (200) and the drop veil (100), over page content. */
+  z-index: 50;
+  max-height: 280px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+
+.voice-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  border-bottom: 1px solid var(--line);
+}
+
+.voice-menu-row:last-child {
+  border-bottom: none;
+}
+
+/* flex: 1 with min-width: 0 is what lets the name truncate instead of pushing
+   the action buttons off the right edge of the row. */
+.voice-menu-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px 0 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: left;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+
+.voice-menu-pick:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.voice-menu-pick[aria-current='true'] {
+  color: var(--text-primary);
+}
+
+.voice-menu-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-menu-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  margin-left: auto;
+}
+
 /* ── Script block ────────────────────────────────────────────────────────── */
 
 .block {
@@ -347,10 +385,6 @@ h3 {
   border-color: var(--accent-2-line);
 }
 
-.est-caveat {
-  color: var(--accent);
-}
-
 /* Fixed height, drag the corner grip to change it. The generous bottom padding
    is deliberate: it keeps the last line of a scrolled script clear of the
    footer rule instead of being sliced through the middle of its glyphs. */
@@ -359,7 +393,7 @@ h3 {
   width: 100%;
   height: 260px;
   min-height: 140px;
-  padding: 18px 18px 24px;
+  padding: 14px 18px 24px;
   font-size: 15px;
   line-height: 1.7;
   background: transparent;
@@ -376,20 +410,31 @@ h3 {
   color: var(--text-faint);
 }
 
+/* Fixed height, NOT content height. Every child of .block-meta is conditional
+   -- the chunk count arrives on a 400ms debounce, the counter appears past 80%
+   of the limit -- so a content-sized footer is padding-only at rest and a line
+   box taller the moment any of them renders. That difference propagated down
+   the composer and moved the Generate button while the user was typing. */
 .block-foot {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 7px 14px;
+  height: 30px;
+  padding: 0 14px;
   border-top: 1px solid var(--line);
 }
 
+/* nowrap so the "· first run is slower" caveat cannot wrap to a second line at
+   narrow widths and reintroduce the shift the fixed height just removed. */
 .block-meta {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  overflow: hidden;
   font-size: 11px;
   color: var(--text-faint);
+  white-space: nowrap;
 }
 
 .block-meta .over {
@@ -398,18 +443,74 @@ h3 {
 
 /* ── Generate / progress ─────────────────────────────────────────────────── */
 
+/* The action row under the script: [+] [voice ....] [Generate].
+   No overflow or z-index anywhere here -- .voice-menu's popover opens downward
+   out of this row and must not be clipped. */
+.compose-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Fixed, not flexible. Absorbing the row's slack made the field as wide as the
+   composer, which read as a search bar rather than as a choice between a
+   handful of voices. 220px fits a long voice name without stretching. */
+.compose-bar .voice-field {
+  flex: 0 0 220px;
+}
+
+/* Square and matched to .select's 32px so the row reads as one strip of
+   controls rather than three sizes. Unfilled -- outline and glyph only: it is
+   the smallest action in the row and a filled box gave it more weight than the
+   voice it sits next to. */
+.compose-add {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+
+.compose-add:hover {
+  color: var(--accent-2);
+  border-color: var(--accent-2-line);
+}
+
 .generate {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
+/* margin-left: auto, because nothing in the row is flexible any more -- the
+   voice field is fixed, so without this the controls bunch up on the left and
+   Generate stops being the row's right-hand anchor. */
+.compose-bar .generate {
+  flex: none;
+  margin-left: auto;
+}
+
+/* flex-basis 100% so the progress panel wraps onto its own line instead of
+   squeezing in beside the voice picker -- that is what keeps the picker on
+   screen for the whole render. */
+.compose-bar .render {
+  flex: 1 1 100%;
+}
+
 /* Inverted, not amber. The accent means "work in progress", so the idle call
    to action earns attention by being the only solid light surface on the page
    instead of by spending a signal colour. */
+/* Auto width, not 100%: it shares a row with the voice controls now. min-width
+   only stops it collapsing on the short "Generate" label -- it is not a target
+   size, and the blocked reasons ("Waiting for the voice model") set the real
+   width when they appear. */
 .generate-btn {
-  width: 100%;
-  height: 48px;
+  width: auto;
+  min-width: 120px;
+  height: 40px;
+  padding: 0 18px;
   font-size: 14px;
   font-weight: 500;
   color: var(--bg-deepest);
@@ -426,12 +527,6 @@ h3 {
   color: var(--text-faint);
   background: var(--bg-raised);
   border: 1px solid var(--line);
-}
-
-.generate-hint {
-  align-self: center;
-  font-size: 10px;
-  color: var(--text-faint);
 }
 
 /* ── Render panel ────────────────────────────────────────────────────────── */
@@ -600,8 +695,8 @@ h3 {
 .result-row {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 0;
+  gap: 4px;
+  padding: 9px 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -609,68 +704,126 @@ h3 {
   border-bottom: none;
 }
 
-.result-meta {
+.result-line {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
-.result-text {
-  margin: 0;
+/* Fixed height, so nothing the name field does can resize the row. */
+.result-line-head {
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.result-line-meta {
+  align-items: center;
+}
+
+/* The row title IS the rename field -- one <input>, always present, dressed as
+   plain text until focused. Every box-affecting property (height, padding,
+   border width, font) is identical focused and unfocused, so clicking it moves
+   nothing. font-family is explicit because index.css has no `input { font:
+   inherit }` reset, and without it the field would drop to the UA font.
+   Only `background` and `border-color` change on focus -- neither takes part in
+   layout. Never add a `border-width` or `padding` change here. */
+.result-name {
+  /* Width comes from the `size` attribute, which React sets from the value.
+     flex: 0 1 auto lets it shrink under pressure but never stretch; max-width
+     is what stops a very long name shoving the voice off the row. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  height: 26px;
+  padding: 0 6px;
+  font-family: var(--font-body);
   font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  text-overflow: ellipsis;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+.result-name:hover {
+  border-color: var(--line);
+}
+
+.result-name:focus {
+  outline: none;
+  background: var(--bg-raised);
+  border-color: var(--accent-2-line);
+}
+
+.result-name::placeholder {
+  color: var(--text-faint);
+}
+
+/* Position / total. min-width is load-bearing: it is set for the wider of the
+   two states ("-0:54 / 1:06") so toggling elapsed<->remaining cannot move the
+   script preview sitting next to it. .mono supplies tabular-nums. */
+.result-time {
+  flex: none;
+  min-width: 84px;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: left;
+  background: transparent;
+  transition: color var(--fast) var(--ease);
+}
+
+.result-time:hover {
+  color: var(--text-muted);
+}
+
+.result-voice {
+  flex: 0 0 auto;
+  margin-left: auto;
+  max-width: 55%;
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The preview is the element that yields width. The metadata beside it is
+   flex: none, so a long script truncates before the voice name does. */
+.result-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.result-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 28px;
-}
-
-.result-tags {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-faint);
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.result-tags .dot {
-  opacity: 0.5;
-}
-
-/* Hidden until hover, but :focus-within keeps them reachable by keyboard --
-   without that this is a straightforward accessibility regression. */
+/* Always visible, just dimmed at rest -- they used to be opacity: 0 until
+   hover, which hid the only way to download a voiceover behind a gesture you
+   had to already know about.
+   Still opacity-only: nothing here changes the box, so the row cannot reflow as
+   the state changes. Individual buttons keep .icon-btn's own :hover, so the one
+   under the cursor reads brighter than its neighbours. */
 .result-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  opacity: 0;
+  gap: 2px;
+  flex: none;
+  opacity: 0.5;
   transition: opacity var(--fast) var(--ease);
 }
 
 .result-row:hover .result-actions,
 .result-row:focus-within .result-actions {
   opacity: 1;
-}
-
-.rename-input {
-  width: 100%;
-  height: 32px;
-  padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--bg-raised);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
 }
 
 .paginator {
@@ -692,17 +845,20 @@ h3 {
 .voiceover-player {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex: 1;
   min-width: 0;
 }
 
+/* A bare filled glyph, not a button-shaped box. The chrome made the smallest
+   control in the row look like the heaviest. */
 .voiceover-play-btn {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   color: var(--text-muted);
-  background: var(--bg-raised);
-  border: 1px solid var(--line);
+  background: transparent;
+  border: none;
 }
 
 .voiceover-play-btn:hover {
@@ -715,16 +871,9 @@ h3 {
   display: block;
   width: 100%;
   min-width: 0;
-  height: 40px;
+  height: 24px;
   cursor: pointer;
   border-radius: var(--radius-sm);
-}
-
-.voiceover-readout {
-  flex: none;
-  text-align: right;
-  font-size: 11px;
-  color: var(--text-faint);
 }
 
 /* ── Modal ───────────────────────────────────────────────────────────────── */
@@ -785,6 +934,35 @@ h3 {
   gap: 12px;
 }
 
+/* Name takes the slack, Language is sized to its longest option ("Portuguese")
+   rather than to a share of the row -- a percentage split would either clip the
+   language or starve the name. */
+.voice-form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.voice-form-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.voice-form-language {
+  flex: 0 0 132px;
+}
+
+@media (max-width: 380px) {
+  .voice-form-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .voice-form-language {
+    flex: 1 1 auto;
+  }
+}
+
 .labelled {
   display: flex;
   flex-direction: column;
@@ -814,15 +992,24 @@ h3 {
   border-color: var(--accent-2-line);
 }
 
+/* .select is 32px in the header; inside a labelled field it has to match the
+   36px text input beside it or the form reads as two different control sizes. */
+.labelled .select {
+  height: 36px;
+  font-size: 14px;
+}
+
+/* A row, not a stack. Icon above text needed 116px to breathe; side by side the
+   same two things fit 72px, and the dashed border plus the icon are what make
+   it read as a drop target -- the height never was. */
 .dropzone {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-height: 116px;
-  padding: 18px;
+  gap: 12px;
+  min-height: 72px;
+  padding: 14px 34px 14px 18px;
   font-size: 13px;
   color: var(--text-muted);
   text-align: center;
@@ -913,6 +1100,13 @@ h3 {
   flex: none;
 }
 
+.voice-manage-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
 /* ── Drop veil ───────────────────────────────────────────────────────────── */
 
 .drop-veil {
@@ -935,30 +1129,6 @@ h3 {
   color: var(--accent-2);
 }
 
-/* ── Shortcut legend ─────────────────────────────────────────────────────── */
-
-.shortcuts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-  font-size: 11px;
-  color: var(--text-faint);
-}
-
-.shortcuts span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-kbd {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 2px 5px;
-  color: var(--text-muted);
-  background: var(--bg-raised);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-}
+/* The shortcut legend and the <kbd> styling that served it are gone. The
+   shortcuts themselves are not -- useHotkeys still binds Ctrl+Enter, Space and
+   "/". They are simply no longer advertised on the page. */

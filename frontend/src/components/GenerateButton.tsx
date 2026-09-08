@@ -160,7 +160,6 @@ export default function GenerateButton({
           </motion.span>
         </AnimatePresence>
       </button>
-      <kbd className="mono generate-hint">Ctrl ↵</kbd>
     </section>
   )
 }
