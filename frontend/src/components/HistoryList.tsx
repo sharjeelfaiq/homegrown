@@ -13,12 +13,17 @@ import { DownloadIcon, TrashIcon, WandIcon } from './Icons'
 interface Props {
   history: HistoryEntry[]
   total: number
-  page: number
-  pageSize: number
-  onPageChange: (page: number) => void
-  /** Voiceovers finished while the user was reading an older page. */
+  /** True while more entries exist past what `history` already holds. */
+  hasMore: boolean
+  /** Fetch the next slice. Safe to call repeatedly -- the caller de-dupes. */
+  onLoadMore: () => void
+  /** Voiceovers that finished while the user was scrolled away from the top. */
   pendingNew: number
   onShowNew: () => void
+  /** Fires when the list scrolls to or away from its top, so the caller can
+   * decide whether a finished voiceover may be inserted under the user's eyes
+   * or has to be announced instead. */
+  onAtTopChange: (atTop: boolean) => void
   onDelete: (id: string) => void
   onRequeue: (entry: HistoryEntry) => void
   /** True before the first fetch has returned. Without it an empty column
@@ -32,6 +37,13 @@ interface Props {
  * A voice with a long reference clip chunks at ~80 characters, which turns the
  * 60,000-character limit into ~750 chunks, so this end of the range is real. */
 const MAX_TICKS = 60
+
+/* The two-column layout, and with it the fixed-height scrolling Voiceovers
+ * block. Mirrors the `@media (min-width: 1025px)` / `(max-width: 1024px)` pair
+ * in App.css -- above it the list scrolls, below it the page does, and the two
+ * effects below have to pick their scroll root accordingly. Change all three
+ * together; nothing enforces it. */
+const TWO_COLUMN_QUERY = '(min-width: 1025px)'
 
 function truncate(text: string, max = 96): string {
   return text.length > max ? `${text.slice(0, max)}…` : text
@@ -248,6 +260,18 @@ function PendingRow({
           </motion.div>
         </div>
 
+        {/* Elapsed, never remaining: the backend's eta_s is a rolling
+            chars/second average that moves in both directions as chunks land,
+            so watching it told the user nothing. Same slot the finished row
+            puts its clock in, so the two line up. */}
+        <span className="mono result-time" aria-live="polite">
+          {/* The same reserved slot TransportTime puts the minus in. Empty
+              here -- there is no remaining to toggle to -- but it keeps this
+              row's digits on the same column as a finished row's. */}
+          <span className="result-time-sign" aria-hidden="true" />
+          {canceling ? 'Cancelling…' : elapsed == null ? 'Queued' : formatClock(elapsed)}
+        </span>
+
         <div className="result-actions">
           <button
             type="button"
@@ -260,18 +284,7 @@ function PendingRow({
         </div>
       </div>
 
-      {/* Elapsed left, script preview right. Elapsed, never remaining: the
-          backend's eta_s is a rolling chars/second average that moves in both
-          directions as chunks land, so watching it told the user nothing. */}
       <div className="result-line result-line-meta">
-        <span className="mono result-time" aria-live="polite">
-          {/* The same reserved slot TransportTime puts the minus in. Empty
-              here -- there is no remaining to toggle to -- but it keeps this
-              row's digits on the same column as a finished row's. */}
-          <span className="result-time-sign" aria-hidden="true" />
-          {canceling ? 'Cancelling…' : elapsed == null ? 'Queued' : formatClock(elapsed)}
-        </span>
-
         <p className="result-text" title={job.text_preview}>
           {truncate(job.text_preview)}
         </p>
@@ -311,8 +324,10 @@ function VoiceoverRow({
         nameTitle={`Created ${created} — click to rename`}
       />
 
-      {/* Transport left, actions right. The player is the flexible element, so
-          the icon strip never gets pushed off. */}
+      {/* Transport, clock, actions -- one line. The clock used to sit on its own
+          line beside the script preview; moving it up is what lets the preview
+          have the last line to itself and the row get shorter. The player is
+          the flexible element, so the icon strip is never pushed off. */}
       <div className="result-line">
         <VoiceoverPlayer
           src={mediaUrl(entry.audio_url)}
@@ -321,6 +336,8 @@ function VoiceoverRow({
           label={`${name} voiceover`}
           audioRef={audioRef}
         />
+
+        <TransportTime audioRef={audioRef} fallbackDurationS={entry.duration_s} />
 
         <div className="result-actions">
           <a
@@ -353,12 +370,9 @@ function VoiceoverRow({
         </div>
       </div>
 
-      {/* Time left, script preview right. The preview is the element that
-          yields width -- it already ellipsises by design, and a truncated
-          clock would be useless. */}
+      {/* The script preview now has this line to itself, so it gets the full
+          column width before ellipsising. */}
       <div className="result-line result-line-meta">
-        <TransportTime audioRef={audioRef} fallbackDurationS={entry.duration_s} />
-
         <p className="result-text" title={entry.text}>
           {truncate(entry.text)}
         </p>
@@ -394,11 +408,11 @@ function VoiceoverRow({
 export default function HistoryList({
   history,
   total,
-  page,
-  pageSize,
-  onPageChange,
+  hasMore,
+  onLoadMore,
   pendingNew,
   onShowNew,
+  onAtTopChange,
   onDelete,
   onRequeue,
   loading = false,
@@ -419,9 +433,72 @@ export default function HistoryList({
   // very edit it just discarded.
   const skipBlurCommitRef = useRef(false)
 
+  const listRef = useRef<HTMLUListElement>(null)
+  const sentinelRef = useRef<HTMLLIElement>(null)
+
   const active = queue.filter(
     (e) => e.status === 'running' || e.status === 'queued' || e.status === 'canceling',
   )
+
+  // Load the next slice when the end of the list scrolls into view.
+  // IntersectionObserver rather than a scroll handler: it fires once per
+  // crossing instead of on every frame of a scroll.
+  //
+  // The root has to follow the layout. Above the breakpoint the list is a
+  // fixed-height scroller and is the correct root. Below it the CSS sets
+  // `overflow-y: visible`, so the <ul> grows to fit its rows and the sentinel
+  // is ALWAYS inside its bounds -- rooted there, the observer reports
+  // intersecting immediately and every append re-arms it, which chain-loads the
+  // entire history in one go. `null` (the viewport) is what actually works down
+  // there, since the page is the scroller.
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel || !hasMore) return
+    const mq = window.matchMedia(TWO_COLUMN_QUERY)
+    let io: IntersectionObserver | undefined
+    const arm = () => {
+      io?.disconnect()
+      io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) onLoadMore()
+        },
+        { root: mq.matches ? listRef.current : null, rootMargin: '120px' },
+      )
+      io.observe(sentinel)
+    }
+    arm()
+    mq.addEventListener('change', arm)
+    return () => {
+      mq.removeEventListener('change', arm)
+      io?.disconnect()
+    }
+  }, [hasMore, onLoadMore, history.length])
+
+  // Whether the reader is at the top decides if a finished voiceover may be
+  // inserted above them or has to be announced. Reported up rather than decided
+  // here, because the caller owns the fetch.
+  //
+  // Same split as above: the list's own scrollTop is meaningless below the
+  // breakpoint, where it never scrolls and would read 0 forever -- i.e. always
+  // "at the top", so a finished voiceover would always be inserted under the
+  // reader. There, ask where the list sits in the viewport instead.
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const mq = window.matchMedia(TWO_COLUMN_QUERY)
+    const report = () => {
+      onAtTopChange(mq.matches ? list.scrollTop < 8 : list.getBoundingClientRect().top > -8)
+    }
+    report()
+    list.addEventListener('scroll', report, { passive: true })
+    window.addEventListener('scroll', report, { passive: true })
+    mq.addEventListener('change', report)
+    return () => {
+      list.removeEventListener('scroll', report)
+      window.removeEventListener('scroll', report)
+      mq.removeEventListener('change', report)
+    }
+  }, [onAtTopChange])
 
   // Carry a name typed into an in-progress row over to the history entry it
   // becomes. There is no job_id on a HistoryEntry, so the two are matched on
@@ -507,8 +584,6 @@ export default function HistoryList({
     }
   }
 
-  const pageCount = Math.max(1, Math.ceil(total / pageSize))
-
   return (
     <section className="results">
       <h2 className="section-rule">
@@ -516,9 +591,16 @@ export default function HistoryList({
         {total > 0 && <span className="mono section-count">{total}</span>}
       </h2>
 
-      {/* Surfaced instead of yanking the user back to page 1 mid-read. */}
+      {/* Surfaced instead of scrolling the list out from under a reader. */}
       {pendingNew > 0 && (
-        <button type="button" className="ghost-btn new-voiceovers" onClick={onShowNew}>
+        <button
+          type="button"
+          className="ghost-btn new-voiceovers"
+          onClick={() => {
+            onShowNew()
+            listRef.current?.scrollTo({ top: 0 })
+          }}
+        >
           {pendingNew} new voiceover{pendingNew === 1 ? '' : 's'} — show
         </button>
       )}
@@ -531,7 +613,7 @@ export default function HistoryList({
         </p>
       ) : (
         <>
-          <ul className="result-list">
+          <ul className="result-list" ref={listRef}>
             {active.map((job, i) => {
               // The number this row will keep. /api/queue returns the running
               // job first and queued jobs in real processing order, so the
@@ -548,12 +630,12 @@ export default function HistoryList({
             })}
 
             {history.map((entry, i) => {
-              // Oldest is 1. History arrives newest-first and paginated, so the
-              // number comes from the entry's position in the whole set, not
-              // its index on this page. Derived, not stored: deleting a
+              // Oldest is 1. The list is newest-first and accumulates as you
+              // scroll, so index in the list IS index in the whole set --
+              // no page offset any more. Derived, not stored: deleting a
               // voiceover renumbers the rest, which is what "chronological"
               // means here.
-              const number = total - (page * pageSize + i)
+              const number = total - i
               const name = entryFileNames[entry.id]?.trim() || `Voiceover ${number}`
               return (
                 <VoiceoverRow
@@ -570,31 +652,15 @@ export default function HistoryList({
                 />
               )
             })}
+            {/* The trigger for the next slice, and the only "there is more"
+                signal the user gets. Inside the <ul> so it scrolls with the
+                rows and so IntersectionObserver can scope to this list. */}
+            {hasMore && (
+              <li className="result-sentinel" ref={sentinelRef}>
+                Loading more…
+              </li>
+            )}
           </ul>
-
-          {pageCount > 1 && (
-            <nav className="paginator" aria-label="Voiceover pages">
-              <button
-                type="button"
-                className="ghost-btn"
-                disabled={page === 0}
-                onClick={() => onPageChange(page - 1)}
-              >
-                ← Newer
-              </button>
-              <span className="mono paginator-status">
-                {page + 1} / {pageCount}
-              </span>
-              <button
-                type="button"
-                className="ghost-btn"
-                disabled={page >= pageCount - 1}
-                onClick={() => onPageChange(page + 1)}
-              >
-                Older →
-              </button>
-            </nav>
-          )}
         </>
       )}
     </section>

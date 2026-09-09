@@ -15,7 +15,8 @@ import { useHotkeys } from '../hooks/useHotkeys'
 import { wakeBackend } from '../wake'
 import {
   ApiError,
-  HISTORY_PAGE_SIZE,
+  HISTORY_INITIAL_COUNT,
+  HISTORY_LOAD_MORE_COUNT,
   createPreset,
   deleteHistoryEntry,
   deletePreset,
@@ -54,11 +55,18 @@ export default function StudioShell() {
   // (see handleGenerate), so the two can no longer disagree.
   const [newPresetLanguage, setNewPresetLanguage] = useState('English')
 
+  // One accumulating list, not a page. `historyNonce` reloads it from the top,
+  // keeping however many slices are already on screen.
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
-  const [page, setPage] = useState(0)
   const [historyNonce, setHistoryNonce] = useState(0)
   const [pendingNew, setPendingNew] = useState(0)
+  // Refs, not state: read inside callbacks that must not be rebuilt (and so
+  // must not re-arm the IntersectionObserver) every time they change.
+  const loadedRef = useRef(0)
+  const totalRef = useRef(0)
+  const loadingMoreRef = useRef(false)
+  const atTopRef = useRef(true)
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -142,30 +150,57 @@ export default function StudioShell() {
     setWakeMessage(boot.detail || 'The voice model failed to load.')
   }, [boot?.phase, boot?.detail])
 
-  // Single place that loads a page of voiceovers. Re-runs on page change and on any
-  // explicit refresh (job finished, entry deleted).
+  // Reload from the top, refetching as many entries as are already on screen so
+  // the user's scroll depth survives. Refetching the whole prefix (rather than
+  // patching the array) is what keeps deletion correct: removing an entry
+  // shifts every later one up by one, so an offset-based append would skip a
+  // voiceover. The same applies when a new one lands at the top.
   useEffect(() => {
     let cancelled = false
-    listHistory(HISTORY_PAGE_SIZE, page * HISTORY_PAGE_SIZE)
+    const want = Math.max(HISTORY_INITIAL_COUNT, loadedRef.current)
+    listHistory(want, 0)
       .then((r) => {
         if (cancelled) return
         setHistory(r.history)
         setHistoryTotal(r.total)
-        // Deleting the last row of the last page leaves this page empty while
-        // earlier pages still have content -- step back rather than showing a
-        // blank list under a paginator that says "3 / 2".
-        const lastPage = Math.max(0, Math.ceil(r.total / HISTORY_PAGE_SIZE) - 1)
-        if (page > lastPage) setPage(lastPage)
+        loadedRef.current = r.history.length
+        totalRef.current = r.total
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [page, historyNonce])
+  }, [historyNonce])
 
-  // A finished job must not yank a user off the page they are reading. On page
-  // 0 the new voiceover belongs at the top, so refresh in place; deeper in, count it
-  // and let them choose when to jump.
+  // Append the next slice. Stable identity on purpose -- HistoryList uses it as
+  // an effect dependency to arm its observer.
+  const loadMoreHistory = useCallback(() => {
+    if (loadingMoreRef.current || loadedRef.current >= totalRef.current) return
+    loadingMoreRef.current = true
+    listHistory(HISTORY_LOAD_MORE_COUNT, loadedRef.current)
+      .then((r) => {
+        setHistoryTotal(r.total)
+        totalRef.current = r.total
+        setHistory((prev) => {
+          // De-duplicated by id because offsets are not stable: a voiceover
+          // finishing between the two requests shifts everything down one, and
+          // a naive append would then show a row twice.
+          const seen = new Set(prev.map((e) => e.id))
+          const next = [...prev, ...r.history.filter((e) => !seen.has(e.id))]
+          loadedRef.current = next.length
+          return next
+        })
+      })
+      .catch(() => {})
+      .finally(() => {
+        loadingMoreRef.current = false
+      })
+  }, [])
+
+  // A finished job must not scroll the list out from under a reader. At the top
+  // the new voiceover belongs there anyway, so refresh in place; scrolled down,
+  // count it and let them choose when to jump. atTopRef, not state, so this
+  // effect does not re-run on every scroll event.
   const doneCount = queue.filter((e) => e.status === 'done').length
   const lastDoneCount = useRef(doneCount)
   useEffect(() => {
@@ -175,21 +210,20 @@ export default function StudioShell() {
     }
     const added = doneCount - lastDoneCount.current
     lastDoneCount.current = doneCount
-    if (page === 0) refreshHistory()
+    if (atTopRef.current) refreshHistory()
     else setPendingNew((n) => n + added)
-  }, [doneCount, page, refreshHistory])
+  }, [doneCount, refreshHistory])
 
-  // Navigating back to the newest page by any route means the "new voiceovers"
-  // badge has served its purpose -- otherwise it lingers over content the user
-  // is already looking at.
-  useEffect(() => {
-    if (page === 0) setPendingNew(0)
-  }, [page])
+  // Scrolling back to the top by any route means the badge has served its
+  // purpose -- otherwise it lingers over content the user is already looking at.
+  const handleAtTopChange = useCallback((atTop: boolean) => {
+    atTopRef.current = atTop
+    if (atTop) setPendingNew(0)
+  }, [])
 
   function showNewVoiceovers() {
     setPendingNew(0)
-    if (page === 0) refreshHistory()
-    else setPage(0)
+    refreshHistory()
   }
 
   // Both routes to a reference clip go through here -- the window-wide drop and
@@ -460,11 +494,11 @@ export default function StudioShell() {
           <HistoryList
             history={history}
             total={historyTotal}
-            page={page}
-            pageSize={HISTORY_PAGE_SIZE}
-            onPageChange={setPage}
+            hasMore={history.length < historyTotal}
+            onLoadMore={loadMoreHistory}
             pendingNew={pendingNew}
             onShowNew={showNewVoiceovers}
+            onAtTopChange={handleAtTopChange}
             onDelete={handleDeleteHistory}
             onRequeue={handleRequeue}
             loading={modelStatus === 'checking'}

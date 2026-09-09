@@ -223,18 +223,73 @@ h3 {
   min-width: 0;
 }
 
-@media (max-width: 900px) {
+/* Desktop only. The page is pinned to one viewport and the Voiceovers list is
+   the single scrolling region inside it. Deliberately NOT applied below the
+   breakpoint: there the grid is one column, and a short inner scroller inside
+   a locked page would be two nested scroll regions on a phone. Down there the
+   page scrolls as it always did, and the sentinel observes the viewport
+   instead (its root is the list element, which is not a scroller at that
+   width). */
+@media (min-width: 1025px) {
+  .studio {
+    height: 100svh;
+    overflow: hidden;
+  }
+
+  .workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-bottom: 32px;
+  }
+
+  /* The chain of min-height: 0 is load-bearing -- a flex item's default
+     min-height: auto refuses to shrink below its content, and one missing link
+     anywhere here puts the scrollbar back on the page instead of on the list. */
+  .aside,
+  .results {
+    height: 100%;
+    min-height: 0;
+  }
+
+  /* NO overflow here. .voice-menu is absolutely positioned against
+     .voice-field and opens downward out of .compose-bar at the bottom of this
+     column, so any ancestor that is not `overflow: visible` clips it -- an
+     `overflow-y: auto` added here made the voice dropdown open into a hidden
+     strip and read as "not opening at all". See the comment on .compose-bar.
+     The composer fits instead of scrolling: .block-input's height is
+     viewport-relative, so a short window shrinks the textarea rather than
+     overflowing the column. */
+  .composer {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 1024px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
     gap: 34px;
   }
 
-  /* Voiceovers first in one column. Source order puts the composer on top,
-     which stacks a fixed 260px textarea above the entire history -- so on a
-     laptop you scroll past the thing you are writing with to reach the thing
-     you just made. */
-  .aside {
-    order: -1;
+  /* No cap and no inner scroller: the page is the scroller here. */
+  .result-list {
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  /* Composer on top, Voiceovers under it -- source order, no `order` override.
+     This used to be reversed, because a 260px fixed textarea above the whole
+     history meant scrolling past the thing you write with to reach the thing
+     you just made. The textarea shrinking with the viewport is what makes the
+     natural order affordable -- see .block-input's clamp, about 200px on a
+     phone and 140px in landscape, so the composer is a screenful of controls
+     rather than a wall. `resize: vertical` still lets anyone drag it taller. */
+  /* The voice field is fixed at 220px on desktop so it does not read as a
+     search bar. At 320px that leaves 272px of content for [+] 32 + gap 8 + 220,
+     which fits by 12px and stops fitting the moment a scrollbar appears. Let it
+     give way instead. */
+  .compose-bar .voice-field {
+    flex: 0 1 220px;
+    min-width: 150px;
   }
 }
 
@@ -503,7 +558,12 @@ h3 {
 .block-input {
   display: block;
   width: 100%;
-  height: 260px;
+  /* Viewport-relative, not fixed. Two jobs: below the breakpoint it stops a
+     260px slab sitting between the user and their voiceovers, and above it it
+     keeps the composer short enough that it never needs to scroll -- which it
+     must not do, because scrolling it clips the voice dropdown. 30svh is 324px
+     at 1080p (so the 260px ceiling still wins there) and 230px at 768px. */
+  height: clamp(140px, 30svh, 260px);
   min-height: 140px;
   padding: 14px 18px 24px;
   font-size: 15px;
@@ -604,13 +664,6 @@ h3 {
   margin-left: auto;
 }
 
-/* flex-basis 100% so the progress panel wraps onto its own line instead of
-   squeezing in beside the voice picker -- that is what keeps the picker on
-   screen for the whole render. */
-.compose-bar .render {
-  flex: 1 1 100%;
-}
-
 /* Inverted, not amber. The accent means "work in progress", so the idle call
    to action earns attention by being the only solid light surface on the page
    instead of by spending a signal colour. */
@@ -689,17 +742,42 @@ h3 {
   background: var(--accent-2-soft);
 }
 
+/* A fixed window, not the whole history. About eight rows are shown, the first
+   twenty are fetched up front, and the next ten arrive when the sentinel at the
+   bottom scrolls into view -- so the column has one height whether the user has
+   made three voiceovers or three hundred, and the page never grows a scrollbar.
+
+   flex + min-height: 0 as well as the cap, and the two are not redundant: the
+   cap is the ceiling, the flex clamp is the floor. On a short viewport (a 768px
+   laptop, say) the block has to shrink BELOW eight rows rather than push the
+   layout past the fold, and there the max-height never applies at all. */
 .result-list {
   list-style: none;
   margin: 0;
   padding: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(8 * var(--result-row-h));
+  overflow-y: auto;
+  /* Keeps the scrollbar off the row content rather than over it. */
+  scrollbar-gutter: stable;
+}
+
+/* Both the "there is more" signal and the thing that triggers the fetch. It is
+   a list item so it scrolls with the rows and so the observer can scope its
+   root to this scroller. */
+.result-sentinel {
+  padding: 14px 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: center;
 }
 
 .result-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 9px 0;
+  gap: 2px;
+  padding: 7px 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -858,20 +936,6 @@ h3 {
 .result-row:hover .result-actions,
 .result-row:focus-within .result-actions {
   opacity: 1;
-}
-
-.paginator {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.paginator-status {
-  font-size: 11px;
-  color: var(--text-faint);
 }
 
 /* ── In-progress voiceover ───────────────────────────────────────────────── */
@@ -1071,6 +1135,9 @@ h3 {
   flex: 0 0 132px;
 }
 
+/* Phone portrait. Extends the existing modal stacking rather than adding a
+   parallel breakpoint -- one place to look for "what changes on a small
+   phone". */
 @media (max-width: 380px) {
   .voice-form-row {
     flex-direction: column;
@@ -1079,6 +1146,37 @@ h3 {
 
   .voice-form-language {
     flex: 1 1 auto;
+  }
+
+  /* 24px each side is 15% of a 320px viewport spent on nothing. The content is
+     already narrow here; the margin is what has to give. */
+  :root {
+    --gutter: 14px;
+  }
+}
+
+/* Touch. The row actions sit at opacity 0.5 until :hover or :focus-within, and
+   a touch screen has neither until you have already tapped something -- which
+   left download and delete looking permanently disabled on a phone. Keyed to
+   the input, not to a width: a small window on a desktop still has a mouse. */
+@media (hover: none) {
+  .result-actions {
+    opacity: 1;
+  }
+}
+
+/* Coarse pointers get bigger hit areas without changing the visual weight:
+   padding grows, the glyph does not. 24px squares are well under the ~44px a
+   finger actually needs. */
+@media (pointer: coarse) {
+  .icon-btn,
+  .voiceover-play-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .result-actions {
+    gap: 4px;
   }
 }
 

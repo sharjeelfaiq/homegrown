@@ -162,10 +162,18 @@ export interface HistoryPage {
   total: number
 }
 
-export const HISTORY_PAGE_SIZE = 20
+// Two different jobs, deliberately two different numbers -- neither is a
+// "page", since the Voiceovers column scrolls rather than paginates.
+//
+// The first batch has to fill the fixed window (about eight rows) and absorb
+// the first few scrolls without a fetch. The increment only has to arrive
+// before the reader reaches the bottom, so it is smaller: fewer rows to render
+// per fetch, and a stall is less likely to be visible.
+export const HISTORY_INITIAL_COUNT = 20
+export const HISTORY_LOAD_MORE_COUNT = 10
 
 export function listHistory(
-  limit: number = HISTORY_PAGE_SIZE,
+  limit: number = HISTORY_INITIAL_COUNT,
   offset = 0,
 ): Promise<HistoryPage> {
   return authFetch(apiUrl(`/api/history?limit=${limit}&offset=${offset}`)).then(

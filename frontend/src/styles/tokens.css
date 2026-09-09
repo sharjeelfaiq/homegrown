@@ -96,7 +96,16 @@
      and length on one line, so the row had to grow to three. The composer next
      to it is a FIXED-height textarea that gains nothing from extra width, so
      the space belongs here -- this is the column the user re-reads. */
-  --aside: 520px;
+  /* Fluid, not fixed. At a flat 520px the two-column grid handed the aside its
+     full width while the composer took whatever was left -- ~417px at 1024px,
+     which was the worst-looking band in the app. The clamp gives the composer
+     ~548px there instead, and still reaches 520px once there is room for it. */
+  --aside: clamp(360px, 38vw, 520px);
+  /* One compacted voiceover row: 26px name line + 24px transport line + ~17px
+     script preview + gaps + padding + hairline. The Voiceovers block is capped
+     at eight of these, which is what makes the window a size rather than a
+     guess. Re-measure if the row gains or loses a line. */
+  --result-row-h: 88px;
   --gutter: 24px;
 
   /* ---- Motion. One curve, three durations. Honour reduced-motion. ------ */
