@@ -124,6 +124,70 @@ calibration approach used this session (test real chunk sizes/durations
 against the new max_seq_len before trusting a bigger number) once
 you're on the new hardware.
 
+
+STABILITY SWEEP (2026-09-09, GTX 970 sm_52)
+----------------------------------------
+Question: does /api/generate's `stability` setting reduce the chunk
+degeneration recorded in CLAUDE.md ("roughly a third of samples babble
+or stop short")? The `stable` preset (temperature 0.5, top_p 0.85,
+top_k 30) is implemented and validated in the backend but the frontend
+has never sent the field, so every voiceover ever made ran `balanced`
+(temperature 0.9, top_p 1.0, top_k 50).
+
+Method: one 618-char script, 4 chunks, on a preset with a 16.1s
+reference clip (`chunk_chars: 200`, i.e. capped by
+ELISION_SAFE_CHUNK_CHARS rather than by the sequence window). 4 runs at
+`balanced`, 4 at `stable`. Each result transcribed with faster-whisper
+`small` (not the `base` the app uses for reference clips -- the judge
+should outrank the thing it judges) and scored word-level against the
+source with difflib. Duration ratios deliberately NOT used: they cannot
+separate padding from a legitimately slow read.
+
+Result:
+
+  balanced  n=4  similarity mean=0.987 worst=0.983 best=0.991
+                 missing=6 invented=6   mean_wall=85s
+  stable    n=4  similarity mean=0.987 worst=0.983 best=0.991
+                 missing=6 invented=6   mean_wall=85s
+
+Identical. Wall time is equal once `balanced` run 1 (123.5s) is
+excluded as the cold CUDA-graph capture; the other seven runs were
+81-87s.
+
+The similarity figures UNDERSTATE the output. Every difference across
+all 8 runs was a transcription artefact, not a generation error:
+
+  balanced_1  in -> and ;  thirty -> 30
+  balanced_2  a  -> the ;  thirty -> 30
+  balanced_3  thirty -> 30
+  balanced_4  thirty -> 30
+  stable_1    in -> and ;  thirty -> 30
+  stable_2    thirty -> 30
+  stable_3    seven -> 7 ;  thirty -> 30
+  stable_4    thirty -> 30
+
+"thirty -> 30" is Whisper writing a numeral; "in -> and", "a -> the"
+are mishearings of unstressed function words. Zero dropped clauses,
+zero invented sentences.
+
+More significant than the comparison: `grep -c resampl` over the
+backend log for the whole sweep returned 0. All 32 chunks passed
+_chunk_duration_is_sane() first time. The retry loop was not masking
+failures -- there were none.
+
+Conclusions:
+- Do not expose a stability control, and do not change the default.
+  There is nothing here for temperature to fix.
+- The degeneration recorded earlier in CLAUDE.md did not reproduce on
+  current code. Most likely already fixed by _seq_budget() sizing
+  chunks from the actual reference clip, chunk_text's balanced
+  partition removing the runt chunk, and the per-chunk max_new_tokens
+  cap.
+- Limits, stated plainly: ONE voice, ONE script, one machine. This is
+  not proof of absence. Keep the resampling; a longer reference clip
+  may still land outside the sweet spot.
+- `creative` (temperature 1.2) was not tested.
+
 SOURCES (pricing, verified July 2026)
 ----------------------------------------
 - https://www.runpod.io/pricing

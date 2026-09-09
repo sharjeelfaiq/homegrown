@@ -79,6 +79,7 @@ Do these before spending 30 minutes freezing a broken build.
 ```bash
 # Design tokens: no colour may drift from frontend/src/styles/tokens.css
 python scripts/check_design_tokens.py
+python scripts/check_desktop_port.py
 
 # Frontend types + lint
 cd frontend && npm install && npm run lint && cd ..

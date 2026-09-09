@@ -102,17 +102,32 @@ Three things that were each learned the hard way, all measured on this machine:
   move. Packing to a smaller limit does NOT achieve this: greedy at any limit below 195 gave nine chunks
   instead of seven. Removing the runt took total silence from 16.2s to 0.0s on the test script.
 
-- **Chunks degenerate stochastically, so bad samples are detected and regenerated.** The same chunk with
-  identical settings produced 115%, 105%, 233%, 177%, 96% and 94% of its expected duration across six runs
-  — roughly a third of samples babble (including sentences that are nowhere in the script) or stop short.
-  Punctuation is not the trigger: stripping markdown and smart quotes changed nothing. No parameter fixes a
-  coin flip, so `_process_job` checks each chunk's audio against `_chunk_duration_is_sane()` and resamples
-  outside 0.6–1.6× expected, up to `CHUNK_ATTEMPTS`. **This is why a single clean run proves nothing here**
-  — every earlier fix reduced the failure *rate*, which makes one-run verification read as a cure.
+- **Chunks degenerated stochastically, so bad samples are detected and regenerated — but the degeneration
+  has since stopped reproducing.** Read both halves of this; the second does not cancel the first.
+
+  *Originally measured (pre-`_seq_budget`):* the same chunk with identical settings produced 115%, 105%,
+  233%, 177%, 96% and 94% of its expected duration across six runs — roughly a third of samples babbled
+  (including sentences nowhere in the script) or stopped short. Punctuation was not the trigger: stripping
+  markdown and smart quotes changed nothing. No parameter fixed a coin flip, so `_process_job` checks each
+  chunk against `_chunk_duration_is_sane()` and resamples outside 0.6–1.6× expected, up to
+  `CHUNK_ATTEMPTS`.
+
+  *Re-measured 2026-09-09, current code:* it did not happen. 8 runs of a 618-char, 4-chunk script on a
+  16.1s-clip preset (`chunk_chars: 200`) gave **32/32 clean chunks and zero resamples** — the retry loop
+  never fired — with transcripts word-identical to the script bar Whisper artefacts (`thirty` → `30`).
+  4 of those runs were `stability=balanced` and 4 `stable`; the two were **indistinguishable** (mean
+  similarity 0.987, same worst case, same wall time once the cold CUDA-graph run is excluded), so lowering
+  temperature is not a lever worth exposing. Numbers in `docs/gpu-notes.md`.
+
+  The likely explanation is that the fixes above did their job: `_seq_budget()` sizing chunks from the
+  actual reference clip, `chunk_text`'s balanced partition removing the runt chunk, and the per-chunk
+  `max_new_tokens` cap. **Do not delete the resampling** — one voice and one script is not a proof of
+  absence, and a longer reference clip may still land outside the sweet spot.
 
 Verify changes here by transcribing the output and diffing against the script, not by comparing durations —
 duration ratios cannot tell padding from a legitimately long read. `faster_whisper` is already a dependency.
-Run it more than once: with a per-chunk failure rate this high, n=1 is a coin flip, not evidence.
+Still run it more than once: the 2026-09-09 sweep is one voice on one machine, and the original failure was
+frequent enough that n=1 was a coin flip.
 
 Each chunk calls `generate_voice_clone_streaming` — **not** for delivery (the client only gets audio when
 the whole job finishes) but so a cancel lands within ~1s instead of waiting out an ~85s chunk. One retry
@@ -151,6 +166,43 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   so each one needs `crossOrigin="anonymous"`** — a cross-origin source without CORS is tainted and
   plays silent while the transport still advances. This bit twice; there are three such elements
   (`VoiceoverPlayer`, `VoicePicker`, `NewVoiceModal`).
+
+The **Voiceovers column is a fixed window, not a paginated list.** `HISTORY_INITIAL_COUNT` (20) fills it
+on first paint and `HISTORY_LOAD_MORE_COUNT` (10) is the scroll increment — two constants because the two
+jobs differ: the first batch has to fill the window and absorb the first scrolls, the increment only has to
+arrive before the reader reaches the bottom. `.result-list` is capped at `calc(8 * var(--result-row-h))`
+with `overflow-y: auto`; an `IntersectionObserver` on a sentinel `<li>` fetches the next slice as it scrolls
+into view. `history` accumulates rather than swapping pages. Two consequences worth knowing before touching
+it:
+- **Reloads refetch the whole prefix** (`listHistory(max(PAGE_SIZE, loaded), 0)`), they do not patch the
+  array. Deleting an entry shifts every later one up by one, so an offset-based append would silently skip
+  a voiceover. Appends de-duplicate by `id` for the same reason — a job finishing between two requests
+  shifts the offsets under you.
+- **Above 1025px the page itself does not scroll** (`.studio` is `height: 100svh; overflow: hidden`, with a
+  `min-height: 0` chain down through `.workspace` → `.aside` → `.results` → `.result-list`). The row cap is
+  a ceiling, not a height: `flex: 1 1 auto` clamps the list to whatever the aside actually has, so on a
+  768px-tall laptop it renders fewer than eight rows and the `max-height` never applies. Raising the
+  multiplier alone does nothing there.
+- **1025px is written in three places and guarded in none.** The `@media (min-width: 1025px)` and
+  `(max-width: 1024px)` pair in `App.css`, and `TWO_COLUMN_QUERY` in `HistoryList.tsx`. The component needs
+  it because both of its scroll effects have to pick a root: above the breakpoint the list is the scroller,
+  below it `overflow-y: visible` makes the page the scroller. Rooting the `IntersectionObserver` at the
+  list below the breakpoint reports intersecting immediately and chain-loads the whole history in one go;
+  reading `list.scrollTop` there returns 0 forever, i.e. permanently "at the top". Change all three
+  together. Below the
+  breakpoint that is all switched off and the page scrolls normally — a short inner scroller inside a
+  locked page is two nested scroll regions on a phone. A missing `min-height: 0` anywhere in that chain
+  puts the scrollbar back on the page.
+
+**Startup progress in dev comes from a Vite plugin, not from the API.** `frontend/vite-boot-status.ts`
+(`apply: 'serve'`) reads `backend/storage/boot_status.json` off disk and serves it at `/__boot-status`;
+`src/hooks/useBootStatus.ts` polls it while `modelStatus === 'checking'`. It cannot be an API route: uvicorn
+binds the socket only after `lifespan()` reaches its `yield`, and `lifespan()` is where the CUDA probe and
+model load happen, so the backend port is connection-refused for the entire window (measured: 75s+ on this
+machine). Any non-JSON response yields `null` and the UI falls back to its elapsed counter — deliberately
+**not** gated on `import.meta.env.DEV`, which is also false for the LAN build. The phase copy is duplicated
+from `launcher/launcher.py`'s `WORDS`/`TAGLINE` on purpose so dev and the desktop loader read as one
+product; change both together.
 
 All API calls go through `src/api.ts`, which prefixes every path with `VITE_BACKEND_URL` when it's set —
 an absolute URL, since `vite.config.ts` deliberately has no dev proxy, so dev mode needs it. Unset, the
@@ -224,13 +276,15 @@ rely on.
   and stay at the repo root; all other prose lives under `docs/`. `docs/workflow.md` covers day-to-day
   usage and was rewritten against the current UI; `docs/BUILD.md` is the build procedure;
   `docs/gpu-notes.md` holds the measurements
-  behind the empirical constants. `docs/history/HANDOFF.md` and `docs/history/DEPLOY_SPEC.md` carry
+  behind the empirical constants, plus the dated experiment log (GPU sizing, the 2026-09-09 stability
+  sweep) — put numbers there and the one-line conclusion here. `docs/history/HANDOFF.md` and `docs/history/DEPLOY_SPEC.md` carry
   explicit "historical" banners and `docs/DEPLOYMENT.md` documents the dormant Vercel+RunPod path -- treat
   those three as context, not current behaviour, and verify against source. Doc references in prose are
   written relative to the repo root.
 - **Two things the UI does not do, despite appearances.** `startGenerate()` sends only
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
-  `natural`/`balanced`). And `is_builtin` is dead weight: the backend hardcodes it `False`
+  `natural`/`balanced`). Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
+  this machine, so wiring Stability up would buy nothing — see `docs/gpu-notes.md`. Style is untested. And `is_builtin` is dead weight: the backend hardcodes it `False`
   (`main.py`), no "Studio Voices" gallery section exists in the frontend any more, and
   `NewVoiceModal` no longer filters on it -- the field survives only in `Preset` on both sides.
 - **`language` is a property of the voice, not of a script.** `handleGenerate` reads it from the

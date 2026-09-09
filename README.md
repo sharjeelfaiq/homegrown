@@ -192,11 +192,20 @@ while it is already running just reopens the tab; it never restarts a backend th
 If startup fails, the loader shows the backend's own error and a **Try again** button, and the backend's
 output is kept at `<install>/storage/backend.log`.
 
-**The desktop build listens on `127.0.0.1` only** (`backend/run.py`) and is *not* reachable from other
-machines. That is deliberate: binding `0.0.0.0` makes Windows Defender Firewall show an "Allow access /
-Cancel" alert on first run, and Cancel writes a permanent Block rule that leaves the app broken with no way
-to recover from inside the app. For LAN access use the single-port mode above (`start_server.bat`), which
-passes `--host 0.0.0.0` itself and is unaffected.
+**The desktop build listens on `127.0.0.1:8731` only** (`backend/run.py`) and is *not* reachable from other
+machines. Two deliberate choices there:
+
+- **Loopback, not `0.0.0.0`.** A wildcard bind makes Windows Defender Firewall show an "Allow access /
+  Cancel" alert on first run, and Cancel writes a permanent Block rule that leaves the app broken with no
+  way to recover from inside the app. For LAN access use the single-port mode above (`start_server.bat`),
+  which passes `--host 0.0.0.0` itself and is unaffected.
+- **8731, not 8000.** 8000 belongs to dev (`dev.sh`) and to LAN mode. Sharing it meant the launcher's
+  health probe could find a dev uvicorn already listening, conclude Homegrown was running, open the browser
+  and never start `backend.exe` — leaving the user on a bare `{"detail": "Not Found"}`. The desktop build
+  is the one mode whose port nobody types (single origin, relative API paths), so it is the one that moved.
+  The number is written twice — `PORT` in `backend/run.py` binds it, `PORT` in `launcher/launcher.py` polls
+  it — because they are separately frozen exes with no import path between them.
+  `scripts/check_desktop_port.py`, run from `build.sh`'s pre-build checks, is what stops them drifting.
 
 The `.exe` is unsigned, so Windows SmartScreen still shows "Windows protected your PC → More info → Run
 anyway" the first time. Only an Authenticode certificate removes that.
@@ -277,10 +286,20 @@ plays the newest voiceover, **/** focuses the script, **Escape** dismisses an er
 
 ### While it generates
 
-Only one job runs at a time — one worker thread, one GPU lock. The **Generate** button *becomes* the
-progress display: state, voice, time remaining, and a bar with hairline ticks at the chunk boundaries that
-advances smoothly between chunk completions rather than jumping. Anything queued behind it is shown as a
-`(+N queued)` count. **Cancel** stops a running job after the current chunk, within about a second.
+Only one job runs at a time — one worker thread, one GPU lock.
+
+The voiceover being generated appears at once as the **first row of the Voiceovers column**, in the slot
+its finished self will occupy and laid out identically, with three swaps: the waveform becomes a progress
+bar (hairline ticks at the chunk boundaries, advancing smoothly between completions rather than jumping),
+the transport becomes a labelled **Cancel**, and the clock counts **elapsed** time. Queued jobs are further
+rows above the finished ones.
+
+Elapsed rather than remaining, deliberately: `eta_s` is a rolling chars/second average that moves in both
+directions as chunks land. The **Generate** button stays a button, reading `Generating…` while work is in
+flight and nothing new is ready to submit.
+
+**Cancel** stops a running job after the current chunk, within about a second. There is no pause — a paused
+job would hold the GPU lock and stall the whole queue.
 
 The voice dropdown stays usable throughout, so you can line up the next voice while one job runs.
 
@@ -289,15 +308,28 @@ There is no queue list and no reorder control in the UI, though `POST /api/queue
 
 ### Voiceovers
 
-Every finished job, newest first, as a three-line row:
+Every finished job, newest first, in a **fixed window about eight rows tall**. The newest 20 arrive on
+first paint and scrolling to the bottom of that window fetches ten more — there is no paginator, and on a
+desktop-width viewport the page itself does not scroll at all; the list is the only scrolling region. On a
+short screen the window renders fewer rows than the cap allows, since it can only use the height the column
+actually has. Below 1025px the layout is one column — composer first, Voiceovers under it — the page
+scrolls normally, and the list grows to fit instead of scrolling inside itself. The script box shrinks with
+the viewport there (`clamp(140px, 30svh, 260px)`) so it does not sit between you and your history.
+
+Each row is three lines:
 
 1. Its name — **`Voiceover 1`** is the oldest, numbered by position — and, on the right, the voice that
    spoke it. The name is click-to-edit: type, click away to save, Escape to revert, clear it to fall back
-   to `Voiceover N`. Whatever you call it is also the download filename. The field is sized to its text.
-2. Play and the waveform, which doubles as the seek bar. Actions sit at the right, dimmed until you hover
-   the row: download, re-queue (wand — pulls that script and voice back into the script box), and delete.
-3. A `0:12 / 1:06` clock — click the left half to count down the time remaining instead — and the first
-   words of the script.
+   to `Voiceover N`. Whatever you call it is also the download filename. The field is sized to its text. A
+   name typed while the voiceover is still generating carries over when it lands.
+2. Play, the waveform (which doubles as the seek bar), a `0:12 / 1:06` clock — click its left half to count
+   down the time remaining instead — and the actions at the right, dimmed until you hover the row:
+   download, re-queue (wand — pulls that script and voice back into the script box), and delete. The clock
+   occupies a fixed 14ch so nothing beside it shifts as it ticks.
+3. The first words of the script.
+
+A voiceover finishing while you are scrolled down does not move you; it is counted, and an **N new
+voiceovers — show** button appears above the list.
 
 Persisted to `backend/storage/history.json`, so it survives a restart.
 
@@ -441,12 +473,13 @@ frontend/      React 19 + Vite + TypeScript dashboard (the app)
 landing-page/  Marketing page -- the only thing Vercel deploys; separate release cadence
 launcher/      Frozen-app launcher (PyInstaller)
 installer/     NSIS installer script (unusable at current payload size, see above)
-scripts/       Dev/ops utilities (check_design_tokens.py)
+scripts/       Dev/ops utilities (check_design_tokens.py, check_desktop_port.py)
 assets/        Build-time binaries: icon.ico, consumed by launcher.spec and setup.nsi
 ```
 
 Directory depth here is load-bearing: `backend/main.py`, both `.spec` files, `launcher/launcher.py`,
-`scripts/check_design_tokens.py`, `build.sh`, `setup.sh` and `installer/setup.nsi` each resolve paths by
+`scripts/check_design_tokens.py`, `scripts/check_desktop_port.py`, `build.sh`, `setup.sh` and
+`installer/setup.nsi` each resolve paths by
 counting parents from their own location. Moving a top-level directory means editing all of them.
 
 Further reading: `CLAUDE.md` (architecture and the hard-won gotchas), `docs/workflow.md` (day-to-day
