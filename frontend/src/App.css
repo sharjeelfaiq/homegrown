@@ -1017,6 +1017,26 @@ h3 {
   }
 }
 
+/* A queued row is the same row in a different colour -- amber means the GPU is
+   working on it, purple means it is waiting its turn.
+
+   The colour goes on the TRACK and the label, not on .result-bar-fill: a queued
+   job is at 0%, so the fill has no width to carry it. The inset box-shadow is a
+   border that costs no layout, which matters because --result-row-h and the
+   8-row window cap assume every row is exactly the same height.
+
+   Colour is not the only signal, and deliberately so -- roughly 1 in 12 men
+   would not read hue alone. In greyscale a queued row still has an empty,
+   sheen-less bar and reads "Queued" where a running row has a ticking clock. */
+.result-row-pending.is-queued .result-bar {
+  background: var(--queued-soft);
+  box-shadow: inset 0 0 0 1px var(--queued-line);
+}
+
+.result-row-pending.is-queued .result-time {
+  color: var(--queued);
+}
+
 /* The cancel control replaces the delete icon, and unlike the icon strip it
    carries a word -- there is no universally read glyph for "stop this job", and
    a mis-hit here throws away minutes of GPU time. */

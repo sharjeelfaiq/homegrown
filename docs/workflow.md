@@ -67,13 +67,18 @@ Jobs process **one at a time** — single GPU, one worker thread, one lock.
 The voiceover being generated appears **immediately as the first row of the Voiceovers column**, laid out
 exactly like the finished row it will become — same editable name, same voice — with three swaps: the
 waveform is a progress bar, the transport is a labelled **Cancel**, and the clock counts **elapsed** time.
-Download and re-queue are absent until there is something to download. Queued jobs appear as further rows
-above the finished ones, in processing order.
+Download and re-queue are absent until there is something to download.
+
+**You can queue more while one runs.** The Generate button stays live — type another script, change
+the voice if you want, press it again, and the new voiceover joins the queue rather than being refused.
+Queued voiceovers appear as further rows above the finished ones, in the order they will be processed,
+and they are **purple** where the one being generated is amber: an empty bar and the word `Queued`
+instead of a filling bar and a ticking clock. When the running one finishes, the next promotes in place
+and turns amber. Cancel works on either — cancelling a queued voiceover leaves the running one alone.
 
 Elapsed, never remaining: the backend's `eta_s` is a rolling chars/second average that moves in *both*
-directions as chunks land, so watching it told you nothing. The **Generate** button stays a button — it
-reads `Generating…` when work is in flight and there is nothing new to submit, and a script typed during a
-run still queues.
+directions as chunks land, so watching it told you nothing. The **Generate** button just says Generate,
+throughout — the Voiceovers column reports the work, so the button does not need to.
 
 **Cancel** stops a running job after the current chunk, within about a second. There is no pause: generation
 is serialised behind one GPU lock, so a paused job would stall everything queued behind it.

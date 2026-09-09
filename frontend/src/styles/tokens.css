@@ -71,6 +71,15 @@
   --accent-2-line: rgba(77, 212, 232, 0.4);
 
   /* ---- Status ---------------------------------------------------------- */
+  /* Queued-but-not-started, and nothing else. Named for its meaning rather
+     than as --accent-3 so it does not get borrowed as decoration: amber is
+     "work happening", this is "work waiting". Measured against the two
+     surfaces a voiceover row actually sits on -- 6.03:1 on --bg-card and
+     5.47:1 on --bg-raised -- because the --text-faint note above records the
+     mistake of checking only the page background. */
+  --queued: #a78bfa;
+  --queued-soft: rgba(167, 139, 250, 0.14);
+  --queued-line: rgba(167, 139, 250, 0.4);
   --danger: #ff6169;
   /* Error body text: --danger is a border/icon weight and drops below AA as a
      paragraph colour on a tinted error panel. */

@@ -291,12 +291,17 @@ Only one job runs at a time — one worker thread, one GPU lock.
 The voiceover being generated appears at once as the **first row of the Voiceovers column**, in the slot
 its finished self will occupy and laid out identically, with three swaps: the waveform becomes a progress
 bar (hairline ticks at the chunk boundaries, advancing smoothly between completions rather than jumping),
-the transport becomes a labelled **Cancel**, and the clock counts **elapsed** time. Queued jobs are further
-rows above the finished ones.
+the transport becomes a labelled **Cancel**, and the clock counts **elapsed** time.
+
+The Generate button stays live throughout, so a second script submitted mid-run is queued rather than
+refused. Queued voiceovers are further rows above the finished ones, in processing order, and are
+**purple** rather than amber — an empty bar and the word `Queued` in place of a filling bar and a
+ticking clock, so the difference survives greyscale as well as colour. Each promotes in place when its
+turn comes.
 
 Elapsed rather than remaining, deliberately: `eta_s` is a rolling chars/second average that moves in both
-directions as chunks land. The **Generate** button stays a button, reading `Generating…` while work is in
-flight and nothing new is ready to submit.
+directions as chunks land. The **Generate** button stays a button and keeps its label throughout: progress
+belongs in the Voiceovers column, not on the control you press.
 
 **Cancel** stops a running job after the current chunk, within about a second. There is no pause — a paused
 job would hold the GPU lock and stall the whole queue.

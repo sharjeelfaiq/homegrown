@@ -230,8 +230,14 @@ function PendingRow({
   const showTicks = total > 1 && total <= MAX_TICKS
   const chunkLabel = total > 0 ? `chunk ${Math.min(done + 1, total)} of ${total}` : 'Generating'
 
+  // Queued is the only state that gets its own colour. `canceling` deliberately
+  // does not: the job is still running until the current chunk ends, so
+  // painting it as "not started" would be a lie -- the row already says
+  // "Cancelling…".
+  const queued = job.status === 'queued'
+
   return (
-    <li className="result-row result-row-pending">
+    <li className={`result-row result-row-pending${queued ? ' is-queued' : ''}`}>
       <RowHead {...nameControl} voiceName={job.preset_name} nameTitle="Click to rename" />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
@@ -246,8 +252,14 @@ function PendingRow({
           aria-valuemin={0}
           aria-valuemax={total || 100}
           aria-valuenow={total ? done : Math.round(progress)}
-          aria-label={total ? `Generating chunk ${Math.min(done + 1, total)} of ${total}` : 'Generating'}
-          title={chunkLabel}
+          aria-label={
+            queued
+              ? 'Queued, not started'
+              : total
+                ? `Generating chunk ${Math.min(done + 1, total)} of ${total}`
+                : 'Generating'
+          }
+          title={queued ? 'Queued — starts when the current voiceover finishes' : chunkLabel}
           style={{ '--chunks': total || 1 } as CSSProperties}
         >
           <motion.div

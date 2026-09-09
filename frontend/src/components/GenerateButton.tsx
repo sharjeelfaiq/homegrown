@@ -1,5 +1,4 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useGenerationActivity } from '../GenerationActivityContext'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 
 interface Props {
@@ -23,10 +22,9 @@ interface Props {
  * instead of in the composer. Keeping both would have said the same thing
  * twice in one viewport.
  *
- * So this stays a button at all times. The only thing the queue changes here is
- * the label: with work in flight and nothing new to submit, it reads
- * "Generating…" rather than an unexplained grey "Generate". A script typed
- * while a job runs still submits -- the backend queues it FIFO. */
+ * So this stays a button at all times, and says the same thing at all times.
+ * It reports on nothing: a script typed while a job runs still submits, and the
+ * backend queues it FIFO. */
 export default function GenerateButton({
   disabled,
   blockedReason,
@@ -35,27 +33,21 @@ export default function GenerateButton({
   count,
   onClick,
 }: Props) {
-  const { queue } = useGenerationActivity()
   const reduced = usePrefersReducedMotion()
 
-  const generating = queue.some(
-    (e) => e.status === 'running' || e.status === 'queued' || e.status === 'canceling',
-  )
-  // Only when there is nothing to submit. With a ready script the button is
-  // live and says so, because queueing a second job is legal.
-  const idleDuringWork = generating && disabled && !busy && !warming && !blockedReason
-
+  // Deliberately blind to the queue. This briefly read "Generating…" while a
+  // job ran; reporting on work in flight is the Voiceovers column's job, and a
+  // button that renames itself for a state it does not control reads as a
+  // status light rather than as an action.
   const label = warming
     ? 'Starting the voice model…'
     : busy
       ? 'Submitting…'
       : blockedReason
         ? blockedReason
-        : idleDuringWork
-          ? 'Generating…'
-          : count > 1
-            ? `Generate ${count} voiceovers`
-            : 'Generate'
+        : count > 1
+          ? `Generate ${count} voiceovers`
+          : 'Generate'
 
   return (
     <section className="generate">
