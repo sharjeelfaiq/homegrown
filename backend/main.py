@@ -1494,7 +1494,12 @@ if getattr(sys, "frozen", False):
 else:
     FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
-if FRONTEND_DIST.is_dir():
+# Gated on index.html, not on the directory: a half-written frontend/dist (Vite
+# emits assets/ before index.html) passes is_dir() and would register a route
+# that 404s every page load. And this is evaluated once, at import -- a backend
+# started before `npm run build` finishes never serves the SPA at all, however
+# complete the directory becomes later. The warning is the only trace of that.
+if (FRONTEND_DIST / "index.html").is_file():
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
@@ -1511,3 +1516,11 @@ if FRONTEND_DIST.is_dir():
         # /sign-in, /sign-up -- falls through to index.html; React Router
         # takes over from there.
         return FileResponse(FRONTEND_DIST / "index.html")
+
+else:
+    logger.warning(
+        "SPA route not registered: %s does not exist. "
+        "The API is served, but every page load returns 404. "
+        "Build the frontend, then restart this process.",
+        FRONTEND_DIST / "index.html",
+    )

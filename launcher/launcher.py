@@ -43,6 +43,12 @@ BASE_URL = f"http://localhost:{PORT}"
 # 127.0.0.1. At 4s a poll the loader's progress would be a slideshow, and the
 # old launcher paid it on every one of its 1s-cadence polls.
 HEALTH_URL = f"http://127.0.0.1:{PORT}/api/health"
+# The app root, same host rule as HEALTH_URL. /api/health alone cannot tell this
+# backend from any other FastAPI app on 8000 -- including a dev uvicorn of this
+# same project that imported main.py while frontend/dist was missing, which
+# answers health 200 but has no SPA route at all. Adopting one of those sent the
+# browser to a bare {"detail": "Not Found"} and skipped starting backend.exe.
+ROOT_URL = f"http://127.0.0.1:{PORT}/"
 
 # Session-local named mutex. The old single-instance check was
 # is_backend_healthy(), which is blind during the whole pre-bind window: a
@@ -308,7 +314,7 @@ def port_in_use(timeout: float = 1.0) -> bool:
         return s.connect_ex(("127.0.0.1", PORT)) == 0
 
 
-def is_backend_healthy(quick: bool = False) -> bool:
+def is_backend_healthy(quick: bool = False, serving_app: bool = False) -> bool:
     """True once the backend is serving. `quick` trades timeout for cadence.
 
     The TCP pre-check matters more than it looks: for the entire pre-bind
@@ -317,12 +323,22 @@ def is_backend_healthy(quick: bool = False) -> bool:
     poll loop passes quick=True so it can actually run at its 0.5s cadence;
     the one-shot checks in main() stay generous, because a false negative
     there would spawn a second backend.
+
+    `serving_app` adds a second request checking that / returns HTML, i.e. that
+    whatever is on 8000 is serving the app and not just the API (see ROOT_URL).
+    Only main()'s one-shot checks pass it -- the 0.5s poll must stay one cheap
+    request, and by then we started the process ourselves anyway.
     """
     if not port_in_use(0.25 if quick else 1.0):
         return False
     try:
         with urllib.request.urlopen(HEALTH_URL, timeout=2) as r:
-            return r.status == 200
+            if r.status != 200:
+                return False
+        if not serving_app:
+            return True
+        with urllib.request.urlopen(ROOT_URL, timeout=2) as r:
+            return r.status == 200 and "text/html" in r.headers.get("Content-Type", "")
     except (urllib.error.URLError, OSError):
         return False
 
@@ -424,7 +440,7 @@ def main() -> None:
     if mutex is None:
         # Another launcher is mid-startup. Join its loader rather than starting
         # a second backend or opening a URL that isn't listening yet.
-        if is_backend_healthy():
+        if is_backend_healthy(serving_app=True):
             webbrowser.open(BASE_URL)
             return
         try:
@@ -433,7 +449,7 @@ def main() -> None:
             webbrowser.open(BASE_URL)
         return
 
-    if is_backend_healthy():
+    if is_backend_healthy(serving_app=True):
         webbrowser.open(BASE_URL)
         return
 
