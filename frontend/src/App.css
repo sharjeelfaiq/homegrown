@@ -729,6 +729,16 @@ h3 {
   font-size: 11px;
 }
 
+/* Both columns' headings must sit the same distance above their content, and
+   the two columns do not share a gap: .results is gap: 4px (4 + the rule's own
+   6px = 10px), .composer is gap: 22px. Cancel the difference rather than
+   changing either gap -- .composer's 22px spaces the script card, the notices
+   and the action row, and shrinking it to suit a heading would tighten all of
+   them. */
+.composer > .section-rule {
+  margin-bottom: -12px;
+}
+
 .new-voiceovers {
   align-self: flex-start;
   margin-bottom: 10px;

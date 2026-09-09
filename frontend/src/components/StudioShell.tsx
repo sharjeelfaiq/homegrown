@@ -379,6 +379,15 @@ export default function StudioShell() {
 
       <main className="workspace">
         <div className="composer">
+          {/* Pairs with the Voiceovers heading opposite, same .section-rule
+              treatment: you write a script here, the voiceovers appear there.
+              "Script" rather than "Compose" or "New voiceover" because it is
+              the word the terminology table fixes for the text the user
+              writes. */}
+          <h2 className="section-rule">
+            <span>Script</span>
+          </h2>
+
           {/* No "Ready" indicator: GenerateButton already says what is missing
               ("Waiting for the voice model") whenever the model is not up.
               The DOWN state is different -- it is the only state the user can
