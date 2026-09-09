@@ -9,6 +9,7 @@ import { MAX_SCRIPT_CHARS } from '../constants'
 import { presetNameFromFile } from '../format'
 import { PlusIcon } from './Icons'
 import { useGenerationActivity } from '../GenerationActivityContext'
+import { bootTagline, bootWord, useBootStatus } from '../hooks/useBootStatus'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useHotkeys } from '../hooks/useHotkeys'
 import { wakeBackend } from '../wake'
@@ -64,6 +65,14 @@ export default function StudioShell() {
   const [estimate, setEstimate] = useState<Estimate | null>(null)
 
   const { queue, refresh: refreshQueue } = useGenerationActivity()
+  // Only while we are actually waiting. Null whenever there is no dev-server
+  // status source, which is every non-`vite dev` build -- the row below then
+  // falls back to wakeMessage's elapsed counter alone.
+  const boot = useBootStatus(modelStatus === 'checking')
+  // Set when boot_status reports a failed model load, so the in-flight
+  // wakeBackend poll can be ignored rather than cancelled -- see the effect
+  // below for why waiting it out is not an option.
+  const bootFailedRef = useRef(false)
   const scriptRef = useRef<HTMLTextAreaElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
 
@@ -82,6 +91,7 @@ export default function StudioShell() {
 
   useEffect(() => {
     let cancelled = false
+    bootFailedRef.current = false
     setModelStatus('checking')
     setWakeMessage(null)
     wakeBackend((status, elapsedMs) => {
@@ -90,7 +100,7 @@ export default function StudioShell() {
       setWakeMessage(`Loading the voice model… ${Math.round(elapsedMs / 1000)}s`)
     })
       .then(() => {
-        if (cancelled) return
+        if (cancelled || bootFailedRef.current) return
         setModelStatus('ready')
         setWakeMessage(null)
         getLanguages()
@@ -110,7 +120,7 @@ export default function StudioShell() {
         refreshHistory()
       })
       .catch((e) => {
-        if (cancelled) return
+        if (cancelled || bootFailedRef.current) return
         setModelStatus('down')
         setWakeMessage(e instanceof Error ? e.message : 'Backend unreachable.')
       })
@@ -118,6 +128,19 @@ export default function StudioShell() {
       cancelled = true
     }
   }, [wakeNonce, refreshHistory])
+
+  // A model that fails to load is the one case wakeBackend cannot diagnose.
+  // lifespan() is deliberately fail-soft there -- it keeps serving with
+  // model_loaded:false rather than crashing before uvicorn binds -- so
+  // callWake() reads that as 'starting' and polls happily for the full
+  // LOCAL_TIMEOUT_MS (10 minutes) before reporting a timeout that blames the
+  // wrong thing. boot_status has the real reason within seconds. Use it.
+  useEffect(() => {
+    if (boot?.phase !== 'error') return
+    bootFailedRef.current = true
+    setModelStatus('down')
+    setWakeMessage(boot.detail || 'The voice model failed to load.')
+  }, [boot?.phase, boot?.detail])
 
   // Single place that loads a page of voiceovers. Re-runs on page change and on any
   // explicit refresh (job finished, entry deleted).
@@ -336,6 +359,43 @@ export default function StudioShell() {
             </p>
           )}
 
+          {/* The startup wait used to be a greyed-out button and nothing else,
+              while wakeMessage's elapsed counter was computed every poll and
+              rendered nowhere -- it only ever appeared in the DOWN row above.
+              `boot` adds the phase on top when a dev server is serving it; the
+              elapsed seconds carry the row on their own when it isn't. */}
+          {modelStatus === 'checking' && (
+            <section className="notice boot-row" role="status" aria-live="polite">
+              <div className="boot-line">
+                <span className="boot-phase">
+                  {boot ? bootWord(boot.phase) : 'Waking up'}
+                </span>
+                {wakeMessage && <span className="mono boot-elapsed">{wakeMessage}</span>}
+              </div>
+              <p className="boot-tagline">
+                {boot ? bootTagline(boot.phase) : 'Homegrown is starting.'}
+              </p>
+              {/* Its own slot, not appended to the prose above. The launcher
+                  learned this one the hard way: letting the backend's `detail`
+                  replace the copy meant the whole screen read
+                  "0.0 GB of 2.5 GB" and the one reassuring sentence vanished
+                  exactly when it was needed. */}
+              {boot?.detail && <p className="mono boot-detail">{boot.detail}</p>}
+              <div
+                className={`boot-bar${boot?.percent == null ? ' is-indeterminate' : ''}`}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={boot?.percent ?? undefined}
+              >
+                <div
+                  className="boot-bar-fill"
+                  style={boot?.percent == null ? undefined : { width: `${boot.percent}%` }}
+                />
+              </div>
+            </section>
+          )}
+
           {cpuNotice && (
             <p className="notice">Running on CPU — generation will be very slow. {cpuNotice}</p>
           )}
@@ -381,6 +441,7 @@ export default function StudioShell() {
               presets={presets}
               selectedPresetId={voiceId}
               onSelect={setVoiceId}
+              loading={modelStatus === 'checking'}
             />
 
             <GenerateButton
@@ -406,6 +467,7 @@ export default function StudioShell() {
             onShowNew={showNewVoiceovers}
             onDelete={handleDeleteHistory}
             onRequeue={handleRequeue}
+            loading={modelStatus === 'checking'}
           />
         </aside>
       </main>

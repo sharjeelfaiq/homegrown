@@ -93,6 +93,108 @@ h3 {
   gap: 12px;
 }
 
+/* This row now also carries the model-load failure, which arrives as the
+   backend's own multi-line message rather than as one tidy sentence. Wrap it
+   and keep its line breaks; the Retry button stays put beside it. */
+.status-down-row > span {
+  min-width: 0;
+  white-space: pre-wrap;
+}
+
+.status-down-row > .ghost-btn {
+  flex: none;
+  align-self: flex-start;
+}
+
+/* ── Startup ─────────────────────────────────────────────────────────────── */
+
+/* Shown only while the backend is still coming up. Inline rather than a
+   full-screen loader: the desktop build already has one of those (the launcher
+   serves it before the app exists at all), and here the app DOES exist -- the
+   script box is usable, so covering it would take away the one thing the user
+   can get on with while waiting.
+
+   It sits on .notice's amber card, so it reads as the same class of message as
+   the CPU-fallback warning rather than as a new piece of chrome. */
+.boot-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.boot-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.boot-phase {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.boot-elapsed {
+  flex: none;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.boot-tagline {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+/* The backend's own words ("Loading the voice model onto CUDA", "0.4 GB of
+   2.5 GB"). Mono and quieter than the prose, so it reads as instrumentation
+   rather than as the message. */
+.boot-detail {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* Determinate only during the first-run model download, which is the one phase
+   that knows its own size. Everything else is a sweep: a bar parked at a made
+   up percentage is worse than one that admits it cannot say. */
+.boot-bar {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  background: var(--accent-line);
+  border-radius: var(--radius-sm);
+}
+
+.boot-bar-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  transition: width var(--slow) var(--ease);
+}
+
+.boot-bar.is-indeterminate .boot-bar-fill {
+  width: 28%;
+  animation: boot-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes boot-sweep {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-bar.is-indeterminate .boot-bar-fill {
+    width: 15%;
+    animation: none;
+  }
+}
+
 /* ── Workspace: composer left, voiceovers right ───────────────────────────────── */
 
 /* minmax(0, …) on both tracks is load-bearing: the voiceover waveform is a canvas

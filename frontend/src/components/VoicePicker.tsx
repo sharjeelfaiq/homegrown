@@ -9,6 +9,10 @@ interface Props {
   presets: Preset[]
   selectedPresetId: string | null
   onSelect: (id: string) => void
+  /** True before the first fetch has returned. An empty list means two
+   * completely different things -- "you have no voices" and "we have not asked
+   * yet" -- and only one of them is the user's problem to fix. */
+  loading?: boolean
 }
 
 /** Voice picker: a trigger button plus a popover list, each row carrying its
@@ -27,7 +31,12 @@ interface Props {
  *
  * The generating indicator shows in two places on purpose: on the trigger for
  * the selected voice, and on any row whose voice is mid-job. */
-export default function VoicePicker({ presets, selectedPresetId, onSelect }: Props) {
+export default function VoicePicker({
+  presets,
+  selectedPresetId,
+  onSelect,
+  loading = false,
+}: Props) {
   const [open, setOpen] = useState(false)
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -108,7 +117,11 @@ export default function VoicePicker({ presets, selectedPresetId, onSelect }: Pro
   }
 
   if (presets.length === 0) {
-    return <span className="empty-inline">No voices yet — add one to get started.</span>
+    return (
+      <span className="empty-inline">
+        {loading ? 'Loading your voices…' : 'No voices yet — add one to get started.'}
+      </span>
+    )
   }
 
   return (

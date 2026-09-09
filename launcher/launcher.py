@@ -197,7 +197,7 @@ LOADER_HTML = r"""<!doctype html>
     downloading: "Setting up your voice. One time only — every launch after this is instant.",
     importing: "Loading the engine. Nearly there.",
     probing_gpu: "Matching the model to your graphics card.",
-    loading_model: "Your voice model is loading. Seconds away.",
+    loading_model: "Your voice model is loading. This takes a minute or two.",
     ready: "Opening Homegrown."
   };
   var hero = document.getElementById("hero");

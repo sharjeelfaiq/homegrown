@@ -21,6 +21,10 @@ interface Props {
   onShowNew: () => void
   onDelete: (id: string) => void
   onRequeue: (entry: HistoryEntry) => void
+  /** True before the first fetch has returned. Without it an empty column
+   * tells a starting-up user to "pick a voice and press Generate", which is
+   * advice they cannot act on yet. */
+  loading?: boolean
 }
 
 /** Past this many chunks the boundary ticks fall below ~4px apart and read as
@@ -397,6 +401,7 @@ export default function HistoryList({
   onShowNew,
   onDelete,
   onRequeue,
+  loading = false,
 }: Props) {
   const { queue, refresh } = useGenerationActivity()
   const [entryFileNames, setFileName, removeFileName] = usePersistedRecord('historyFileNames')
@@ -520,7 +525,9 @@ export default function HistoryList({
 
       {total === 0 && active.length === 0 ? (
         <p className="empty-hint">
-          No voiceovers yet. Pick a voice, write a script, and press Generate.
+          {loading
+            ? 'Loading your voiceovers…'
+            : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
         </p>
       ) : (
         <>
