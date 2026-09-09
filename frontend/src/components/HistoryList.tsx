@@ -261,6 +261,10 @@ function PendingRow({
           directions as chunks land, so watching it told the user nothing. */}
       <div className="result-line result-line-meta">
         <span className="mono result-time" aria-live="polite">
+          {/* The same reserved slot TransportTime puts the minus in. Empty
+              here -- there is no remaining to toggle to -- but it keeps this
+              row's digits on the same column as a finished row's. */}
+          <span className="result-time-sign" aria-hidden="true" />
           {canceling ? 'Cancelling…' : elapsed == null ? 'Queued' : formatClock(elapsed)}
         </span>
 

@@ -665,18 +665,41 @@ h3 {
   color: var(--text-faint);
 }
 
-/* Position / total.
-   Width stability does NOT come from a min-width here -- that was tried at 84px
-   and the content outgrew it, which is what shifted the preview beside it on
-   every toggle. It comes from .result-time-sign reserving the minus, the one
-   character that differs between the two states. .mono supplies tabular-nums,
-   so the digits are already equal width. */
+/* The time slot -- position/total on a finished row, elapsed on one still
+   generating. It holds two separate width invariants, and they are solved by
+   two different things.
+
+   WITHIN one row, the played/remaining toggle must not resize: that is
+   .result-time-sign reserving the minus, the single character that differs
+   between the two states, with .mono's tabular-nums making the digits equal.
+
+   ACROSS the two row kinds, the slot must be the same size regardless of
+   content, or .result-text beside it (flex: 1 1 auto) starts at a different x
+   on a generating row than on a finished one -- and moves again as the
+   generating row goes "Queued" (6 chars) to "0:07" (4) to "Cancelling…" (11).
+   Hence the fixed width.
+
+   14ch, not a pixel guess: 1ch sign + "12:07 / 45:33" is 14 characters, and
+   --font-mono (IBM Plex Mono) is a true monospace, so every glyph -- letters
+   and the ellipsis included, not just the tabular digits -- shares one advance
+   and ch measures it exactly in this element's own font. The earlier attempt
+   here was 84px, which the content outgrew; a character count cannot be
+   outgrown by content that is by construction 14 characters.
+
+   Fixed in BOTH directions, so it neither shrinks for "0:07" nor grows for a
+   two-hour voiceover -- formatClock's minutes are unbounded ("125:03 /
+   130:00"), and that case ellipsises inside the slot rather than shoving the
+   preview. */
 .result-time {
   flex: none;
+  width: 14ch;
   padding: 0;
   font-size: 11px;
   color: var(--text-faint);
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: transparent;
   transition: color var(--fast) var(--ease);
 }
