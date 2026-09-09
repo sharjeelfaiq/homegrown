@@ -539,115 +539,6 @@ h3 {
   border: 1px solid var(--line);
 }
 
-/* ── Render panel ────────────────────────────────────────────────────────── */
-
-/* Replaces a 48px rail whose amber fill swept through its own label text. The
-   fill now sits behind a stable header rather than across it. */
-.render {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  background: var(--bg-card);
-  border: 1px solid var(--accent-line);
-  border-radius: var(--radius-md);
-}
-
-.render-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-}
-
-.render-state {
-  font-size: 13px;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.render-voice {
-  color: var(--text-muted);
-}
-
-.render-eta {
-  font-size: 11px;
-  color: var(--accent);
-  white-space: nowrap;
-  flex: none;
-}
-
-/* One bar at every chunk count.
-
-   The ticks are a repeating gradient rather than one element per chunk, so the
-   cost is identical at 3 chunks and at 750. The stop positions are derived from
-   --chunks, set inline by the component, which keeps the arithmetic in one
-   place instead of splitting it between JS and CSS.
-
-   This replaced a cell grid whose `repeat(auto-fill, minmax(14px, 1fr))` laid
-   out roughly 40 tracks whatever the chunk count -- so a typical 3-7 chunk job
-   drew a few ticks at the far left of a wide empty strip. */
-.render-bar {
-  position: relative;
-  height: 10px;
-  background: var(--bg-raised);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-
-.render-bar.has-ticks::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    to right,
-    transparent 0,
-    transparent calc(100% / var(--chunks) - 1px),
-    var(--bg-base) calc(100% / var(--chunks) - 1px),
-    var(--bg-base) calc(100% / var(--chunks))
-  );
-}
-
-.render-bar-fill {
-  position: relative;
-  height: 100%;
-  background: var(--accent);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-
-/* A slow sweep across the filled portion, so a bar that may not advance for a
-   minute still reads as working rather than stalled. */
-.render-bar-sheen {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.28),
-    transparent
-  );
-  animation: sheen 2.1s var(--ease) infinite;
-}
-
-@keyframes sheen {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(100%);
-  }
-}
-
-.render-foot {
-  display: flex;
-  justify-content: flex-end;
-}
-
 /* ── Results ─────────────────────────────────────────────────────────────── */
 
 .results {
@@ -856,6 +747,91 @@ h3 {
 .paginator-status {
   font-size: 11px;
   color: var(--text-faint);
+}
+
+/* ── In-progress voiceover ───────────────────────────────────────────────── */
+
+/* One bar at every chunk count.
+
+   The ticks are a repeating gradient rather than one element per chunk, so the
+   cost is identical at 3 chunks and at 750. The stop positions are derived from
+   --chunks, set inline by the component, which keeps the arithmetic in one
+   place instead of splitting it between JS and CSS.
+
+   This replaced a cell grid whose `repeat(auto-fill, minmax(14px, 1fr))` laid
+   out roughly 40 tracks whatever the chunk count -- so a typical 3-7 chunk job
+   drew a few ticks at the far left of a wide empty strip. */
+.result-bar {
+  /* Sits where the waveform sits on a finished row, so the two row kinds line
+     up down the column: flexible, with the actions beside it staying put. */
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  height: 10px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.result-bar.has-ticks::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(100% / var(--chunks) - 1px),
+    var(--bg-base) calc(100% / var(--chunks) - 1px),
+    var(--bg-base) calc(100% / var(--chunks))
+  );
+}
+
+.result-bar-fill {
+  position: relative;
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* A slow sweep across the filled portion, so a bar that may not advance for a
+   minute still reads as working rather than stalled. */
+.result-bar-sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.28),
+    transparent
+  );
+  animation: sheen 2.1s var(--ease) infinite;
+}
+
+@keyframes sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* The cancel control replaces the delete icon, and unlike the icon strip it
+   carries a word -- there is no universally read glyph for "stop this job", and
+   a mis-hit here throws away minutes of GPU time. */
+.result-cancel {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+/* The in-progress row's actions never dim: Cancel is the only control on the
+   row, and hiding the only way out of a long job behind a hover is the mistake
+   the download button already made once. */
+.result-row-pending .result-actions {
+  opacity: 1;
 }
 
 /* ── Voiceover transport ──────────────────────────────────────────────────────── */

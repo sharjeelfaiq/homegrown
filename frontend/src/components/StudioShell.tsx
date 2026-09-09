@@ -308,7 +308,9 @@ export default function StudioShell() {
     onCancel: () => setError(null),
     // VoiceoverPlayer owns its own <audio>, so rather than lifting that state up to
     // service one shortcut, Space clicks the newest voiceover's play button. The
-    // transport stays encapsulated where it belongs.
+    // transport stays encapsulated where it belongs. In-progress rows sit above
+    // the finished ones but carry no .voiceover-play-btn -- there is nothing to
+    // play yet -- so this still finds the newest playable voiceover.
     onPlayPause: () => {
       resultsRef.current?.querySelector<HTMLButtonElement>('.voiceover-play-btn')?.click()
     },
@@ -361,10 +363,9 @@ export default function StudioShell() {
           {/* One action row under the script: add-voice, voice, generate.
               The voice picker sits here rather than inside the card, so the
               script box stays the script box.
-              GenerateButton swaps itself for the progress panel while a job
-              runs; .compose-bar wraps that panel onto its own line so choosing
-              a voice stays possible during a render instead of disappearing
-              for minutes. */}
+              GenerateButton stays a button throughout -- progress now lives in
+              the Voiceovers column, as the first row, where the finished
+              voiceover will land. */}
           <section className="compose-bar">
             <button
               type="button"
