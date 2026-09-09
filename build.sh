@@ -85,6 +85,7 @@ fi
 # Cheap, and they run before the 20-minute freeze rather than after it.
 step "Pre-build checks"
 python scripts/check_design_tokens.py
+python scripts/check_desktop_port.py
 ( cd frontend && npm install --no-fund --no-audit --loglevel=error && npm run lint )
 
 # ---- 4. stash the dev env file --------------------------------------------
@@ -166,7 +167,7 @@ cat <<'NEXT'
   storage/backend.log appearing, NO Windows firewall prompt, and a redirect to
   the app once the model loads. Confirm the listener is loopback-only:
 
-    netstat -ano | findstr :8000     # 127.0.0.1:8000, never 0.0.0.0:8000
+    netstat -ano | findstr :8731     # 127.0.0.1:8731, never 0.0.0.0:8731
 
   If you publish this build, update the landing page's download link, size text
   and SHA-256 together. A stale checksum is worse than none.

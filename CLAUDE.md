@@ -161,9 +161,11 @@ rely on.
 
 1. **Local dev** — Vite :5173 + uvicorn :8000, cross-origin, needs `ALLOWED_ORIGINS`.
 2. **LAN single-port** — built `frontend/dist` served by FastAPI on :8000. The current primary target.
-3. **Frozen desktop installer** — `backend/run.py` is the PyInstaller entrypoint (path resolution +
-   first-run HF model download); `launcher/launcher.py` starts `backend.exe` hidden, polls `/api/health`,
-   opens the browser; `installer/setup.nsi` is the per-user NSIS installer.
+3. **Frozen desktop installer** — on **:8731**, not 8000: it is the one mode whose port nobody types
+   (single loopback origin, relative API paths), and sharing 8000 let the launcher mistake a dev uvicorn
+   for a running app and never start `backend.exe`. `backend/run.py` is the PyInstaller entrypoint (path
+   resolution + first-run HF model download); `launcher/launcher.py` starts `backend.exe` hidden, polls
+   `/api/health`, opens the browser; `installer/setup.nsi` is the per-user NSIS installer.
 4. **Vercel + RunPod split (dormant)** — `frontend/api/wake.ts` resumes a stopped pod, backend's
    `_idle_stop_loop` stops it again when idle *and* the queue is empty. Gated client-side by
    `VITE_USE_RUNPOD_WAKE`; unset everywhere except the Vercel project. See `docs/DEPLOYMENT.md`. Whether to keep
@@ -261,11 +263,16 @@ the output. `ClipPlayer` was renamed `VoiceoverPlayer` for exactly this reason.
   access / **Cancel**" alert the first time backend.exe runs -- and Cancel writes a *permanent Block rule*
   for that exe path, after which the app can never start again and nothing in the UI can undo it. The
   desktop build serves the API and the SPA from one origin, so it never needed the wildcard. LAN mode is a
-  different entrypoint (`start_server.bat` passes `--host 0.0.0.0`) and is unaffected -- don't "fix" the
-  inconsistency by unifying them.
+  different entrypoint (`start_server.bat` passes `--host 0.0.0.0`, on :8000) and is unaffected -- don't
+  "fix" either inconsistency, the bind or the port, by unifying them.
+- **The desktop build's port is written twice and guarded once.** `PORT` in `backend/run.py` binds it;
+  `PORT` in `launcher/launcher.py` polls it. The two are separately frozen exes with no import path
+  between them, so `scripts/check_desktop_port.py` (run from `build.sh`'s pre-build checks) is the only
+  thing stopping them drifting. On drift the launcher polls a dead port, waits out `STALL_TIMEOUT_S` and
+  reports a backend startup timeout that never happened.
 - **Startup progress is a file, not an endpoint.** uvicorn runs the lifespan startup (CUDA probe + model
   load) *before* it binds the socket, and on a first run `run.py` downloads ~2.5GB before uvicorn is even
-  imported -- so for that whole window port 8000 is connection-refused and `/api/health` cannot answer.
+  imported -- so for that whole window :8731 is connection-refused and `/api/health` cannot answer.
   `model_loaded: false` is therefore unreachable on the happy path; the browser goes straight from
   ECONNREFUSED to ready. Phases go through `backend/boot_status.py` ->
   `storage/boot_status.json`, which `launcher/launcher.py` serves at `/status` on its own ephemeral

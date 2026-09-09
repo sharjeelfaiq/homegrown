@@ -179,7 +179,7 @@ Expect, in order:
 Then confirm the listener really is loopback-only:
 
 ```bash
-netstat -ano | findstr :8000    # expect 127.0.0.1:8000, never 0.0.0.0:8000
+netstat -ano | findstr :8731    # expect 127.0.0.1:8731, never 0.0.0.0:8731
 ```
 
 If the loader never appears, the launcher exe is stale — step 5 did not rebuild.

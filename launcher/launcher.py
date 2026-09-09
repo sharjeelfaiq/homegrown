@@ -10,7 +10,7 @@ The loader exists because there is a long window -- tens of seconds warm, many
 minutes on a first run -- where the backend cannot answer for itself. uvicorn
 runs the ASGI lifespan startup (CUDA probe, model load) *before* it binds the
 socket, and on a first run backend.exe downloads ~2.5GB before uvicorn is even
-imported, so port 8000 is connection-refused for all of it. Previously the
+imported, so PORT is connection-refused for all of it. Previously the
 launcher just polled in silence and the user saw nothing at all until the whole
 chain finished. Progress is instead published by the backend to
 storage/boot_status.json and served from here at /status, same-origin with the
@@ -34,7 +34,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP_NAME = "Homegrown"
-PORT = 8000
+# The desktop build's own port, not 8000. 8000 is dev (`dev.sh`) and LAN
+# (`start_server.bat`); this build never shares with either, because a dev
+# uvicorn answering on the same port made the health probe below conclude
+# Homegrown was already running -- so this process opened the browser and
+# returned without ever starting backend.exe.
+#
+# MUST match PORT in backend/run.py, which is what actually binds it. The two
+# are separately frozen exes with no import path between them, so nothing but
+# `build.sh`'s pre-build check stops them drifting; if they disagree this
+# process polls a dead port for STALL_TIMEOUT_S and then blames the backend for
+# a startup timeout it never had.
+PORT = 8731
 BASE_URL = f"http://localhost:{PORT}"
 # Probed over 127.0.0.1, never "localhost". That name resolves to ::1 *first*
 # and 127.0.0.1 second, and a connect to a dead loopback port on this stack is
@@ -43,17 +54,23 @@ BASE_URL = f"http://localhost:{PORT}"
 # 127.0.0.1. At 4s a poll the loader's progress would be a slideshow, and the
 # old launcher paid it on every one of its 1s-cadence polls.
 HEALTH_URL = f"http://127.0.0.1:{PORT}/api/health"
-# The app root, same host rule as HEALTH_URL. /api/health alone cannot tell this
-# backend from any other FastAPI app on 8000 -- including a dev uvicorn of this
-# same project that imported main.py while frontend/dist was missing, which
-# answers health 200 but has no SPA route at all. Adopting one of those sent the
-# browser to a bare {"detail": "Not Found"} and skipped starting backend.exe.
+# The app root, same host rule as HEALTH_URL. /api/health alone cannot tell
+# this backend from any other FastAPI app on the port -- including a dev uvicorn
+# of this same project that imported main.py while frontend/dist was missing,
+# which answers health 200 but has no SPA route at all. Adopting one of those
+# sent the browser to a bare {"detail": "Not Found"} and skipped starting
+# backend.exe.
+#
+# Second line of defence now, not the first: PORT moved off 8000 precisely so
+# that encounter cannot happen. This still earns its keep against anything else
+# that happens to bind the port, and the failure it prevents is the expensive
+# kind -- silently not starting the app.
 ROOT_URL = f"http://127.0.0.1:{PORT}/"
 
 # Session-local named mutex. The old single-instance check was
 # is_backend_healthy(), which is blind during the whole pre-bind window: a
 # second double-click 20s into a cold start saw no health *and* no listener on
-# 8000, and cheerfully spawned a second backend.exe. Both then loaded torch,
+# PORT, and cheerfully spawned a second backend.exe. Both then loaded torch,
 # one lost the bind and died silently into DEVNULL.
 MUTEX_NAME = "Homegrown.Launcher.SingleInstance"
 ERROR_ALREADY_EXISTS = 183
@@ -318,14 +335,14 @@ def is_backend_healthy(quick: bool = False, serving_app: bool = False) -> bool:
     """True once the backend is serving. `quick` trades timeout for cadence.
 
     The TCP pre-check matters more than it looks: for the entire pre-bind
-    window nothing is listening on 8000, and an HTTP attempt against that costs
+    window nothing is listening on PORT, and an HTTP attempt against that costs
     seconds (see HEALTH_URL) where a connect attempt costs milliseconds. The
     poll loop passes quick=True so it can actually run at its 0.5s cadence;
     the one-shot checks in main() stay generous, because a false negative
     there would spawn a second backend.
 
     `serving_app` adds a second request checking that / returns HTML, i.e. that
-    whatever is on 8000 is serving the app and not just the API (see ROOT_URL).
+    whatever is on PORT is serving the app and not just the API (see ROOT_URL).
     Only main()'s one-shot checks pass it -- the 0.5s poll must stay one cheap
     request, and by then we started the process ourselves anyway.
     """

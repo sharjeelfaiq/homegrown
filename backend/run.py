@@ -8,7 +8,7 @@ main.py can't derive from a real repo layout anymore, then starts uvicorn.
 
 Everything slow happens here before uvicorn exists, so each step publishes its
 progress through `boot_status` -- the launcher's browser loader is the only UI
-the user has until port 8000 comes up.
+the user has until PORT comes up.
 """
 import fnmatch
 import os
@@ -18,6 +18,22 @@ import time
 from pathlib import Path
 
 import boot_status
+
+# Not 8000, deliberately. 8000 belongs to dev (`dev.sh`) and to LAN mode
+# (`start_server.bat`); this build is the only one whose port nobody types,
+# because it serves the API and the SPA from the same loopback origin and the
+# frontend calls it with relative paths. Sharing 8000 meant the launcher's
+# health probe could find a dev uvicorn already listening, conclude Homegrown
+# was up, open the browser and never start backend.exe at all -- and a healthy
+# dev backend serving a built frontend/dist is indistinguishable from this one
+# over HTTP, so no probe can tell them apart. Separate ports can.
+#
+# MUST match PORT in launcher/launcher.py, which is what polls this process
+# into readiness. They are separately frozen exes with no import path between
+# them, so nothing but `build.sh`'s pre-build check stops them drifting; if
+# they disagree the launcher polls a dead port and reports the backend as
+# having timed out during startup, which is a badly wrong diagnosis.
+PORT = 8731
 
 REPO_ID = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
 IGNORE_PATTERNS = ["*.msgpack", "*.h5", "flax_model*"]
@@ -164,4 +180,4 @@ if __name__ == "__main__":
     # desktop build serves the API and the SPA from this same origin, so it
     # never needed the wildcard. LAN deployments use start_server.bat, which
     # passes --host 0.0.0.0 itself and is unaffected by this.
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, log_level="info")
+    uvicorn.run("main:app", host="127.0.0.1", port=PORT, log_level="info")
