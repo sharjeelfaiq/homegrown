@@ -106,6 +106,71 @@ h3 {
   align-self: flex-start;
 }
 
+/* ── GPU fault dialog ────────────────────────────────────────────────────── */
+
+.fault-copy {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* Collapsed by default. The driver's message is worth keeping -- it is the
+   only record of what actually happened -- but it is several lines of CUDA
+   text, and putting that in front of someone who just wants to know whether
+   their work survived is how a dialog stops being read at all. */
+.fault-more {
+  margin: 0 0 16px;
+}
+
+.fault-more > summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-faint);
+  list-style: none;
+}
+
+.fault-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fault-more > summary::before {
+  content: '▸ ';
+}
+
+.fault-more[open] > summary::before {
+  content: '▾ ';
+}
+
+.fault-more > summary:hover {
+  color: var(--text-muted);
+}
+
+/* The backend's raw CUDA text: several lines, its own line breaks, and a URL
+   that must not be reflowed into nonsense. Scrolls rather than growing, so a
+   long driver message cannot push the buttons off the bottom of the dialog. */
+.fault-detail {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 140px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--danger-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+}
+
+.fault-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 /* ── Startup ─────────────────────────────────────────────────────────────── */
 
 /* Shown only while the backend is still coming up. Inline rather than a
@@ -1035,6 +1100,24 @@ h3 {
 
 .result-row-pending.is-queued .result-time {
   color: var(--queued);
+}
+
+/* Terminal and unrecoverable, so it is coloured like every other failure in the
+   app rather than getting a state colour of its own -- --danger already means
+   "this went wrong" on the error row and the delete button.
+
+   Same construction as .is-queued: the track and the label carry it, because a
+   failed job has no progress and so its bar fill has no width to colour, and
+   the outline is an inset box-shadow so the box does not grow. The row must
+   stay exactly --result-row-h tall; the eight-row window cap assumes it. */
+.result-row-pending.is-failed .result-bar {
+  background: var(--danger-soft);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.result-row-pending.is-failed .result-time,
+.result-row-pending.is-failed .result-text {
+  color: var(--danger-text);
 }
 
 /* The cancel control replaces the delete icon, and unlike the icon strip it

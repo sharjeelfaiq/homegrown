@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { motion } from 'framer-motion'
-import { cancelQueuedJob, downloadUrl, mediaUrl, type HistoryEntry, type QueueEntry } from '../api'
+import {
+  ApiError,
+  cancelQueuedJob,
+  deleteQueueJob,
+  retryQueueJob,
+  downloadUrl,
+  mediaUrl,
+  type HistoryEntry,
+  type QueueEntry,
+} from '../api'
 import { downloadName, formatClock, timeAgo } from '../format'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useElapsed } from '../hooks/useElapsed'
@@ -26,6 +35,13 @@ interface Props {
   onAtTopChange: (atTop: boolean) => void
   onDelete: (id: string) => void
   onRequeue: (entry: HistoryEntry) => void
+  /** Surfaces a failed Retry. Without it an ApiError from the retry endpoint
+   * is swallowed and the click looks like it did nothing -- the exact failure
+   * mode this whole row state exists to remove. */
+  onError: (message: string) => void
+  /** True once the GPU is gone. Retry is hidden rather than disabled-with-a-
+   * tooltip: there is nothing the user can do in-app to make it work. */
+  gpuFault?: boolean
   /** True before the first fetch has returned. Without it an empty column
    * tells a starting-up user to "pick a voice and press Generate", which is
    * advice they cannot act on yet. */
@@ -56,6 +72,9 @@ function truncate(text: string, max = 96): string {
 interface NameControl {
   number: number
   name: string
+  /** Overrides the "Voiceover N" placeholder. A failed row has no number --
+   * it never becomes a voiceover -- so it must not advertise one. */
+  placeholder?: string
   isRenaming: boolean
   draft: string
   onDraftChange: (v: string) => void
@@ -68,6 +87,7 @@ interface NameControl {
 function RowHead({
   number,
   name,
+  placeholder,
   isRenaming,
   draft,
   onDraftChange,
@@ -87,9 +107,9 @@ function RowHead({
         className="result-name"
         spellCheck={false}
         size={Math.max(8, (isRenaming ? draft : name).length + 1)}
-        aria-label={`Name of voiceover ${number}`}
+        aria-label={placeholder ?? `Name of voiceover ${number}`}
         title={nameTitle}
-        placeholder={`Voiceover ${number}`}
+        placeholder={placeholder ?? `Voiceover ${number}`}
         value={isRenaming ? draft : name}
         onFocus={onStartRename}
         onChange={(e) => onDraftChange(e.target.value)}
@@ -214,10 +234,13 @@ function PendingRow({
   job,
   nameControl,
   onCancel,
+  onRetry,
 }: {
   job: QueueEntry
   nameControl: NameControl
   onCancel: () => void
+  /** Only meaningful on a failed row; undefined elsewhere. */
+  onRetry?: () => void
 }) {
   const running = job.status === 'running'
   const canceling = job.status === 'canceling'
@@ -235,9 +258,22 @@ function PendingRow({
   // painting it as "not started" would be a lie -- the row already says
   // "Cancelling…".
   const queued = job.status === 'queued'
+  // Terminal and unrecoverable. The row stays so the failure is visible, but
+  // everything that implies work in progress -- the sheen, the elapsed clock,
+  // Cancel -- has to stop meaning what it meant.
+  const failed = job.status === 'error'
+  const reason = job.error || 'Generation failed.'
+  // A retry mints a new job id and replaces this row, so a job that fails
+  // instantly on every attempt looks like a button that does nothing. The
+  // count is the proof that something happened.
+  const attempt = job.attempt ?? 1
 
   return (
-    <li className={`result-row result-row-pending${queued ? ' is-queued' : ''}`}>
+    <li
+      className={`result-row result-row-pending${queued ? ' is-queued' : ''}${
+        failed ? ' is-failed' : ''
+      }`}
+    >
       <RowHead {...nameControl} voiceName={job.preset_name} nameTitle="Click to rename" />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
@@ -253,13 +289,21 @@ function PendingRow({
           aria-valuemax={total || 100}
           aria-valuenow={total ? done : Math.round(progress)}
           aria-label={
-            queued
-              ? 'Queued, not started'
-              : total
-                ? `Generating chunk ${Math.min(done + 1, total)} of ${total}`
-                : 'Generating'
+            failed
+              ? 'Failed'
+              : queued
+                ? 'Queued, not started'
+                : total
+                  ? `Generating chunk ${Math.min(done + 1, total)} of ${total}`
+                  : 'Generating'
           }
-          title={queued ? 'Queued — starts when the current voiceover finishes' : chunkLabel}
+          title={
+            failed
+              ? reason
+              : queued
+                ? 'Queued — starts when the current voiceover finishes'
+                : chunkLabel
+          }
           style={{ '--chunks': total || 1 } as CSSProperties}
         >
           <motion.div
@@ -281,24 +325,40 @@ function PendingRow({
               here -- there is no remaining to toggle to -- but it keeps this
               row's digits on the same column as a finished row's. */}
           <span className="result-time-sign" aria-hidden="true" />
-          {canceling ? 'Cancelling…' : elapsed == null ? 'Queued' : formatClock(elapsed)}
+          {failed
+            ? attempt > 1
+              ? `Failed · try ${attempt}`
+              : 'Failed'
+            : canceling
+              ? 'Cancelling…'
+              : elapsed == null
+                ? 'Queued'
+                : formatClock(elapsed)}
         </span>
 
         <div className="result-actions">
+          {/* Retry first: after a failure that was not the script's fault --
+              a GPU fault takes out everything queued behind it -- resubmitting
+              is what the user wants, and dismissing throws the script away. */}
+          {failed && onRetry && (
+            <button type="button" className="ghost-btn result-cancel" onClick={onRetry}>
+              Retry
+            </button>
+          )}
           <button
             type="button"
             className="ghost-btn ghost-btn-danger result-cancel"
             onClick={onCancel}
             disabled={canceling}
           >
-            Cancel
+            {failed ? 'Dismiss' : 'Cancel'}
           </button>
         </div>
       </div>
 
       <div className="result-line result-line-meta">
-        <p className="result-text" title={job.text_preview}>
-          {truncate(job.text_preview)}
+        <p className="result-text" title={failed ? reason : job.text_preview}>
+          {truncate(failed ? reason : job.text_preview)}
         </p>
       </div>
     </li>
@@ -427,6 +487,8 @@ export default function HistoryList({
   onAtTopChange,
   onDelete,
   onRequeue,
+  onError,
+  gpuFault = false,
   loading = false,
 }: Props) {
   const { queue, refresh } = useGenerationActivity()
@@ -448,9 +510,24 @@ export default function HistoryList({
   const listRef = useRef<HTMLUListElement>(null)
   const sentinelRef = useRef<HTMLLIElement>(null)
 
-  const active = queue.filter(
-    (e) => e.status === 'running' || e.status === 'queued' || e.status === 'canceling',
-  )
+  // Failures are included, and sorted to the bottom. That ordering does not
+  // come for free: /api/queue sorts by `queue_position if not None else -1`,
+  // and a terminal job has no position -- so a job that failed BEFORE the
+  // current one started shares the running job's -1 and can sort above it.
+  //
+  // `canceled` stays out. The user stopped that one deliberately and does not
+  // need telling. (Those entries do sit in the backend's in-memory _jobs
+  // unclaimed; dismissing them would mean firing a side-effectful request from
+  // a poll loop, which is the worse trade.)
+  const active = queue
+    .filter(
+      (e) =>
+        e.status === 'running' ||
+        e.status === 'queued' ||
+        e.status === 'canceling' ||
+        e.status === 'error',
+    )
+    .sort((a, b) => Number(a.status === 'error') - Number(b.status === 'error'))
 
   // Load the next slice when the end of the list scrolls into view.
   // IntersectionObserver rather than a scroll handler: it fires once per
@@ -567,12 +644,14 @@ export default function HistoryList({
     number: number,
     override: string | undefined,
     pending: boolean,
+    placeholder?: string,
   ): NameControl {
-    const defaultName = `Voiceover ${number}`
+    const defaultName = placeholder ?? `Voiceover ${number}`
     const name = override?.trim() || defaultName
     return {
       number,
       name,
+      placeholder,
       isRenaming: renamingId === id,
       draft,
       onDraftChange: setDraft,
@@ -591,6 +670,33 @@ export default function HistoryList({
   async function handleCancel(jobId: string) {
     try {
       await cancelQueuedJob(jobId)
+    } finally {
+      refresh()
+    }
+  }
+
+  // Cancel is meaningless on a job that already stopped, so a failed row's
+  // control removes it instead. The endpoint accepts only canceled/error
+  // status, which is exactly what this can be called with -- its 400 branch is
+  // unreachable from here.
+  async function handleDismiss(jobId: string) {
+    try {
+      await deleteQueueJob(jobId)
+    } finally {
+      refresh()
+    }
+  }
+
+  // The backend resubmits from the script it still holds and removes the failed
+  // job only once the new one is accepted, so a retry that fails validation
+  // leaves the original row and its error in place.
+  async function handleRetry(jobId: string) {
+    try {
+      await retryQueueJob(jobId)
+    } catch (e) {
+      // The endpoint revalidates like any submission, so this is a real answer
+      // -- most often a 404 because the voice was deleted since the failure.
+      onError(e instanceof ApiError ? e.message : 'Could not retry that voiceover.')
     } finally {
       refresh()
     }
@@ -630,13 +736,29 @@ export default function HistoryList({
               // The number this row will keep. /api/queue returns the running
               // job first and queued jobs in real processing order, so the
               // running one is the next to land and takes the next number.
-              const number = total + 1 + i
+              //
+              // A failed job never becomes a voiceover, so it must not consume
+              // a number -- doing so would both promise one that never arrives
+              // and shift every row beneath it. Count only the rows still
+              // headed for the history, which is why this counts rather than
+              // using the map index. (Failures sort last, so the count is
+              // already complete by the time one is reached.)
+              const failed = job.status === 'error'
+              const pendingBefore = active.slice(0, i).filter((e) => e.status !== 'error').length
+              const number = total + 1 + pendingBefore
               return (
                 <PendingRow
                   key={job.job_id}
                   job={job}
-                  nameControl={nameControlFor(job.job_id, number, pendingNames[job.job_id], true)}
-                  onCancel={() => handleCancel(job.job_id)}
+                  nameControl={nameControlFor(
+                    job.job_id,
+                    number,
+                    pendingNames[job.job_id],
+                    true,
+                    failed ? 'Failed' : undefined,
+                  )}
+                  onCancel={() => (failed ? handleDismiss(job.job_id) : handleCancel(job.job_id))}
+                  onRetry={failed && !gpuFault ? () => handleRetry(job.job_id) : undefined}
                 />
               )
             })}

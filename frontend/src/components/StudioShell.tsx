@@ -13,6 +13,7 @@ import { bootTagline, bootWord, useBootStatus } from '../hooks/useBootStatus'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useHotkeys } from '../hooks/useHotkeys'
 import { wakeBackend } from '../wake'
+import Modal from './Modal'
 import {
   ApiError,
   HISTORY_INITIAL_COUNT,
@@ -37,6 +38,14 @@ export default function StudioShell() {
   const [warmingUp, setWarmingUp] = useState(false)
   const [languages, setLanguages] = useState<string[]>([])
   const [cpuNotice, setCpuNotice] = useState<string | null>(null)
+  // A CUDA fault kills the process's context: the running voiceover dies and
+  // so does everything queued behind it, and nothing recovers in-process.
+  // Polled rather than read once at startup, because it happens mid-session.
+  const [gpuFault, setGpuFault] = useState<string | null>(null)
+  // Dismissible, so the failed rows, finished voiceovers and a half-written
+  // script all stay reachable underneath. Re-opens if more jobs fail after a
+  // dismissal -- the user has evidently tried again and hit the same wall.
+  const [faultSeenAt, setFaultSeenAt] = useState<number | null>(null)
 
   const [presets, setPresets] = useState<Preset[]>([])
   const [voiceId, setVoiceId] = useState<string | null>(null)
@@ -201,6 +210,18 @@ export default function StudioShell() {
   // the new voiceover belongs there anyway, so refresh in place; scrolled down,
   // count it and let them choose when to jump. atTopRef, not state, so this
   // effect does not re-run on every scroll event.
+  // Check health whenever a job has just failed. Cheap (only on transition)
+  // and it cannot miss the fault, because the fault is what produced the
+  // failure.
+  const errorCount = queue.filter((e) => e.status === 'error').length
+  useEffect(() => {
+    if (errorCount === 0) return
+    getHealth()
+      .then((h) => setGpuFault(h.gpu_fault ?? null))
+      .catch(() => {})
+    setFaultSeenAt((seen) => (seen != null && errorCount > seen ? null : seen))
+  }, [errorCount])
+
   const doneCount = queue.filter((e) => e.status === 'done').length
   const lastDoneCount = useRef(doneCount)
   useEffect(() => {
@@ -443,6 +464,8 @@ export default function StudioShell() {
             <p className="notice">Running on CPU — generation will be very slow. {cpuNotice}</p>
           )}
 
+
+
           <ScriptBlock
             text={script}
             onTextChange={setScript}
@@ -510,10 +533,46 @@ export default function StudioShell() {
             onAtTopChange={handleAtTopChange}
             onDelete={handleDeleteHistory}
             onRequeue={handleRequeue}
+            onError={setError}
+            gpuFault={gpuFault != null}
             loading={modelStatus === 'checking'}
           />
         </aside>
       </main>
+
+      {/* A modal rather than a line above the script box. This is not a
+          message about the script -- it is the whole app being unusable until
+          the process is replaced -- and it carries the backend's raw error,
+          which is several lines of CUDA text that has no business sitting on
+          top of a textarea. Dismissible, so finished voiceovers and a
+          part-written script stay reachable. */}
+      <Modal
+        open={gpuFault != null && faultSeenAt == null}
+        title="The graphics driver reset"
+        onClose={() => setFaultSeenAt(errorCount)}
+      >
+        {/* Informational only. The app cannot restart its own backend --
+            nothing supervises the process, and launcher.py has already exited
+            by the time the app is usable -- so telling the user what to do is
+            the honest extent of it. A button that quit but could not reopen
+            would be a worse trade than a sentence. */}
+        <p className="fault-copy">
+          Your graphics card stopped responding, so the voiceovers being made just now have
+          failed. Everything you finished earlier is safe.
+        </p>
+        <p className="fault-copy">Closing Homegrown and opening it again fixes this.</p>
+
+        <details className="fault-more">
+          <summary>Technical details</summary>
+          <pre className="fault-detail">{gpuFault}</pre>
+        </details>
+
+        <div className="fault-actions">
+          <button type="button" className="ghost-btn" onClick={() => setFaultSeenAt(errorCount)}>
+            Close
+          </button>
+        </div>
+      </Modal>
 
       <NewVoiceModal
         open={voicesOpen}

@@ -242,6 +242,13 @@ STABILITY_PARAMS = {
 }
 
 _tts: Optional[FasterQwen3TTS] = None
+# Set once a CUDA-level fault (e.g. Windows TDR killing a kernel) has taken out
+# this process's CUDA context. Nothing can recover it in-process: every job from
+# then on fails identically, which is exactly what makes it worth reporting --
+# a client that keeps offering "retry" is offering something that cannot work.
+# Never cleared: the only cure is a restart, and a restart clears it by
+# definition.
+_gpu_fault: Optional[str] = None
 _gen_lock = threading.Lock()
 _store_lock = threading.Lock()
 
@@ -756,9 +763,11 @@ def _process_job(job_id: str) -> None:
             return
 
         if last_error is not None:
+            global _gpu_fault
             error_msg = f"Chunk {i + 1}/{len(chunks)} failed: {last_error}"
             if "CUDA error" in str(last_error):
                 error_msg += " -- GPU driver reset; restart the backend process before retrying."
+                _gpu_fault = str(last_error)
             with _jobs_lock:
                 job.update(status="error", error=error_msg, finished_at=time.time())
                 _current_running_job_id = None
@@ -1008,6 +1017,11 @@ def health():
         "sample_rate": _tts.sample_rate if _tts else None,
         "device": _device,
         "device_reason": _device_reason,
+        # Truthy once the CUDA context is dead. model_loaded stays True in that
+        # state -- the weights are still in memory, it is the context that is
+        # gone -- so this is the only way a client can tell that every further
+        # job is doomed.
+        "gpu_fault": _gpu_fault,
     }
 
 
@@ -1255,6 +1269,8 @@ class GenerateRequest(BaseModel):
     language: str = "English"
     style: str = "natural"
     stability: str = "balanced"
+    # Set only by /api/queue/{id}/retry. A first submission is attempt 1.
+    attempt: int = 1
 
 
 class GenerateJobStart(BaseModel):
@@ -1291,6 +1307,9 @@ class QueueEntry(BaseModel):
     submitted_at: float
     audio_url: Optional[str] = None
     error: Optional[str] = None
+    # 1 for a first submission, incremented by each retry. Lets a row that
+    # keeps failing say so, instead of silently replacing itself.
+    attempt: int = 1
 
 
 class ReorderRequest(BaseModel):
@@ -1330,6 +1349,7 @@ def _queue_entry_locked(job_id: str) -> QueueEntry:
         submitted_at=job["submitted_at"],
         audio_url=job.get("audio_url"),
         error=job.get("error"),
+        attempt=job.get("attempt", 1),
     )
 
 
@@ -1382,6 +1402,7 @@ def generate(req: GenerateRequest, user_id: str = Depends(get_current_user)) -> 
         "audio_url": None,
         "sample_rate": None,
         "error": None,
+        "attempt": req.attempt,
         "submitted_at": time.time(),
         "started_at": None,
         "finished_at": None,
@@ -1439,6 +1460,49 @@ def cancel_queued_job(job_id: str, user_id: str = Depends(get_current_user)):
                 400, "Only a queued or currently-processing job can be canceled.",
             )
     return {"ok": True}
+
+
+@app.post("/api/queue/{job_id}/retry", status_code=202)
+def retry_job(job_id: str, user_id: str = Depends(get_current_user)) -> GenerateJobStart:
+    """Resubmit a dead job's own script.
+
+    Server-side rather than "send the script back and let the client repost it":
+    the queue entry carries `text_preview`, which is truncated at 80 chars, and
+    putting the full script on every queue entry would repost up to
+    MAX_TOTAL_CHARS on every poll of a 1s loop for as long as the failed row
+    sits there. The text never left this process; there is no reason to move it.
+
+    Goes through generate() rather than around it, so a retry is validated like
+    any other submission -- the preset may have been deleted since the job
+    failed, or replaced with one whose reference clip no longer leaves room to
+    generate. Bypassing that would turn a clear 404 into a second failure.
+    """
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None or job.get("user_id") != user_id:
+            raise HTTPException(404, "Unknown job_id")
+        if job["status"] not in ("error", "canceled"):
+            raise HTTPException(400, "Only a failed or canceled job can be retried.")
+        req = GenerateRequest(
+            preset_id=job["preset_id"],
+            text=job["text"],
+            language=job["language"],
+            style=job["style"],
+            stability=job["stability"],
+            # Carried forward so a row that keeps failing says so. A retry mints
+            # a new job id and replaces the row, so without this a job failing
+            # instantly on every attempt looks like a button that does nothing.
+            attempt=job.get("attempt", 1) + 1,
+        )
+
+    # Outside the lock: generate() takes _jobs_lock itself.
+    started = generate(req, user_id=user_id)
+
+    # Only now. If generate() raised, the failed job stays on the list with its
+    # original error rather than vanishing into a retry that never happened.
+    with _jobs_lock:
+        _jobs.pop(job_id, None)
+    return started
 
 
 @app.delete("/api/queue/{job_id}")

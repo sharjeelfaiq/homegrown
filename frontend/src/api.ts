@@ -5,6 +5,11 @@ export interface HealthResponse {
   device?: string
   /** Human-readable explanation of the device choice (GPU name, or why it fell back). */
   device_reason?: string
+  /** Non-null once a CUDA fault has killed the process's context. `model_loaded`
+   * stays true in that state -- the weights are still resident, the context is
+   * not -- so this is the only signal that every further job is doomed until
+   * the backend restarts. */
+  gpu_fault?: string | null
 }
 
 export interface LanguagesResponse {
@@ -74,6 +79,8 @@ export interface QueueEntry {
   submitted_at: number
   audio_url: string | null
   error: string | null
+  /** 1 for a first submission, incremented by each retry. */
+  attempt?: number
 }
 
 export interface ApiErrorBody {
@@ -250,6 +257,17 @@ export function listQueue(): Promise<{ queue: QueueEntry[] }> {
 export function cancelQueuedJob(jobId: string): Promise<{ ok: boolean }> {
   return authFetch(apiUrl(`/api/queue/${jobId}/cancel`), { method: 'POST' }).then(
     parseOrThrow<{ ok: boolean }>,
+  )
+}
+
+/** Resubmit a failed job's own script. The full text never leaves the backend
+ * -- the queue entry only carries a truncated preview -- so this is a bare POST
+ * and the server rebuilds the submission from what it already holds. It runs
+ * the same validation as /api/generate, so a voice deleted since the failure
+ * comes back as a 404 rather than as a second failure. */
+export function retryQueueJob(jobId: string): Promise<GenerateJobStart> {
+  return authFetch(apiUrl(`/api/queue/${jobId}/retry`), { method: 'POST' }).then(
+    parseOrThrow<GenerateJobStart>,
   )
 }
 
