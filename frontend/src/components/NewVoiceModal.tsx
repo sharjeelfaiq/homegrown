@@ -82,6 +82,7 @@ export default function NewVoiceModal({
         name={name}
         onNameChange={onNameChange}
         fileName={file?.name ?? null}
+        file={file}
         onFileSelected={onFileSelected}
         language={language}
         onLanguageChange={onLanguageChange}

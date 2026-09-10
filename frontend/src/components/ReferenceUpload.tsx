@@ -1,10 +1,14 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { REF_TRIM_SECS } from '../constants'
+import { formatClock } from '../format'
 import { UploadIcon } from './Icons'
 
 interface Props {
   name: string
   onNameChange: (value: string) => void
   fileName: string | null
+  /** The chosen file itself, so its length can be read before upload. */
+  file: File | null
   onFileSelected: (file: File | null) => void
   /** Language is a property of the voice, set once here at creation -- not a
    * per-script choice on the compose path. */
@@ -31,6 +35,7 @@ export default function ReferenceUpload({
   name,
   onNameChange,
   fileName,
+  file,
   onFileSelected,
   language,
   onLanguageChange,
@@ -39,6 +44,31 @@ export default function ReferenceUpload({
   onCreate,
 }: Props) {
   const [over, setOver] = useState(false)
+  // Duration of the chosen file, only when it exceeds what will be kept.
+  const [overLimit, setOverLimit] = useState<number | null>(null)
+
+  // Read the length from an <audio> element's metadata rather than decoding.
+  // getPeaks() would work but decodes the whole file, and this runs on clips
+  // up to two minutes for a number we could have had from the header.
+  useEffect(() => {
+    setOverLimit(null)
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    const probe = new Audio()
+    const done = () => {
+      if (isFinite(probe.duration) && probe.duration > REF_TRIM_SECS) {
+        setOverLimit(probe.duration)
+      }
+      URL.revokeObjectURL(url)
+    }
+    probe.addEventListener('loadedmetadata', done, { once: true })
+    probe.addEventListener('error', () => URL.revokeObjectURL(url), { once: true })
+    probe.src = url
+    return () => {
+      probe.removeEventListener('loadedmetadata', done)
+      URL.revokeObjectURL(url)
+    }
+  }, [file])
   const inputRef = useRef<HTMLInputElement>(null)
 
   function accept(file: File | undefined) {
@@ -133,10 +163,18 @@ export default function ReferenceUpload({
         )}
       </div>
 
-      {/* No length hint here. The backend enforces 2-60s and returns a specific,
-          measured message when a clip misses it ("Reference audio is 100.8s,
-          too long (maximum 60.0s)"), which teaches more at the moment it
-          matters than a line of prose does before the file is even chosen. */}
+      {/* There used to be no length hint here, on the reasoning that the
+          backend's measured rejection taught more at the moment it mattered
+          than prose did beforehand. That held while long clips were refused.
+          Now they are accepted and silently shortened, and a change made to
+          someone's file without telling them is not something to discover
+          afterwards. */}
+      {overLimit != null && (
+        <p className="notice">
+          This clip is {formatClock(overLimit)}. Only the first {REF_TRIM_SECS} seconds will be
+          used — that is as much as the model can hold alongside a script.
+        </p>
+      )}
 
       <button
         type="button"

@@ -63,6 +63,50 @@ def _transcribe_audio(path: str) -> str:
         )
         return " ".join(seg.text.strip() for seg in segments).strip()
 
+def _trim_reference_clip(path: str, keep_secs: float) -> Optional[tuple[Path, float]]:
+    """Cut a long upload down to the first `keep_secs` of speech, in place.
+
+    Returns (new_path, new_duration). The path changes because write_mp3 goes
+    through PyAV, which picks its container from the FILE EXTENSION -- handed a
+    .wav path it happily writes a RIFF/WAVE container wrapping an MP3 stream,
+    which soundfile then reports as `format=WAV subtype=MPEG_LAYER_III`. Odd
+    rather than broken, but the file would be lying about itself, so the
+    trimmed clip is always written as .mp3 and the caller re-points at it.
+
+    Leading silence goes first (via trim_edge_silence, the same helper the
+    generated chunks use), so a recording that opens with two seconds of room
+    tone does not spend them here.
+
+    Deliberately the FIRST N seconds rather than the loudest window: the user
+    can predict what was used and re-cut the file by hand if they disagree,
+    which a similarity-scored scan would not allow.
+
+    Must run BEFORE transcription. ref_text has to describe the audio the model
+    will actually be conditioned on -- _ref_profile derives the speaker's
+    chars/sec from len(ref_text)/duration, and that rate sizes every chunk. A
+    transcript of the original two minutes against a 25s clip would report a
+    speaking rate roughly 5x too high.
+    """
+    audio, sample_rate = sf.read(path, dtype="float32", always_2d=False)
+    if audio.ndim > 1:
+        # write_mp3 wants mono; a stereo upload arrives as (n, channels).
+        audio = audio.mean(axis=1)
+
+    audio = trim_edge_silence(audio, sample_rate)
+    if audio.size == 0:
+        return None
+    keep = int(keep_secs * sample_rate)
+    # Trimming the silence alone may already have brought it under the cap.
+    audio = audio[:keep] if audio.size > keep else audio
+
+    source = Path(path)
+    dest = source.with_suffix(".mp3")
+    write_mp3(audio, sample_rate, str(dest))
+    if dest != source:
+        source.unlink(missing_ok=True)
+    return dest, audio.size / sample_rate
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("homegrown")
 
@@ -209,7 +253,24 @@ IDLE_STOP_THRESHOLD_MIN = float(os.environ.get("IDLE_STOP_THRESHOLD_MIN", "10"))
 # so watch for garbled/looping output on long reference clips and lower this
 # again if it reproduces.
 MIN_REF_AUDIO_SECS = 2.0
-MAX_REF_AUDIO_SECS = 60.0
+# The UPLOAD cap, not the reference length. Anything longer than
+# REF_TRIM_SECS is cut down before it is stored, so this only bounds how big a
+# file the user may hand over -- generosity here costs nothing but disk.
+MAX_REF_AUDIO_SECS = 120.0
+# What actually becomes the reference clip, and the number that matters.
+#
+# The clip and the script share ONE MAX_SEQ_LEN window: a clip costs
+# duration x CODEC_FRAME_HZ frames plus its transcript's tokens, and whatever
+# is left is all the room the generated speech has. At 25s that is
+#
+#     313 frames + ~80 text tokens = ~393 of 1024, leaving ~570
+#
+# which keeps chunk_chars at the full ELISION_SAFE_CHUNK_CHARS ceiling. Past
+# ~44s chunks shrink below PADDING_SAFE_MIN_CHARS (murmuring, dragging), and
+# past ~57s _seq_budget leaves less than MIN_GEN_FRAMES and rejects the job
+# outright -- which is what a 60s upload cap used to allow: a voice that
+# saved fine and could never generate anything.
+REF_TRIM_SECS = 25.0
 # Loose sanity check that ref_text is plausibly a transcript of ref audio,
 # not a placeholder (e.g. "ZAZA" for a 23s clip). Real speech is roughly
 # 12-15 chars/sec; anything under ~3 chars/sec is almost certainly wrong.
@@ -1147,10 +1208,29 @@ async def create_preset(
         dest.unlink(missing_ok=True)
         raise HTTPException(
             400,
-            f"Reference audio is {duration_s:.1f}s, too long (maximum {MAX_REF_AUDIO_SECS}s) -- "
-            "longer reference clips have been observed to produce unstable/garbled generation "
-            "on this model. Trim to a shorter, clean clip.",
+            f"Reference audio is {duration_s:.1f}s, too long (maximum {MAX_REF_AUDIO_SECS:.0f}s). "
+            "Trim it to a shorter, clean clip.",
         )
+
+    # Longer than the model can hold alongside a script: keep the opening and
+    # discard the rest. Before transcription on purpose -- see the docstring.
+    original_duration_s = duration_s
+    if duration_s > REF_TRIM_SECS:
+        try:
+            result = _trim_reference_clip(str(dest), REF_TRIM_SECS)
+        except Exception as e:
+            dest.unlink(missing_ok=True)
+            logger.exception("Failed to trim reference clip for preset %r", name)
+            raise HTTPException(400, f"Could not process that audio file: {e}")
+        if result is None:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(400, "That clip appears to be silent.")
+        dest, trimmed = result
+        logger.info(
+            "Preset %r: reference clip trimmed %.1fs -> %.1fs (cap %.0fs)",
+            name, duration_s, trimmed, REF_TRIM_SECS,
+        )
+        duration_s = trimmed
 
     if not ref_text:
         try:
@@ -1206,7 +1286,13 @@ async def create_preset(
     with _store_lock:
         _presets.insert(0, preset)
         _save_json(PRESETS_FILE, _presets)
-    return _preset_response(preset)
+    response = _preset_response(preset)
+    # So the UI can confirm what was actually kept rather than what was sent.
+    response["ref_seconds"] = round(duration_s, 1)
+    response["trimmed_from_seconds"] = (
+        round(original_duration_s, 1) if original_duration_s > duration_s + 0.05 else None
+    )
+    return response
 
 
 @app.delete("/api/presets/{preset_id}")
