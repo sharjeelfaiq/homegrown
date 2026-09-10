@@ -83,6 +83,32 @@ throughout — the Voiceovers column reports the work, so the button does not ne
 **Cancel** stops a running job after the current chunk, within about a second. There is no pause: generation
 is serialised behind one GPU lock, so a paused job would stall everything queued behind it.
 
+**A voiceover that fails stays on the list.** It turns red, reads `Failed`, and shows the backend's own
+reason in place of the script preview — hover it for the full message. It sorts below anything still
+running or queued, and takes no voiceover number (it never becomes one). Two buttons replace Cancel:
+**Retry** resubmits the same script and voice, and **Dismiss** throws the row away.
+
+Retry matters because most failures are not the script's fault. A GPU fault kills the whole process's CUDA
+context, so it fails the running voiceover *and* everything queued behind it — three dead voiceovers you
+did nothing wrong to. The backend still holds each script and resubmits it itself, so nothing has to be
+retyped. If the voice has been deleted since, Retry says so rather than failing a second time.
+
+From the second attempt on the row reads **`Failed · try 2`**, counting up. That number is there because
+a retry creates a *new* voiceover and replaces the row with it: when something fails instantly every time,
+the row before and after a retry look identical, and without the count you cannot tell whether the button
+did anything.
+
+**If the graphics driver resets**, everything changes at once. A driver reset kills the GPU context the
+voice model is using, which fails the running voiceover *and* every one queued behind it. A dialog explains
+this in plain terms — your finished voiceovers are safe, close Homegrown and open it again — with the
+driver's own error tucked behind a **Technical details** toggle. Retry disappears from every failed row
+while this is true, rather than being greyed out: there is genuinely nothing you can do from inside the
+app, so a button would be a lie. The dialog can be dismissed, so your scripts and finished voiceovers stay
+reachable, and it returns if more voiceovers fail.
+
+This is per session: the backend keeps failed jobs in memory only, so restarting it clears them, Retry
+included. A job you cancel yourself does not linger — you already know it stopped.
+
 The voice dropdown stays usable while a job runs, so you can line up the next one.
 
 There is no queue list and no reorder control in the UI, although `POST /api/queue/reorder` exists and

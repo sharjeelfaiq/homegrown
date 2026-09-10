@@ -167,6 +167,40 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   plays silent while the transport still advances. This bit twice; there are three such elements
   (`VoiceoverPlayer`, `VoicePicker`, `NewVoiceModal`).
 
+`HistoryList`'s `active` filter carries `running | queued | canceling | error` — **`error` is in there
+deliberately**, so a job that dies after acceptance stays visible instead of vanishing, and its `Cancel`
+becomes `Dismiss` (`deleteQueueJob`, whose endpoint accepts only `canceled`/`error`) plus `Retry`
+(`POST /api/queue/{job_id}/retry`). Retry is server-side on purpose: `text_preview` is truncated to 80
+chars, and putting the full script on queue entries would repost up to `MAX_TOTAL_CHARS` every second of
+the poll loop for as long as a failed row sits there. It calls `generate()` rather than duplicating it, so
+a retry is validated like any submission, and it deletes the old job only *after* the new one is accepted
+— a retry that fails validation leaves the original row and its error intact. Two things exist only
+because a retry *replaces its own row*:
+- **`attempt`** (`GenerateRequest` → job dict → `QueueEntry`, rendered `Failed · try 3`). A retry mints a
+  new `job_id`, so a job failing instantly on every attempt produces a visually identical row each time.
+  Observed before this existed: seven retries, seven `202`s, and it read as a dead button.
+- **`HistoryList`'s `onError` prop.** `handleRetry` was `try`/`finally` with no `catch`, so an `ApiError`
+  from the retry endpoint — most often a 404 because the voice was deleted since — became an unhandled
+  rejection. A swallowed failure, in the feature that exists to stop failures being swallowed.
+
+- **`gpu_fault` on `/api/health` is the only way to know the GPU is gone.** `_process_job` already
+  detects `"CUDA error"` to short-circuit its chunk retries (the context is dead, so retrying in-process
+  cannot work); it now also sets a module-level `_gpu_fault`. **`model_loaded` stays `True` in that
+  state** — the weights are still resident, it is the CUDA *context* that died — so no existing field
+  distinguishes "working" from "will fail every job forever". The frontend polls it on any transition
+  into a failed job, hides Retry on every row while it is set, and opens a dismissible dialog -- the raw
+  CUDA text sits behind a `<details>` there, not above the script box. Never cleared: only a restart cures
+  it, and a restart clears it by definition.
+  **The app cannot restart itself and must not pretend to.** Nothing supervises the backend --
+  `launcher.py` exits once the app is up -- so a "restart" button could only ever quit, leaving the user
+  to relaunch anyway. An `/api/shutdown` endpoint was built and then removed: with LAN mode binding
+  `0.0.0.0` and no auth anywhere, it is a kill switch for anyone who can reach the port, which is a poor
+  trade for saving one click. Two things that do
+not fall out for free: `/api/queue` sorts by `queue_position if not None else -1` and a terminal job has no
+position, so failures are re-sorted client-side or they surface *above* the running job; and the
+`total + 1 + i` row numbering must skip them, since a failed job never becomes a voiceover and numbering it
+shifts every row beneath. `canceled` stays excluded — the user stopped it and knows.
+
 The **Voiceovers column is a fixed window, not a paginated list.** `HISTORY_INITIAL_COUNT` (20) fills it
 on first paint and `HISTORY_LOAD_MORE_COUNT` (10) is the scroll increment — two constants because the two
 jobs differ: the first batch has to fill the window and absorb the first scrolls, the increment only has to

@@ -188,6 +188,46 @@ Conclusions:
   may still land outside the sweet spot.
 - `creative` (temperature 1.2) was not tested.
 
+
+TDR STRIKES (2026-09-10, GTX 970 sm_52, display-attached)
+----------------------------------------
+Observation only -- the cause is not diagnosed.
+
+Across one working session, eight jobs failed with
+
+    CUDA error: the launch timed out and was terminated
+    (cudaErrorLaunchTimeout)
+
+DECODE_CHUNK_FRAMES=100 was in effect throughout. That constant exists
+specifically to keep each vocoder launch under Windows' ~2s WDDM
+watchdog on a display-attached card, so it is either not sufficient on
+this machine, or something other than the vocoder decode is running long
+enough to trip the watchdog.
+
+What was seen:
+- The strikes did NOT correlate with unusually long scripts. Several
+  were single-chunk jobs of ~20-200 characters.
+- Once struck, the process's CUDA context is dead: every subsequent job
+  fails identically until the backend is restarted. _process_job
+  already short-circuits its chunk retries on "CUDA error" for this
+  reason.
+- One strike took out a running job and two queued behind it in a single
+  event.
+- A backend restart recovered fully each time; no driver-level reset or
+  reboot was needed.
+
+Not established: whether another process was contending for the GPU
+during the session (a browser compositing, the frozen desktop build on
+:8731 also holding a model, or a second dev backend). CLAUDE.md's
+troubleshooting note already warns against running two model processes
+at once, and at least one point in this session had both a dev backend
+on :8000 and backend.exe on :8731 loaded.
+
+Next step if this recurs: check whether the strikes stop with only one
+model process running, before touching DECODE_CHUNK_FRAMES. Raising
+Windows' TdrDelay is the other lever, but it is a machine-wide registry
+change and should be a last resort.
+
 SOURCES (pricing, verified July 2026)
 ----------------------------------------
 - https://www.runpod.io/pricing

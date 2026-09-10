@@ -306,6 +306,17 @@ belongs in the Voiceovers column, not on the control you press.
 **Cancel** stops a running job after the current chunk, within about a second. There is no pause — a paused
 job would hold the GPU lock and stall the whole queue.
 
+A voiceover that **fails** stays visible rather than disappearing: the row turns red, reads `Failed`, and
+carries the backend's own error in place of the script preview, with the full text on hover. It sorts below
+the running and queued rows and consumes no voiceover number. **Retry** resubmits it and **Dismiss** clears
+it. From the second attempt on, the row reads `Failed · try 2` and counts up — a retry mints a new job and
+replaces the row, so without the count a voiceover that fails instantly every time is indistinguishable
+from a button that does nothing. Retry is server-side (`POST /api/queue/{job_id}/retry`): the queue entry only carries a truncated
+preview, but the backend still holds the full script, so nothing is retyped and nothing large is reposted
+on every poll. It runs the same validation as `/api/generate`, so a voice deleted since the failure returns
+a clear 404 instead of failing again. Failed jobs live in the backend's in-memory job table, so restarting
+the backend clears them.
+
 The voice dropdown stays usable throughout, so you can line up the next voice while one job runs.
 
 There is no queue list and no reorder control in the UI, though `POST /api/queue/reorder` exists and works
@@ -369,9 +380,9 @@ All routes are under `/api`, and every request is the same single local user.
 
 | Method | Route | Purpose |
 |---|---|---|
-| GET | `/api/health` | `model_loaded`, `sample_rate`, `device`, `device_reason` |
+| GET | `/api/health` | `model_loaded`, `sample_rate`, `device`, `device_reason`, `gpu_fault` |
 | GET | `/api/languages` | Languages the loaded model supports |
-| GET | `/api/estimate?chars=N` | Estimated seconds for a script of N characters |
+| POST | `/api/estimate` | `{text, preset_id}` → `estimated_s`, `chunks`, `chunk_chars`, `ref_seconds`, `warning`. POST, and the whole script, because chunk count depends on sentence boundaries *and* on the voice |
 | GET | `/api/presets` | List voice presets |
 | POST | `/api/presets` | Create one (multipart: `audio`, `name`, `ref_text`, `language`, `tag`) |
 | DELETE | `/api/presets/{id}` | Delete a preset and its reference clip |
@@ -379,7 +390,8 @@ All routes are under `/api`, and every request is the same single local user.
 | GET | `/api/jobs/{id}` | One job's status |
 | GET | `/api/queue` | The queue, in real processing order |
 | POST | `/api/queue/{id}/cancel` | Cancel a queued or running job |
-| DELETE | `/api/queue/{id}` | Dismiss a finished or failed job |
+| POST | `/api/queue/{id}/retry` | Resubmit a failed job's own script → same shape as `/api/generate` |
+| DELETE | `/api/queue/{id}` | Dismiss a **canceled or failed** job. Finished ones are deleted through `/api/history` |
 | POST | `/api/queue/reorder` | Reorder queued jobs |
 | GET | `/api/history` | Completed voiceovers |
 | DELETE | `/api/history/{id}` | Delete an entry and its audio |
@@ -420,7 +432,7 @@ Environment overrides:
 | LAN devices cannot connect | Add the firewall rule above, and bind `0.0.0.0`, not `127.0.0.1`. |
 | LAN clients load the UI but every action fails | `VITE_BACKEND_URL` was set when you built. Empty `frontend/.env.local` and rebuild. |
 | `no kernel image is available for execution on the device` | The torch build has no kernels for your GPU. cu126 covers `sm_50`–`sm_90`; Blackwell needs cu128. |
-| `CUDA error: the launch timed out and was terminated` | Windows TDR killed a GPU batch running over ~2s on a display-attached card. Lower `DECODE_CHUNK_FRAMES`, and do not run two model processes at once. |
+| `CUDA error: the launch timed out and was terminated` | Windows TDR killed a GPU batch running over ~2s on a display-attached card. It kills the whole process's CUDA context, so the running voiceover **and everything queued behind it** fail together — the app detects this (`gpu_fault`), hides Retry and asks you to restart, because nothing in-app can recover it. Lower `DECODE_CHUNK_FRAMES`, and do not run two model processes at once. |
 | Yellow "Running on CPU" banner | No usable GPU was found; the reason is in the banner and in `/api/health`. |
 | Output murmurs, drags, or drops words | Almost always the reference clip — see "Making a voice that actually works". |
 | Output has echo | Reverb in your reference clip. Re-record dry and close-mic. |
