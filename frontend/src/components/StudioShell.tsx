@@ -9,10 +9,11 @@ import { MAX_SCRIPT_CHARS } from '../constants'
 import { presetNameFromFile } from '../format'
 import { PlusIcon } from './Icons'
 import { useGenerationActivity } from '../GenerationActivityContext'
-import { bootTagline, bootWord, useBootStatus } from '../hooks/useBootStatus'
+import { useBootStatus } from '../hooks/useBootStatus'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useHotkeys } from '../hooks/useHotkeys'
 import { wakeBackend } from '../wake'
+import BootOverlay from './BootOverlay'
 import Modal from './Modal'
 import {
   ApiError,
@@ -423,42 +424,6 @@ export default function StudioShell() {
             </p>
           )}
 
-          {/* The startup wait used to be a greyed-out button and nothing else,
-              while wakeMessage's elapsed counter was computed every poll and
-              rendered nowhere -- it only ever appeared in the DOWN row above.
-              `boot` adds the phase on top when a dev server is serving it; the
-              elapsed seconds carry the row on their own when it isn't. */}
-          {modelStatus === 'checking' && (
-            <section className="notice boot-row" role="status" aria-live="polite">
-              <div className="boot-line">
-                <span className="boot-phase">
-                  {boot ? bootWord(boot.phase) : 'Waking up'}
-                </span>
-                {wakeMessage && <span className="mono boot-elapsed">{wakeMessage}</span>}
-              </div>
-              <p className="boot-tagline">
-                {boot ? bootTagline(boot.phase) : 'Homegrown is starting.'}
-              </p>
-              {/* Its own slot, not appended to the prose above. The launcher
-                  learned this one the hard way: letting the backend's `detail`
-                  replace the copy meant the whole screen read
-                  "0.0 GB of 2.5 GB" and the one reassuring sentence vanished
-                  exactly when it was needed. */}
-              {boot?.detail && <p className="mono boot-detail">{boot.detail}</p>}
-              <div
-                className={`boot-bar${boot?.percent == null ? ' is-indeterminate' : ''}`}
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={boot?.percent ?? undefined}
-              >
-                <div
-                  className="boot-bar-fill"
-                  style={boot?.percent == null ? undefined : { width: `${boot.percent}%` }}
-                />
-              </div>
-            </section>
-          )}
 
           {cpuNotice && (
             <p className="notice">Running on CPU — generation will be very slow. {cpuNotice}</p>
@@ -589,6 +554,12 @@ export default function StudioShell() {
         onCreate={handleCreatePreset}
         onDelete={handleDeletePreset}
       />
+
+      {/* Everything else on the page is inert until the model is up, so the
+          startup screen covers it rather than sitting above the script box.
+          Dropped the instant modelStatus leaves 'checking' -- including on
+          failure, so the error row below is never trapped behind it. */}
+      {modelStatus === 'checking' && <BootOverlay boot={boot} elapsed={wakeMessage} />}
 
       {dragging && (
         <div className="drop-veil">

@@ -173,91 +173,81 @@ h3 {
 
 /* ── Startup ─────────────────────────────────────────────────────────────── */
 
-/* Shown only while the backend is still coming up. Inline rather than a
-   full-screen loader: the desktop build already has one of those (the launcher
-   serves it before the app exists at all), and here the app DOES exist -- the
-   script box is usable, so covering it would take away the one thing the user
-   can get on with while waiting.
+/* Covers the window until the model is loaded. This began as an amber strip
+   above the script box; it read as a warning rather than as loading, and the
+   page behind it offered a voice picker, a Generate button and a Voiceovers
+   column that all did nothing. Blur is the honest signal: the app is there,
+   it is simply not ready.
 
-   It sits on .notice's amber card, so it reads as the same class of message as
-   the CPU-fallback warning rather than as a new piece of chrome. */
-.boot-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+   Above every other layer. The ladder is .voice-menu 50, .drop-veil 100,
+   .modal-backdrop 200 -- this outranks all of them because nothing underneath
+   is usable while it is up. */
+.boot-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: var(--gutter);
+  /* Translucent AND blurred: backdrop-filter has nothing to show through an
+     opaque layer, so the two go together or neither works. */
+  background: rgba(13, 14, 19, 0.62);
+  backdrop-filter: blur(6px);
 }
 
-.boot-line {
+.boot-panel {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  align-items: center;
+  width: min(340px, 100%);
+  text-align: center;
+}
+
+.boot-spinner {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 18px;
+  border: 2px solid var(--accent-line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: boot-spin 0.9s linear infinite;
+}
+
+/* prefers-reduced-motion: a static ring still reads as "busy" next to a
+   sweeping bar, and spinning is the part that causes trouble. */
+.boot-spinner.is-static {
+  animation: none;
+  border-top-color: var(--accent);
+}
+
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .boot-phase {
-  font-size: 13px;
+  margin: 0;
+  font-size: 15px;
   font-weight: 500;
-}
-
-.boot-elapsed {
-  flex: none;
-  font-size: 11px;
-  opacity: 0.75;
+  color: var(--text-primary);
 }
 
 .boot-tagline {
-  margin: 0;
-  font-size: 12px;
-  opacity: 0.85;
+  margin: 6px 0 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
 }
 
 /* The backend's own words ("Loading the voice model onto CUDA", "0.4 GB of
-   2.5 GB"). Mono and quieter than the prose, so it reads as instrumentation
-   rather than as the message. */
+   2.5 GB"), or the elapsed counter when it has none. min-height reserves the
+   line so the panel does not jump as the two swap. */
 .boot-detail {
-  margin: 0;
+  margin: 12px 0 0;
+  min-height: 1.2em;
   font-size: 11px;
-  opacity: 0.7;
-}
-
-/* Determinate only during the first-run model download, which is the one phase
-   that knows its own size. Everything else is a sweep: a bar parked at a made
-   up percentage is worse than one that admits it cannot say. */
-.boot-bar {
-  position: relative;
-  height: 3px;
-  overflow: hidden;
-  background: var(--accent-line);
-  border-radius: var(--radius-sm);
-}
-
-.boot-bar-fill {
-  height: 100%;
-  width: 0;
-  background: var(--accent);
-  border-radius: var(--radius-sm);
-  transition: width var(--slow) var(--ease);
-}
-
-.boot-bar.is-indeterminate .boot-bar-fill {
-  width: 28%;
-  animation: boot-sweep 1.6s ease-in-out infinite;
-}
-
-@keyframes boot-sweep {
-  from {
-    transform: translateX(-110%);
-  }
-  to {
-    transform: translateX(400%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .boot-bar.is-indeterminate .boot-bar-fill {
-    width: 15%;
-    animation: none;
-  }
+  color: var(--text-faint);
 }
 
 /* ── Workspace: composer left, voiceovers right ───────────────────────────────── */
