@@ -87,19 +87,33 @@ export default function ThemeSwitch() {
       close()
       triggerRef.current?.focus()
     }
-    // Reposition is not worth it -- closing is more predictable, and both of
-    // these mean the user has stopped interacting with the menu anyway.
-    // Scroll is captured because below 1025px the scroller is the page and
-    // above it the results list, and this way neither needs special-casing.
+    // The menu is position: fixed, so a scroll underneath it would leave it
+    // floating away from its trigger -- closing is more predictable than
+    // repositioning, and a scroll means the user has moved on anyway.
+    //
+    // BUT NOT ITS OWN SCROLL. Capture phase sees scroll events from every
+    // element, which was harmless while the menu was short enough never to
+    // scroll. Once it was capped at ~7 rows and given overflow-y, that same
+    // listener fired the moment anyone dragged its scrollbar or used a wheel
+    // over it -- so the menu closed itself the instant it was scrolled, and
+    // the themes past the seventh were unreachable.
+    //
+    // Scroll does not bubble, so this cannot be solved by dropping capture:
+    // capture is what lets one listener cover both scrollers (the page below
+    // 1025px, the results list above it) without naming either.
+    function onScroll(e: Event) {
+      if (menuRef.current?.contains(e.target as Node)) return
+      close()
+    }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
     window.addEventListener('resize', close)
-    window.addEventListener('scroll', close, true)
+    window.addEventListener('scroll', onScroll, true)
     return () => {
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('resize', close)
-      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('scroll', onScroll, true)
     }
   }, [open, close])
 

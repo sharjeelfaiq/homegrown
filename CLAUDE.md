@@ -430,6 +430,16 @@ distinguishable.
 `scrollbar-gutter: stable`, the same shape as `result-list` and `voice-list`. It was uncapped when
 there were five themes; at nine the content is 570px, which ran off the bottom of a 605px viewport.
 
+**Making it scrollable immediately broke it, and the cause is worth knowing.** `ThemeSwitch` closes
+the menu on scroll — it is `position: fixed`, so a scroll underneath would leave it floating away
+from its trigger — and that listener is registered in the **capture** phase, which sees scroll events
+from *every* element. Harmless while the menu was too short to scroll; the moment it had
+`overflow-y`, dragging its scrollbar or wheeling over it closed the menu, and every theme past the
+seventh was unreachable. The listener now ignores events whose target is inside the menu.
+**Dropping capture is not the fix**: `scroll` does not bubble, and capture is exactly what lets one
+listener cover both scrollers (the page below 1025px, the results list above it) without naming
+either.
+
 **`@theme inline` is load-bearing.** A plain `@theme` copies the token's *value* into each utility at build
 time, freezing the palette on Studio. `inline` emits `var(--bg-card)` instead, which is the only reason
 flipping `data-theme` re-themes the page at runtime. If themes ever stop switching, check that word first.
