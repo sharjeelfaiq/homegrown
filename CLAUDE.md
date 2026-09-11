@@ -168,6 +168,55 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   plays silent while the transport still advances. This bit twice; there are three such elements
   (`VoiceoverPlayer`, `VoicePicker`, `NewVoiceModal`).
 
+- **`modal-body` is a JS hook with no CSS rule, and deleting it silently breaks focus.**
+  `Modal.tsx`'s open effect queries `.modal-body` to land focus on the dialog body's first
+  control. The class was absent for a long time, so the query always missed and focus fell
+  through to `panel.querySelector(FOCUSABLE)` -- the header's ✕, i.e. exactly what the comment
+  above it says it is avoiding. `check_orphan_css.py` lists it under *missing rule*; that
+  direction is informational and does not fail. Do not add a CSS rule to quieten it, and do not
+  remove the class. Verified target after the fix: the dropzone in Voices, the Close button in the
+  GPU-fault dialog, and ✕ only when a body has nothing focusable at all.
+
+- **Notifications are sonner, and firing exactly once is the hard part.** `useJobToasts` watches
+  the polled queue and toasts on a job's first appearance in a terminal state. The queue polls at
+  1s/4s, so a `done` job sits in several consecutive responses -- keying off "is there a done job"
+  would toast on every poll. The reported-ids set is **seeded on the first poll rather than
+  starting empty** (and the sentinel is `null`, not `size === 0`, because an empty queue on mount
+  is a normal first poll): otherwise a reload while jobs happen to be terminal fires a burst of
+  toasts for work already finished. Ids are never removed -- a job id is a uuid the backend never
+  reuses and a retry mints a new one, so a retried failure is correctly a separate event.
+  Failures use `duration: Infinity`; the row they leave behind carries the Retry.
+  `theme` comes from `themeMode()` over our own five-theme id, not sonner's default light -- three
+  of the five are dark. Surfaces are passed as CSS variables, not a className, because sonner sets
+  them on its own elements and a class would have to win a specificity fight on every future
+  version. **`richColors` is off**: it ships its own green and red, which would be the only two
+  colours in the app `check_design_tokens.py` cannot see. Cost: 34.4 kB raw / 9.6 kB gzip.
+  Relatedly, the elapsed-time span in `HistoryList` is **no longer `aria-live`** -- it announced a
+  new time every second and said nothing at the finish. Sonner's own polite region replaced it.
+
+- **`GET /api/history` takes `q`, and it filters BEFORE the slice.** `total` is therefore the size
+  of the filtered set and the client's paging arithmetic is unchanged; filtering after the slice
+  would page through the unfiltered list and return mostly empty pages. It matches the script text
+  and `preset_name`, and **cannot match a voiceover's display name** -- that is a localStorage
+  override the server has never seen, which is the same two-stores rule as the `InlineName` note
+  below. The empty-results copy says so rather than leaving the user to guess. On the client the
+  draft lives in `HistoryList` and only the debounced value is lifted (lifting the draft would make
+  every keystroke a request); a changed query resets `loadedRef` to 0; `loadMoreHistory` reads the
+  query from a **ref**, because its identity has to stay stable for `HistoryList`'s
+  `IntersectionObserver`. Queue rows are hidden while a search runs -- an in-flight job is not in
+  history yet, so the filter never considered it.
+
+- **Shortcut caps: `MOD_KEY` is the glyph, `MOD_ARIA` is the attribute, and they are not
+  interchangeable.** `aria-keyshortcuts` takes a fixed vocabulary (`Control+Enter`), so it can
+  never be the display string. The `<kbd>` is `aria-hidden` -- the attribute is what gets
+  announced. The Apple check resolves once at module scope; the composer re-renders on every
+  keystroke. Placement is deliberately not uniform: Generate is **tooltip-only** (its label
+  substitutes `blockedReason` and reads as a sentence), `/` sits on the Script heading at
+  `order-3` past the `section-rule` hairline (inside the box it overlapped line one -- measured,
+  cap 11-29px against a 15-40.5px first line, and the bottom corners belong to the word count, the
+  resize grip and the scrollbar), and `Space` caps **only the first history row**, because that is
+  the row its handler reaches.
+
 `HistoryList`'s `active` filter carries `running | queued | canceling | error` — **`error` is in there
 deliberately**, so a job that dies after acceptance stays visible instead of vanishing, and its `Cancel`
 becomes `Dismiss` (`deleteQueueJob`, whose endpoint accepts only `canceled`/`error`) plus `Retry`
