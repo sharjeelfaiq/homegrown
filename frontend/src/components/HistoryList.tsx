@@ -825,7 +825,16 @@ export default function HistoryList({
       // frame is enough for the click to have been taken.
       requestAnimationFrame(() => URL.revokeObjectURL(url))
     } catch (e) {
-      onError(e instanceof ApiError ? e.message : 'Could not download those voiceovers.')
+      // Keep the server's own detail, but never show it alone. This endpoint
+      // failing with a bare "Method Not Allowed" is the signature of a backend
+      // started before /api/history/zip existed -- the path falls through to
+      // DELETE /api/history/{entry_id} with "zip" read as an id -- and that
+      // message on its own tells the user nothing about what to do.
+      onError(
+        e instanceof ApiError
+          ? `Could not download those voiceovers — ${e.message}. If the backend was started before this feature, restart it.`
+          : 'Could not download those voiceovers.',
+      )
     } finally {
       setZipping(false)
     }
