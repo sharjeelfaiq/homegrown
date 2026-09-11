@@ -7,8 +7,15 @@ import type { QueueEntry } from '../api'
  * is active, and not at all in a background tab), so rendering it directly
  * gives a clock that stutters and then jumps. This anchors on the last value
  * the backend reported and advances locally from there, which keeps the
- * readout honest -- every poll re-anchors it, so it can never drift away from
- * what the backend thinks.
+ * readout honest -- every poll re-anchors it, so it cannot drift away from what
+ * the backend thinks.
+ *
+ * THAT GUARANTEE HOLDS ONLY WHILE POLLS SUCCEED, which this comment used to
+ * leave unsaid. With a dead backend nothing re-anchors, and the local advance
+ * kept counting -- so a crashed process, a sleeping machine or a dropped wifi
+ * link produced a row that looked like it was still generating, indefinitely.
+ * `live` freezes the readout at its last real value instead. A stopped clock
+ * is honest about not knowing; a running one is a claim.
  *
  * Deliberately elapsed and not an estimate: `eta_s` comes from a rolling
  * chars/second average and moves in both directions as chunks land, which is
@@ -27,11 +34,16 @@ interface Anchor {
   at: number
 }
 
-export function useElapsed(job: QueueEntry | undefined): number | null {
+export function useElapsed(job: QueueEntry | undefined, live = true): number | null {
   const [seconds, setSeconds] = useState<number | null>(null)
   const jobRef = useRef<QueueEntry | undefined>(job)
   jobRef.current = job
   const anchor = useRef<Anchor>({ jobId: '', reported: -1, at: 0 })
+
+  // A ref so losing contact does not tear down and re-arm the interval -- the
+  // tick simply stops committing new values.
+  const liveRef = useRef(live)
+  liveRef.current = live
 
   const jobId = job?.job_id
   useEffect(() => {
@@ -42,6 +54,7 @@ export function useElapsed(job: QueueEntry | undefined): number | null {
     }
 
     const tick = () => {
+      if (!liveRef.current) return // frozen: keep the last committed value
       const current = jobRef.current
       if (!current || current.elapsed_s == null) {
         setSeconds(null)

@@ -18,7 +18,23 @@ interface GenerationActivityValue {
   runningPresetIds: Set<string>
   /** Force an immediate re-poll (after cancel/reorder/submit). */
   refresh: () => void
+  /** False once the poller has missed several polls in a row.
+   *
+   *  A failed poll used to be indistinguishable from no news -- the error was
+   *  swallowed and `queue` kept its last value -- so a backend that died
+   *  mid-session left an in-flight row on screen with a clock still counting
+   *  up. Nothing else notices: health is checked at boot and when a job FAILS,
+   *  never on an interval.
+   *
+   *  Consecutive, not cumulative. One dropped request while the GPU is busy is
+   *  normal; several in a row is not. */
+  reachable: boolean
 }
+
+/** Missed polls before the backend is declared unreachable. Three at the 1s
+ *  active cadence is ~3s of silence -- long enough not to fire on a single
+ *  blip, short enough to beat the user wondering why nothing is moving. */
+const MISSES_BEFORE_UNREACHABLE = 3
 
 const GenerationActivityContext = createContext<GenerationActivityValue | null>(null)
 
@@ -27,21 +43,36 @@ const GenerationActivityContext = createContext<GenerationActivityValue | null>(
 export function GenerationActivityProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [nonce, setNonce] = useState(0)
+  const [reachable, setReachable] = useState(true)
   const visible = usePageVisible()
   const queueRef = useRef(queue)
   queueRef.current = queue
+  // Counted in a ref, not state: only crossing the threshold is worth a
+  // re-render, and every miss in between would cause one.
+  const misses = useRef(0)
 
   useEffect(() => {
     if (!visible) return
     let cancelled = false
     let timer: number | undefined
 
+    // A tab that was hidden has not been failing -- it has not been asking.
+    // Resetting here stops the gap being counted as misses on return.
+    misses.current = 0
+
     const tick = () => {
       listQueue()
         .then((r) => {
-          if (!cancelled) setQueue(r.queue)
+          if (cancelled) return
+          setQueue(r.queue)
+          misses.current = 0
+          setReachable(true)
         })
-        .catch(() => {})
+        .catch(() => {
+          if (cancelled) return
+          misses.current += 1
+          if (misses.current >= MISSES_BEFORE_UNREACHABLE) setReachable(false)
+        })
         .finally(() => {
           if (cancelled) return
           const active = queueRef.current.some(
@@ -66,8 +97,9 @@ export function GenerationActivityProvider({ children }: { children: ReactNode }
       anyRunning: runningPresetIds.size > 0,
       runningPresetIds,
       refresh: () => setNonce((n) => n + 1),
+      reachable,
     }
-  }, [queue])
+  }, [queue, reachable])
 
   return (
     <GenerationActivityContext.Provider value={value}>

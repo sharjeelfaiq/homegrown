@@ -106,7 +106,7 @@ export default function StudioShell() {
   const [error, setError] = useState<string | null>(null)
   const [estimate, setEstimate] = useState<Estimate | null>(null)
 
-  const { queue, refresh: refreshQueue } = useGenerationActivity()
+  const { queue, refresh: refreshQueue, reachable } = useGenerationActivity()
   useJobToasts(queue)
   // Both error STATES are mirrored to toasts rather than rendered inline.
   // voiceError used to draw a banner inside the voices dialog, which grew
@@ -252,6 +252,18 @@ export default function StudioShell() {
   // the new voiceover belongs there anyway, so refresh in place; scrolled down,
   // count it and let them choose when to jump. atTopRef, not state, so this
   // effect does not re-run on every scroll event.
+  // A backend that stops answering is reported through the SAME 'down' state a
+  // failed boot uses, so the existing banner and its Retry do the work -- Retry
+  // already bumps wakeNonce, which re-runs the health check and recovers.
+  //
+  // Only downward. Coming back is the health check's job, not the queue
+  // poller's: /api/queue answering again does not mean the model reloaded, and
+  // flipping to 'ready' here would clear the banner while generation is still
+  // impossible.
+  useEffect(() => {
+    if (!reachable) setModelStatus('down')
+  }, [reachable])
+
   // Check health whenever a job has just failed. Cheap (only on transition)
   // and it cannot miss the fault, because the fault is what produced the
   // failure.

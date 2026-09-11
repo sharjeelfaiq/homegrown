@@ -292,6 +292,30 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   Ctrl key and a large tablet still does not. Verified emitted **only** inside the media query --
   one occurrence each of `.coarse\:hidden` and `.coarse\:pr-3`, zero unconditional.
 
+- **A backend that dies mid-session is detected by the QUEUE POLLER, not by a health interval.**
+  There is no periodic `/api/health` — it runs at boot (`wakeNonce`) and when a job *fails*. So
+  `GenerationActivityContext` counts **consecutive** failed polls and exposes `reachable`; three
+  misses (~3s at the active cadence) flips `StudioShell` to the existing `modelStatus === 'down'`,
+  reusing that banner and its Retry rather than inventing a second surface. Retry already bumps
+  `wakeNonce`, which re-runs the health check and recovers.
+  Three things that are easy to get wrong and are deliberate: the count is **consecutive, not
+  cumulative** (one dropped request while the GPU is busy is normal); the count is **reset when the
+  effect re-runs on tab-visible**, because a hidden tab was not failing, it was not asking; and the
+  flip is **downward only** — `/api/queue` answering again does not mean the model reloaded, so
+  clearing the banner is the health check's job.
+  **`useElapsed` takes a `live` flag and freezes when it is false.** Its advance is local, so before
+  this a dead backend produced a row that counted up forever — the comment claiming "every poll
+  re-anchors it, so it cannot drift" was true only while polls succeed, which it did not say.
+  `useOptimisticProgress` is deliberately NOT frozen: it never crosses the next chunk boundary, so it
+  stalls within one chunk instead of running away. The clock had no such bound.
+
+- **`animate-pulse-soft` is gated on `prefers-reduced-motion` at both `VoicePicker` call sites.** Its
+  duration is a literal `1.4s` in `--animate-pulse-soft`, **not** one of the `--fast/--base/--slow`
+  tokens the reduced-motion block in `tokens.css` zeroes — so that block never touched it and the
+  busy dot pulsed for whole generations. It was the last infinite animation in the app not gated this
+  way (`boot-spin` and `sheen` already were). The element stays when reduced; only the motion goes,
+  so the voice is still marked busy.
+
 - **`modal-body` is a JS hook with no CSS rule, and deleting it silently breaks focus.**
   `Modal.tsx`'s open effect queries `.modal-body` to land focus on the dialog body's first
   control. The class was absent for a long time, so the query always missed and focus fell

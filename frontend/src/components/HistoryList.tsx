@@ -235,8 +235,15 @@ function PendingRow({
   // the partial audio is discarded, so "undo" could only mean re-queueing from
   // scratch and paying the whole render again.
   const [confirmingCancel, setConfirmingCancel] = useState(false)
+  // Read from context rather than threaded through the map -- PendingRow is a
+  // sibling component, not a closure over HistoryList's scope.
+  const { reachable } = useGenerationActivity()
+  // useOptimisticProgress is deliberately NOT frozen: it is self-bounding, it
+  // never crosses the next chunk boundary, so with a dead backend it stalls
+  // within one chunk instead of running away. The clock had no such bound --
+  // it counted up forever -- which is why only it needs this.
   const progress = useOptimisticProgress(running ? job : undefined)
-  const elapsed = useElapsed(job)
+  const elapsed = useElapsed(job, reachable)
   const reduced = usePrefersReducedMotion()
 
   const total = job.total_chunks || 0

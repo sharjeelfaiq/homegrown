@@ -146,7 +146,9 @@ included. A job you cancel yourself does not linger — you already know it stop
 The voice dropdown stays usable while a job runs, so you can line up the next one.
 
 There is no queue list and no reorder control in the UI, although `POST /api/queue/reorder` exists and
-works. If the backend becomes unreachable, an error row with a **Retry** button appears above the script.
+works. If the backend becomes unreachable — it crashed, the machine slept, the wifi dropped — an error
+row with a **Retry** button appears above the script, and any in-flight row **stops its clock** rather
+than counting up against a process that may be gone.
 
 **Generate shows an estimate first** — "Generation will take about 25 min". Rounded deliberately, and
 it **does not respond to the voice**: it comes from the character count and one global chars/second

@@ -534,6 +534,7 @@ Environment overrides:
 | LAN clients load the UI but every action fails | `VITE_BACKEND_URL` was set when you built (or, in dev, is set at all). Comment it out in `frontend/.env.local` and rebuild. `start_server.bat` now catches this before it starts. |
 | `no kernel image is available for execution on the device` | The torch build has no kernels for your GPU. cu126 covers `sm_50`–`sm_90`; Blackwell needs cu128. |
 | `CUDA error: the launch timed out and was terminated` | Windows TDR killed a GPU batch running over ~2s on a display-attached card. It kills the whole process's CUDA context, so the running voiceover **and everything queued behind it** fail together — the app detects this (`gpu_fault`), hides Retry and asks you to restart, because nothing in-app can recover it. Lower `DECODE_CHUNK_FRAMES`, and do not run two model processes at once. |
+| Red banner, and an in-flight row whose clock has stopped | The backend stopped answering — crashed, machine asleep, network dropped. **Retry** in the banner re-checks it. Jobs may still be running server-side; the app has only lost contact. |
 | Yellow "Running on CPU" banner | No usable GPU was found; the reason is in the banner and in `/api/health`. |
 | Output murmurs, drags, or drops words | Almost always the reference clip — see "Making a voice that actually works". |
 | Output has echo | Reverb in your reference clip. Re-record dry and close-mic. |

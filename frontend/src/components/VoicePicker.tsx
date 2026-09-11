@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { mediaUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { PauseIcon, PlayIcon } from './Icons'
 
 interface Props {
@@ -44,6 +45,14 @@ export default function VoicePicker({
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const { setActiveAudio, releaseAudio } = useAudioActivity()
   const { runningPresetIds } = useGenerationActivity()
+  const reduced = usePrefersReducedMotion()
+  // The busy dot pulsed regardless of prefers-reduced-motion. Its duration is a
+  // literal 1.4s in --animate-pulse-soft, not one of the --fast/--base/--slow
+  // tokens the reduced-motion block in tokens.css zeroes, so that block never
+  // touched it -- and it ran for the whole generation, minutes at a time. It
+  // was the only infinite animation in the app not gated this way; boot-spin
+  // and sheen both already were. The ELEMENT stays either way, so the voice is
+  // still marked as busy without the motion.
 
   const selected = presets.find((p) => p.id === selectedPresetId) ?? null
   const generating = selected != null && runningPresetIds.has(selected.id)
@@ -151,7 +160,7 @@ export default function VoicePicker({
         <span className="overflow-hidden text-ellipsis whitespace-nowrap">{selected ? selected.name : 'Choose a voice…'}</span>
         {generating && (
           <span
-            className="size-1.5 rounded-full bg-progress animate-pulse-soft"
+            className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`}
             title={`${selected?.name} is generating`}
             aria-hidden="true"
           />
@@ -181,7 +190,7 @@ export default function VoicePicker({
                 <span className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</span>
                 {runningPresetIds.has(p.id) && (
                   <span
-                    className="size-1.5 rounded-full bg-progress animate-pulse-soft"
+                    className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`}
                     title={`${p.name} is generating`}
                     aria-hidden="true"
                   />
