@@ -94,7 +94,7 @@ export default function NewVoiceModal({
           <li className="grid h-full place-items-center text-[13px] text-faint">No voices yet.</li>
         ) : (
           presets.map((preset) => (
-            <li key={preset.id} className="border-b border-hairline py-1 last:border-b-0">
+            <li key={preset.id} className="border-b border-hairline py-1 pl-2 last:border-b-0">
               <div className="flex min-h-9 items-center justify-between gap-3">
                 <InlineName
                   value={preset.name}

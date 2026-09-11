@@ -82,19 +82,17 @@ export default function StudioShell() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyNonce, setHistoryNonce] = useState(0)
-  // The APPLIED search, not what is being typed -- HistoryList owns the draft
-  // and debounces it before this changes, so a keystroke is not a request.
-  const [historyQuery, setHistoryQuery] = useState('')
+  // Not the query text -- just whether one is running. Filtering is
+  // client-side (HistoryList searches names the server has never seen), so
+  // all this has to do is make sure the whole history is loaded while a
+  // search is on.
+  const [searchActive, setSearchActive] = useState(false)
   const [pendingNew, setPendingNew] = useState(0)
   // Refs, not state: read inside callbacks that must not be rebuilt (and so
   // must not re-arm the IntersectionObserver) every time they change.
   const loadedRef = useRef(0)
   const totalRef = useRef(0)
   const loadingMoreRef = useRef(false)
-  // The applied query, mirrored into a ref so loadMoreHistory can read it
-  // without taking it as a dependency -- that callback's identity has to stay
-  // stable because HistoryList arms its IntersectionObserver on it.
-  const queryRef = useRef('')
   const atTopRef = useRef(true)
 
   const [submitting, setSubmitting] = useState(false)
@@ -193,17 +191,18 @@ export default function StudioShell() {
   // shifts every later one up by one, so an offset-based append would skip a
   // voiceover. The same applies when a new one lands at the top.
   //
-  // A CHANGED QUERY RESETS THE DEPTH. Without that, typing a search would
-  // refetch as many rows as the old result set had scrolled to -- asking for
-  // 60 matches of a word with four, which is a slower request for a list the
-  // user is about to start reading from the top anyway.
+  // WHILE A SEARCH IS RUNNING, PULL EVERYTHING. Filtering happens on the
+  // client, so anything not fetched cannot match -- a search over the first
+  // 20 rows of a 200-row history would silently look like the rest do not
+  // exist. totalRef is the count the last response reported; on the very
+  // first load it is 0 and the normal page size applies, and the search can
+  // only start after that has returned anyway.
   useEffect(() => {
     let cancelled = false
-    const queryChanged = queryRef.current !== historyQuery
-    queryRef.current = historyQuery
-    if (queryChanged) loadedRef.current = 0
-    const want = Math.max(HISTORY_INITIAL_COUNT, loadedRef.current)
-    listHistory(want, 0, historyQuery)
+    const want = searchActive
+      ? Math.max(HISTORY_INITIAL_COUNT, totalRef.current)
+      : Math.max(HISTORY_INITIAL_COUNT, loadedRef.current)
+    listHistory(want, 0)
       .then((r) => {
         if (cancelled) return
         setHistory(r.history)
@@ -215,14 +214,14 @@ export default function StudioShell() {
     return () => {
       cancelled = true
     }
-  }, [historyNonce, historyQuery])
+  }, [historyNonce, searchActive])
 
   // Append the next slice. Stable identity on purpose -- HistoryList uses it as
   // an effect dependency to arm its observer.
   const loadMoreHistory = useCallback(() => {
     if (loadingMoreRef.current || loadedRef.current >= totalRef.current) return
     loadingMoreRef.current = true
-    listHistory(HISTORY_LOAD_MORE_COUNT, loadedRef.current, queryRef.current)
+    listHistory(HISTORY_LOAD_MORE_COUNT, loadedRef.current)
       .then((r) => {
         setHistoryTotal(r.total)
         totalRef.current = r.total
@@ -606,8 +605,7 @@ export default function StudioShell() {
           <HistoryList
             history={history}
             searchRef={searchRef}
-            query={historyQuery}
-            onQueryChange={setHistoryQuery}
+            onSearchActiveChange={setSearchActive}
             total={historyTotal}
             hasMore={history.length < historyTotal}
             onLoadMore={loadMoreHistory}

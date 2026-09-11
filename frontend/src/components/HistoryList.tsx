@@ -28,11 +28,11 @@ interface Props {
   /** Focused (and selected) by the Ctrl/Cmd+F shortcut, which is bound in
    *  StudioShell -- the same arrangement as the script box and "/". */
   searchRef?: RefObject<HTMLInputElement | null>
-  /** The APPLIED search. The draft being typed lives here; this is what the
-   *  caller has already fetched against. */
-  query: string
-  /** Called with a debounced query. The caller refetches from offset 0. */
-  onQueryChange: (q: string) => void
+  /** Fires when a search starts or stops. The caller's job is to make sure
+   *  the WHOLE history is loaded while one is running -- filtering happens
+   *  here, over what has been fetched, so a half-loaded list would silently
+   *  hide matches. */
+  onSearchActiveChange?: (active: boolean) => void
   /** True while more entries exist past what `history` already holds. */
   hasMore: boolean
   /** Fetch the next slice. Safe to call repeatedly -- the caller de-dupes. */
@@ -478,8 +478,7 @@ export default function HistoryList({
   history,
   total,
   searchRef,
-  query,
-  onQueryChange,
+  onSearchActiveChange,
   hasMore,
   onLoadMore,
   pendingNew,
@@ -507,29 +506,26 @@ export default function HistoryList({
   const listRef = useRef<HTMLUListElement>(null)
   const sentinelRef = useRef<HTMLLIElement>(null)
 
-  // The search box is uncontrolled by the parent on purpose: `draft` is what
-  // is being typed and `query` is what has been fetched. Lifting the draft up
-  // would make every keystroke a request, and threading it back down would
-  // make every keystroke re-render the whole voiceovers column.
-  const [draft, setDraft] = useState(query)
-  // Follow the parent when it clears or changes the query from outside (there
-  // is no such caller today, but a stale draft after an external reset is the
-  // kind of thing that only shows up much later).
-  useEffect(() => {
-    setDraft(query)
-    // Intentionally NOT depending on `draft`: this syncs down, never up.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query])
+  // The search is CLIENT-SIDE and undebounced, so it filters on the keystroke.
+  //
+  // It has to be. Two of the three things it searches do not exist on the
+  // server: a voiceover's display name is a localStorage override
+  // (usePersistedRecord/historyFileNames, and CLAUDE.md is explicit the two
+  // name stores must not be unified), and the default "Voiceover 27" is not
+  // stored anywhere at all -- it is derived from the row's position in the
+  // list. No server query can match either.
+  //
+  // That also removes the reason for a debounce: there is no request to
+  // coalesce, so the 250ms wait was pure latency.
+  const [draft, setDraft] = useState('')
+  const searching = draft.trim() !== ''
 
-  // 250ms: below ~150 the request fires mid-word on a fast typist, above ~350
-  // the list feels detached from the keyboard. The guard matters as much as
-  // the delay -- without it, blurring or re-rendering would re-issue the same
-  // query and reset the user's scroll depth for no new information.
+  // Filtering only sees what has been fetched, so while a search runs the
+  // parent has to finish loading the history. Without this, a query would
+  // quietly miss every voiceover past the first page.
   useEffect(() => {
-    if (draft === query) return
-    const id = window.setTimeout(() => onQueryChange(draft), 250)
-    return () => window.clearTimeout(id)
-  }, [draft, query, onQueryChange])
+    onSearchActiveChange?.(searching)
+  }, [searching, onSearchActiveChange])
 
   // Failures are included, and sorted to the bottom. That ordering does not
   // come for free: /api/queue sorts by `queue_position if not None else -1`,
@@ -548,7 +544,7 @@ export default function HistoryList({
   // never considered, and make the heading's count disagree with what is on
   // screen. Clearing the box brings them straight back.
   const active =
-    query !== ''
+    searching
       ? []
       : queue
           .filter(
@@ -560,7 +556,34 @@ export default function HistoryList({
           )
           .sort((a, b) => Number(a.status === 'error') - Number(b.status === 'error'))
 
-  // Load the next slice when the end of the list scrolls into view.
+  // Numbered FIRST, filtered second, and the order is load-bearing. The
+  // number is derived from a row's position in the whole list (total - i), so
+  // numbering the filtered array would renumber every voiceover the moment a
+  // search narrowed it -- "Voiceover 26" would become "Voiceover 3" while you
+  // typed, and the name you were searching for would stop matching itself.
+  const numbered = history.map((entry, i) => {
+    const number = total - i
+    return {
+      entry,
+      number,
+      name: entryFileNames[entry.id]?.trim() || `Voiceover ${number}`,
+    }
+  })
+
+  // Matches the voiceover's name, the voice that spoke it, and the script.
+  // casefold-ish: toLowerCase on both sides, matching the backend's casefold()
+  // closely enough for a substring test on a local tool.
+  const needle = draft.trim().toLowerCase()
+  const shown = needle
+    ? numbered.filter(
+        ({ entry, name }) =>
+          name.toLowerCase().includes(needle) ||
+          (entry.preset_name ?? '').toLowerCase().includes(needle) ||
+          (entry.text ?? '').toLowerCase().includes(needle),
+      )
+    : numbered
+
+    // Load the next slice when the end of the list scrolls into view.
   // IntersectionObserver rather than a scroll handler: it fires once per
   // crossing instead of on every frame of a scroll.
   //
@@ -573,7 +596,7 @@ export default function HistoryList({
   // there, since the page is the scroller.
   useEffect(() => {
     const sentinel = sentinelRef.current
-    if (!sentinel || !hasMore) return
+    if (!sentinel || !hasMore || searching) return
     const mq = window.matchMedia(TWO_COLUMN_QUERY)
     let io: IntersectionObserver | undefined
     const arm = () => {
@@ -592,7 +615,7 @@ export default function HistoryList({
       mq.removeEventListener('change', arm)
       io?.disconnect()
     }
-  }, [hasMore, onLoadMore, history.length])
+  }, [hasMore, onLoadMore, history.length, searching])
 
   // Whether the reader is at the top decides if a finished voiceover may be
   // inserted above them or has to be announced. Reported up rather than decided
@@ -754,7 +777,7 @@ export default function HistoryList({
           typing a search would fire shortcuts. isTyping() already covers
           INPUT, but Escape is NOT gated by it and would clear the composer's
           error banner behind the column. */}
-      {(total > 0 || query !== '' || history.length > 0) && (
+      {(total > 0 || searching || history.length > 0) && (
         <div
           // shrink-0 is the whole reason the height works. .results is a flex
           // column with a CONSTRAINED height above 1025px (wide:h-full), and a
@@ -818,16 +841,16 @@ export default function HistoryList({
         </button>
       )}
 
-      {total === 0 && active.length === 0 ? (
+      {shown.length === 0 && active.length === 0 ? (
         <p className="m-0 py-5 text-[13px] text-faint">
           {loading
             ? 'Loading your voiceovers…'
-            : query !== ''
+            : searching
               ? // Distinct from the never-generated-anything copy below. Telling
                 // someone with 40 voiceovers to "pick a voice and press
                 // Generate" because their search missed reads as the app having
                 // lost their work.
-                `No voiceovers match “${query}”. Searching looks at the script and the voice, not the name you gave a voiceover.`
+                `No voiceovers match “${draft.trim()}”.`
               : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
         </p>
       ) : (
@@ -864,14 +887,7 @@ export default function HistoryList({
               )
             })}
 
-            {history.map((entry, i) => {
-              // Oldest is 1. The list is newest-first and accumulates as you
-              // scroll, so index in the list IS index in the whole set --
-              // no page offset any more. Derived, not stored: deleting a
-              // voiceover renumbers the rest, which is what "chronological"
-              // means here.
-              const number = total - i
-              const name = entryFileNames[entry.id]?.trim() || `Voiceover ${number}`
+            {shown.map(({ entry, number, name }) => {
               return (
                 <VoiceoverRow
                   key={entry.id}
@@ -890,7 +906,7 @@ export default function HistoryList({
             {/* The trigger for the next slice, and the only "there is more"
                 signal the user gets. Inside the <ul> so it scrolls with the
                 rows and so IntersectionObserver can scope to this list. */}
-            {hasMore && (
+            {hasMore && !searching && (
               <li className="py-3.5 text-center text-[11px] text-faint" ref={sentinelRef}>
                 Loading more…
               </li>

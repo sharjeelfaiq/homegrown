@@ -208,17 +208,21 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   Relatedly, the elapsed-time span in `HistoryList` is **no longer `aria-live`** -- it announced a
   new time every second and said nothing at the finish. Sonner's own polite region replaced it.
 
-- **`GET /api/history` takes `q`, and it filters BEFORE the slice.** `total` is therefore the size
-  of the filtered set and the client's paging arithmetic is unchanged; filtering after the slice
-  would page through the unfiltered list and return mostly empty pages. It matches the script text
-  and `preset_name`, and **cannot match a voiceover's display name** -- that is a localStorage
-  override the server has never seen, which is the same two-stores rule as the `InlineName` note
-  below. The empty-results copy says so rather than leaving the user to guess. On the client the
-  draft lives in `HistoryList` and only the debounced value is lifted (lifting the draft would make
-  every keystroke a request); a changed query resets `loadedRef` to 0; `loadMoreHistory` reads the
-  query from a **ref**, because its identity has to stay stable for `HistoryList`'s
-  `IntersectionObserver`. Queue rows are hidden while a search runs -- an in-flight job is not in
-  history yet, so the filter never considered it.
+- **Voiceover search is CLIENT-SIDE, and a server `q` was built and then removed.** Two of the three
+  things worth searching are invisible to the backend: a voiceover's display name is a localStorage
+  override per browser (the two-name-stores rule below), and the default `Voiceover 27` is derived
+  from the row's position rather than stored anywhere. A server filter could only match the script
+  and the voice name, i.e. a search that silently ignores the thing the user is most likely to type.
+  So `/api/history` has no `q`, `HistoryList` filters `history` directly, and there is no debounce —
+  with no request to coalesce, the 250ms wait was pure latency.
+  Two consequences that are easy to break:
+  **numbering happens BEFORE filtering.** The number is `total - i` over the *whole* list, so
+  numbering the filtered array would renumber every row as you typed — "Voiceover 26" becoming
+  "Voiceover 3" mid-search, so the name being searched for stops matching itself.
+  And **the parent must finish loading the history while a search runs** (`onSearchActiveChange` →
+  `listHistory(totalRef.current, 0)`), because filtering only sees what was fetched; without it a
+  query over a 200-row history would silently consider the first 20. The load-more sentinel and its
+  `IntersectionObserver` are both switched off while searching for the same reason.
 
 - **Shortcut caps: `MOD_KEY` is the glyph, `MOD_ARIA` is the attribute, and they are not
   interchangeable.** `aria-keyshortcuts` takes a fixed vocabulary (`Control+Enter`), so it can

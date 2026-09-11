@@ -214,23 +214,16 @@ export const HISTORY_LOAD_MORE_COUNT = 10
 
 /** One page of history, newest first.
  *
- * `q` filters server-side on the script text and the voice name, BEFORE the
- * slice, so `total` is the size of the filtered set and the caller's paging
- * arithmetic is unchanged. It cannot match a voiceover's display name -- that
- * is a localStorage override the server has never seen (see usePersistedRecord
- * in HistoryList, and the two-name-stores note in CLAUDE.md).
- *
- * encodeURIComponent, not raw interpolation: a query is arbitrary user text
- * and `&`, `#` or `+` in it would otherwise corrupt the query string rather
- * than being searched for.
+ * No server-side search parameter. Filtering is client-side (HistoryList),
+ * because two of the three things worth searching do not exist on the server:
+ * a voiceover's display name is a localStorage override, and the default
+ * "Voiceover 27" is derived from the row's position rather than stored at all.
  */
 export function listHistory(
   limit: number = HISTORY_INITIAL_COUNT,
   offset = 0,
-  q = '',
 ): Promise<HistoryPage> {
-  const query = q ? `&q=${encodeURIComponent(q)}` : ''
-  return authFetch(apiUrl(`/api/history?limit=${limit}&offset=${offset}${query}`)).then(
+  return authFetch(apiUrl(`/api/history?limit=${limit}&offset=${offset}`)).then(
     parseOrThrow<HistoryPage>,
   )
 }

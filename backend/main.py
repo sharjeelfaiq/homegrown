@@ -1487,7 +1487,6 @@ HISTORY_PAGE_MAX = 100
 def list_history(
     limit: int = 20,
     offset: int = 0,
-    q: str = "",
     user_id: str = Depends(get_current_user),
 ):
     """One page of this user's generations, newest first.
@@ -1501,38 +1500,18 @@ def list_history(
     render. HISTORY_PAGE_MAX caps how much a single request can pull, since
     every entry carries its full script text.
 
-    `q` filters BEFORE the slice, so `total` is the size of the filtered set
-    and the client's paging arithmetic keeps working unchanged. Filtering
-    after the slice would page through the unfiltered list and return mostly
-    empty pages.
-
-    It matches the script text and the voice name. It deliberately cannot
-    match a voiceover's DISPLAY name: that is a localStorage override held
-    per-browser (usePersistedRecord/historyFileNames in HistoryList), and
-    CLAUDE.md is explicit that the two name stores must not be unified. So a
-    renamed voiceover is found by what it says or by which voice said it, not
-    by the name its owner gave it here.
-
-    Substring, not tokenised: the useful queries on a local tool are a phrase
-    someone remembers saying and a voice name, both of which a plain
-    case-folded `in` handles. Anything smarter is a search index this does not
-    need.
+    THERE IS NO `q` PARAMETER, and one was tried and removed rather than never
+    considered. Search is client-side, because two of the three things worth
+    searching are invisible here: a voiceover's display name is a localStorage
+    override per browser (CLAUDE.md is explicit the two name stores must not be
+    unified), and the default "Voiceover 27" is derived from the row's position
+    in the list rather than stored anywhere. A server filter could only ever
+    match the script and the voice name, which would look like a search that
+    randomly ignores what the user typed.
     """
     limit = max(1, min(limit, HISTORY_PAGE_MAX))
     offset = max(0, offset)
     mine = [h for h in _history if h.get("user_id") == user_id]
-
-    # casefold, not lower: it folds ß -> ss and the Turkish dotted I, which
-    # lower() does not, and reference clips here are not all English.
-    needle = q.strip().casefold()
-    if needle:
-        mine = [
-            h
-            for h in mine
-            if needle in str(h.get("text", "")).casefold()
-            or needle in str(h.get("preset_name", "")).casefold()
-        ]
-
     return {"history": mine[offset : offset + limit], "total": len(mine)}
 
 
