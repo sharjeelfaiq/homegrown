@@ -466,6 +466,41 @@ body {
   }
 }
 
+/* The voices dialog's list. Sits next to result-list because the two look
+   alike and are the OPPOSITE of each other in the one property that matters.
+
+   `height`, not `max-height`. result-list caps a list that is allowed to be
+   shorter; this one RESERVES six rows whether there are six voices or one.
+   That difference is the entire feature: the modal panel sizes to its content
+   and the backdrop centres it (Modal.tsx), so a list that grows by a row
+   grows the dialog by a row in both directions -- and the dialog deliberately
+   stays open after a voice is cloned, so the user is looking straight at the
+   jump at the moment their voice appears. A max-height cap does not fix that;
+   it only stops it after the sixth voice.
+
+   `flex: none` for the same reason, and this is the other inversion:
+   result-list is `flex: 1 1 auto; min-height: 0` so the Voiceovers column can
+   shrink BELOW eight rows on a short laptop rather than push the layout past
+   the fold. Here the reserve is the point, so the default flex-shrink: 1 of a
+   flex child would quietly undo it. The two are inconsistent on purpose --
+   different containers, opposite requirements. Do not unify them.
+
+   scrollbar-gutter keeps the scrollbar arriving at row seven from shifting
+   the row content sideways.
+
+   No `@media (width < 1025px)` release, unlike result-list: this is inside a
+   modal that is already a fixed-size box on every viewport, not a column of
+   the page, so there is no page-scroller to hand back to. */
+@utility voice-list {
+  flex: none;
+  height: calc(6 * var(--voice-row-h));
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
 /* The row title IS the rename field -- one <input>, always present, dressed
    as plain text until focused. Every box-affecting property (height,
    padding, border width, font) is identical focused and unfocused, so

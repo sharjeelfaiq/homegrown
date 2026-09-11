@@ -90,6 +90,14 @@
      at eight of these, which is what makes the window a size rather than a
      guess. Re-measure if the row gains or loses a line. */
   --result-row-h: 88px;
+  /* One voice row in the voices dialog: py-1 (4+4) + a 36px min-h-9 control
+     row + the 1px hairline under it. Both controls inside are SHORTER than
+     36px -- result-name is 26 and icon-btn 28 -- so the min-height is what
+     sets it, not their content. The dialog reserves six of these whether or
+     not there are six voices, which is what stops the panel resizing as
+     voices are added; see @utility voice-list. Re-measure if the row gains a
+     line, and see the coarse-pointer override below. */
+  --voice-row-h: 45px;
   --gutter: 24px;
 
   /* ---- Motion. One curve, three durations. Honour reduced-motion. ------ */
@@ -500,6 +508,17 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'zero' 1;
+}
+
+/* icon-btn grows to a 40px minimum on touch (see @media (pointer: coarse) in
+   index.css), which lifts the whole row from 36 to 40 and the row box from 45
+   to 49. The six-row window is computed from this token, so without the
+   override the dialog would reserve 24px too little on a tablet and the sixth
+   row would sit half-hidden behind the scroll edge. */
+@media (pointer: coarse) {
+  :root {
+    --voice-row-h: 49px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -56,7 +56,6 @@ export default function StudioShell() {
 
   // Reference clips that the backend shortened, by preset id. Session-only:
   // it is a report on what just happened, not a property of the voice.
-  const [trimmed, setTrimmed] = useState<Record<string, number>>({})
   const [voicesOpen, setVoicesOpen] = useState(false)
   const [creatingPreset, setCreatingPreset] = useState(false)
   // Separate from the composer's `error`, which renders inside .composer and
@@ -275,12 +274,6 @@ export default function StudioShell() {
       )
       setPresets((prev) => [preset, ...prev])
       setVoiceId(preset.id) // a voice you just made is the one you want to use
-      // Null unless the clip was actually longer than the model can hold, so
-      // this is both the value and its own condition. Kept per id because
-      // several clips can be added before the dialog is closed.
-      if (preset.trimmed_from_seconds != null) {
-        setTrimmed((prev) => ({ ...prev, [preset.id]: preset.trimmed_from_seconds as number }))
-      }
       // Deliberately NOT closing. The dialog used to close here, back when
       // saving was the last step; now the row it just created -- with its
       // editable name -- is the thing the user came to see.
@@ -634,7 +627,6 @@ export default function StudioShell() {
         onFileSelected={handleAddVoice}
         uploading={creatingPreset}
         error={voiceError}
-        trimmed={trimmed}
         onRename={handleRenamePreset}
         onDelete={handleDeletePreset}
       />

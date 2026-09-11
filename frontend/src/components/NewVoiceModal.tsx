@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { mediaUrl, presetDownloadUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
-import { formatClock } from '../format'
-import { REF_TRIM_SECS } from '../constants'
 import InlineName from './InlineName'
 import Modal from './Modal'
 import ReferenceUpload from './ReferenceUpload'
@@ -16,8 +14,6 @@ interface Props {
   uploading: boolean
   /** Why the last upload or rename failed, rendered inside the dialog. */
   error: string | null
-  /** Reference clips the backend shortened, by preset id. */
-  trimmed: Record<string, number>
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
 }
@@ -52,7 +48,6 @@ export default function NewVoiceModal({
   onFileSelected,
   uploading,
   error,
-  trimmed,
   onRename,
   onDelete,
 }: Props) {
@@ -89,11 +84,19 @@ export default function NewVoiceModal({
     <Modal open={open} title="Voices" onClose={onClose}>
       <ReferenceUpload onFileSelected={onFileSelected} uploading={uploading} error={error} />
 
-      {/* No is_builtin filter: no preset is ever builtin (see CLAUDE.md), so
+      {/* Rendered unconditionally, and that is the point rather than an
+          oversight. It used to be behind `presets.length > 0`, which meant
+          the very first voice made the dialog jump by a whole list -- the
+          worst instance of the shift voice-list exists to remove. The empty
+          state fills the reserved window instead.
+
+          No is_builtin filter: no preset is ever builtin (see CLAUDE.md), so
           filtering on it only ever returned the whole list. */}
-      {presets.length > 0 && (
-        <ul className="m-0 list-none p-0">
-          {presets.map((preset) => (
+      <ul className="voice-list">
+        {presets.length === 0 ? (
+          <li className="grid h-full place-items-center text-[13px] text-faint">No voices yet.</li>
+        ) : (
+          presets.map((preset) => (
             <li key={preset.id} className="border-b border-hairline py-1 last:border-b-0">
               <div className="flex min-h-9 items-center justify-between gap-3">
                 <InlineName
@@ -167,22 +170,10 @@ export default function NewVoiceModal({
                   </span>
                 )}
               </div>
-
-              {/* Reported after the fact rather than warned about before it.
-                  Saving is now one gesture, so there is no moment to warn in
-                  -- and this is the measured trim from the server, not a
-                  guess from the file's own metadata. The voice is one click
-                  from deletion right here if the cut is wrong. */}
-              {trimmed[preset.id] != null && (
-                <p className="m-0 pb-1 text-[11px] text-faint">
-                  Trimmed from {formatClock(trimmed[preset.id])} — the first {REF_TRIM_SECS}s are
-                  used.
-                </p>
-              )}
             </li>
-          ))}
-        </ul>
-      )}
+          ))
+        )}
+      </ul>
 
       {/* crossOrigin is required even though this element only plays and never
           decodes: setActiveAudio hands it to AudioEngine, which wires it

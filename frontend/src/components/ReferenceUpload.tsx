@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react'
+import { REF_TRIM_SECS } from '../constants'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { UploadIcon } from './Icons'
 
 interface Props {
@@ -23,10 +25,14 @@ const AUDIO_EXT = /\.(wav|mp3|m4a|flac|ogg|opus|webm|aac)$/i
  * supplied. The voice saves on drop and its name is edited in place on the
  * row it creates, the same way a voiceover's is.
  *
- * The over-length warning that used to sit here is gone with it. It probed
- * the file's duration client-side to guess at a trim before saving; the
- * create response now reports what was actually cut, which is both the truth
- * and available without a second read of the file.
+ * The over-length limit is stated here as a flat rule rather than reported
+ * per clip. It has now been two other things and neither worked: first a
+ * client-side probe of the file's duration, guessing at a trim before saving;
+ * then a per-voice note under the row, from the create response's real
+ * trimmed_from_seconds. The second was accurate but arrived after the upload
+ * it described, and it gave some rows an extra line -- which the dialog's
+ * fixed six-row window cannot accommodate, since that window is six times one
+ * row height.
  *
  * This is a real drop target as well as a picker, and both are needed. There
  * is a window-wide handler too (useFileDrop) that opens this dialog, but once
@@ -36,6 +42,7 @@ const AUDIO_EXT = /\.(wav|mp3|m4a|flac|ogg|opus|webm|aac)$/i
 export default function ReferenceUpload({ onFileSelected, uploading, error }: Props) {
   const [over, setOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const reduced = usePrefersReducedMotion()
 
   function accept(file: File | undefined) {
     if (!file || uploading) return
@@ -102,13 +109,54 @@ export default function ReferenceUpload({ onFileSelected, uploading, error }: Pr
             e.target.value = ''
           }}
         />
-        {!uploading && <UploadIcon />}
+        {/* A spinner, not a progress bar, and the difference is forced rather
+            than chosen: createPreset (api.ts) is one fetch() POST of a
+            FormData body, fetch exposes no upload-progress events, and the
+            server work behind it -- trim, then a faster-whisper transcription
+            of the clip -- has no progress channel at all. There is nothing
+            honest to drive a percentage from, and the transcription is the
+            part that dominates the wait anyway.
+
+            Sized to UploadIcon's own 22px box so swapping one for the other
+            does not move the label inside this gap-3 row. Previously the icon
+            was simply dropped while uploading and the text slid left. */}
+        {uploading ? (
+          <span
+            className={`size-[22px] flex-none rounded-full border-2 border-progress-line border-t-progress ${
+              reduced ? '' : 'animate-boot-spin'
+            }`}
+            aria-hidden="true"
+          />
+        ) : (
+          <UploadIcon />
+        )}
         <span className="break-all">
           {uploading
             ? 'Cloning the voice…'
             : 'Drop a reference clip here, or click to browse'}
         </span>
       </div>
+
+      {/* Stated up front rather than reported afterwards. This replaced a
+          per-voice "Trimmed from 2:03 — the first 40s are used." line under
+          the row a clip created: that told you about one clip, after you had
+          already uploaded it, and it made the rows two different heights,
+          which is incompatible with the fixed six-row window the list now
+          reserves (see @utility voice-list).
+
+          REF_TRIM_SECS is interpolated, not written out, because the backend
+          enforces its own copy of it (backend/main.py) and a hardcoded number
+          here would drift silently.
+
+          "of speech", deliberately: pack_speech (backend/audio_stitcher.py)
+          collapses long internal pauses before the cap is applied, so a
+          three-minute voice note that is mostly hesitation still yields a
+          full window. "The first 40 seconds" would be wrong for exactly the
+          sparse recordings that packing exists to rescue. */}
+      <p className="m-0 text-[11px]/[1.5] text-faint">
+        Clips longer than {REF_TRIM_SECS} seconds of speech are trimmed to the first{' '}
+        {REF_TRIM_SECS}.
+      </p>
 
       {error && (
         <p

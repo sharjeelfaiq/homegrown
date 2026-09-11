@@ -495,9 +495,35 @@ below for why one wrong click there is unrecoverable.
   `StudioShell` derives the name with `presetNameFromFile` and calls `createPreset` immediately;
   `ReferenceUpload` is now only a dropzone. Two consequences that are easy to undo by accident:
   the voices dialog **must not close** after a successful create (it used to) — the row it just
-  made, with its editable name, is the thing the user came to see; and the over-length warning is
-  now a report *after* the fact, from the create response's `trimmed_from_seconds`, rather than a
-  client-side probe of the file before saving.
+  made, with its editable name, is the thing the user came to see; and the over-length limit is
+  stated up front, as one static line under the dropzone, interpolating `REF_TRIM_SECS` rather
+  than writing the number out.
+- **The trim limit has been reported three ways, and the current one is the least clever
+  deliberately.** First a client-side probe of the file's duration, guessing at a trim before the
+  upload. Then a per-voice note under the row a clip created (`Trimmed from 2:03 — the first 40s
+  are used.`), from the create response's real `trimmed_from_seconds`: accurate, but it arrived
+  *after* the upload it described, and it gave some rows an extra line — which the fixed six-row
+  window below cannot accommodate, since that window is six times **one** row height. It is now a
+  flat rule in `ReferenceUpload`. The backend still returns `trimmed_from_seconds` and the field
+  is still on `Preset`; nothing on the client reads it. The copy says *seconds of speech* because
+  `pack_speech` collapses internal pauses before the cap applies, so a mostly-silent voice note
+  still yields a full window.
+- **The voices dialog reserves six rows whether or not it has six voices.** `@utility voice-list`
+  sets `height: calc(6 * var(--voice-row-h))` — `height`, **not** `max-height`, and that is the
+  entire feature. The modal panel sizes to its content and the backdrop centres it
+  (`Modal.tsx`), so a list that grows by a row grows the dialog by a row in *both* directions,
+  and the dialog stays open after a create — putting the jump exactly where the user is looking.
+  A cap only stops that after the sixth voice. For the same reason the `<ul>` renders
+  unconditionally with an empty state, rather than behind `presets.length > 0`: that gate made
+  the first voice jump by a whole list. Measured against the built CSS: panel 487.5px at 0, 1, 5,
+  6, 9 and 20 voices, and during an upload.
+  `voice-list` also carries `flex: none`, the deliberate **opposite** of `result-list`'s
+  `flex: 1 1 auto; min-height: 0` — that one must shrink below eight rows on a short laptop,
+  this one must not shrink at all. Different containers, opposite requirements; don't unify them.
+  `--voice-row-h` is 45px (py-1 8 + a 36px `min-h-9` row + 1px hairline) with a
+  `@media (pointer: coarse)` override to 49px, because `icon-btn` takes a 40px floor on touch and
+  lifts the row with it. Without the override a tablet reserves 24px too little. Verified: 49px
+  rows, a 294px window, no scrollbar at six and one at nine.
 - **Two names, two completely different stores, one component.** `InlineName` is the shared
   rename field, but what a commit *does* is a prop, because the two callers could not be more
   different. A **voiceover's** name is a localStorage display override (`usePersistedRecord`,
