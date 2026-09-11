@@ -69,7 +69,12 @@ export default function ScriptBlock({
         placeholder="Write what the voice should say…"
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
+        // The visible cap lives on the Script heading, not in here: a cap
+        // inside the box overlapped the first line of text (measured: cap
+        // 11-29px, line one 15-40.5px, and a long line reaches under it).
+        aria-keyshortcuts="/"
       />
+
 
       {/* Word count only. The chunk count, character counter and time estimate
           all still exist -- the estimate request above is unchanged, because

@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
+import { MOD_ARIA, MOD_KEY } from './Kbd'
 
 interface Props {
   disabled: boolean
@@ -54,7 +55,24 @@ export default function GenerateButton({
   // them is taken by the wrapper around the voice field in StudioShell.
   return (
     <section className="flex flex-none flex-col gap-2.5">
-      <button type="button" className="generate-btn" disabled={disabled} onClick={onClick}>
+      {/* Tooltip, not a visible key cap -- unlike the script box and the play
+          control, which wear theirs. This button already carries the longest
+          and most changeable label in the app (blockedReason substitutes into
+          it, and reads as a whole sentence), so a cap would sit beside text
+          that is sometimes "Generate" and sometimes "Pick a voice first".
+
+          aria-keyshortcuts is NOT the tooltip text: it takes a fixed
+          vocabulary ("Control+Enter"), which is why MOD_ARIA is separate from
+          the display glyph in MOD_KEY. Assistive tech announces the shortcut
+          from that attribute, so nothing is lost by the cap being absent. */}
+      <button
+        type="button"
+        className="generate-btn"
+        disabled={disabled}
+        onClick={onClick}
+        aria-keyshortcuts={`${MOD_ARIA}+Enter`}
+        title={`Generate (${MOD_KEY}+Enter)`}
+      >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
             key={label}

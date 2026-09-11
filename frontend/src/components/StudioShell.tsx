@@ -11,6 +11,7 @@ import { PlusIcon } from './Icons'
 import { Toaster } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useJobToasts } from '../hooks/useJobToasts'
+import Kbd from './Kbd'
 import { useTheme } from '../ThemeContext'
 import { themeMode } from '../theme'
 import { useBootStatus } from '../hooks/useBootStatus'
@@ -487,6 +488,17 @@ export default function StudioShell() {
               instead would tighten the script card and the notices too. */}
           <h2 className="section-rule -mb-3">
             <span>Script</span>
+            {/* order-3 puts it past the ::after hairline, i.e. hard right --
+                the same trick the Voiceovers heading uses for its count, so
+                the two columns' headings stay symmetrical.
+
+                Here rather than inside the script box, which is where it
+                started: an absolutely-positioned cap in the box's top-right
+                overlapped the first line of text on both axes (cap 11-29px,
+                line one 15-40.5px, and a long line runs under it horizontally
+                too). The bottom corners were already taken by the word count,
+                the resize grip and the scrollbar. */}
+            <Kbd className="order-3">/</Kbd>
           </h2>
 
           {/* No "Ready" indicator: GenerateButton already says what is missing
