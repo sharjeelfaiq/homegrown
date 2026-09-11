@@ -8,9 +8,10 @@ import GenerateButton from './GenerateButton'
 import { MAX_SCRIPT_CHARS } from '../constants'
 import { presetNameFromFile } from '../format'
 import { PlusIcon } from './Icons'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useJobToasts } from '../hooks/useJobToasts'
+import { usePersistedDraft } from '../hooks/usePersistedDraft'
 import { useErrorToast } from '../hooks/useErrorToast'
 import Kbd from './Kbd'
 import { useTheme } from '../ThemeContext'
@@ -72,7 +73,13 @@ export default function StudioShell() {
   // One script, not a list: the "+ Add block" control is gone, so there is no
   // way to create a second one. startGenerate is still called per-script below,
   // so the backend contract is unchanged.
-  const [script, setScript] = useState('')
+  // Persisted, not plain useState. This is the only place in the app where
+  // real work lived in memory and nowhere else -- a reload, a crash or a
+  // closed tab discarded up to MAX_SCRIPT_CHARS with no recovery and no
+  // warning. Restoring it also removes the need for a beforeunload prompt:
+  // there is nothing left to lose by leaving, so the browser's generic
+  // "Leave site?" dialog would be noise guarding something already safe.
+  const [script, setScript] = usePersistedDraft('homegrown-script-draft')
   // Only the new-voice form writes this now: it is the language stamped onto a
   // voice at creation. Generation reads the chosen voice's own language instead
   // (see handleGenerate), so the two can no longer disagree.
@@ -360,9 +367,21 @@ export default function StudioShell() {
   // language, so restoring the entry's own would just duplicate it -- and would
   // be wrong if the voice has since been recreated in another language.
   function handleRequeue(entry: HistoryEntry) {
+    // The wand replaces the script box wholesale, which silently threw away
+    // anything typed there. Offered as an undo rather than a confirm: a
+    // confirm taxes every re-queue to protect the rare one, and window.confirm
+    // blocks the page and looks nothing like the rest of the app -- the same
+    // reasoning that made voice deletion an inline two-step.
+    const previous = script
+    const replacing = previous.trim() !== '' && previous !== entry.text
     setScript(entry.text)
     setVoiceId(entry.preset_id)
     scriptRef.current?.focus()
+    if (!replacing) return
+    toast('Script replaced', {
+      description: 'The script you had written was swapped out.',
+      action: { label: 'Undo', onClick: () => setScript(previous) },
+    })
   }
 
   const scriptReady =

@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import os
@@ -6,6 +7,7 @@ import sys
 import threading
 import time
 import uuid
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import NamedTuple, Optional
@@ -25,7 +27,7 @@ import soundfile as sf
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from filelock import FileLock
 from pydantic import BaseModel
@@ -1513,6 +1515,88 @@ def list_history(
     offset = max(0, offset)
     mine = [h for h in _history if h.get("user_id") == user_id]
     return {"history": mine[offset : offset + limit], "total": len(mine)}
+
+
+class HistoryZipRequest(BaseModel):
+    ids: list[str]
+    # Display names, by entry id. They live in the browser's localStorage and
+    # the server has never seen them (see the two-name-stores note in
+    # CLAUDE.md), so the client has to send the ones it wants used. Anything
+    # missing falls back to the voice name and the entry's position.
+    names: dict[str, str] = {}
+
+
+@app.post("/api/history/zip")
+def zip_history(req: HistoryZipRequest, user_id: str = Depends(get_current_user)):
+    """Several voiceovers as one .zip.
+
+    POST, not GET: the id list plus the display-name map is request-body
+    shaped, and a GET would put an arbitrary number of uuids and user-chosen
+    filenames in a query string.
+
+    Built in memory rather than streamed from disk. The payload is mp3s of
+    finished voiceovers -- tens of MB at the sizes this tool produces -- and an
+    in-memory buffer avoids a temp file that would need cleaning up on every
+    error path. ZIP_STORED, not DEFLATE: mp3 is already compressed, so
+    deflating it costs CPU for approximately nothing.
+
+    Unknown ids are skipped rather than 404-ing the whole request: a client
+    holding a stale list should still get the files that do exist. An id that
+    is not this user's is skipped the same way. An empty result IS an error,
+    though -- a zip with nothing in it looks like a successful download of
+    nothing.
+    """
+    if not req.ids:
+        raise HTTPException(400, "No voiceovers selected")
+
+    wanted = set(req.ids)
+    mine = [h for h in _history if h.get("user_id") == user_id and h["id"] in wanted]
+    if not mine:
+        raise HTTPException(404, "None of those voiceovers exist")
+
+    buf = io.BytesIO()
+    used: set[str] = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for entry in mine:
+            audio_url = entry.get("audio_url", "")
+            if not audio_url.startswith("/audio/"):
+                continue
+            src = (GEN_DIR / audio_url.removeprefix("/audio/")).resolve()
+            if GEN_DIR.resolve() not in src.parents or not src.exists():
+                continue
+            # Same .wav -> .mp3 conversion-and-cache as /api/download, so old
+            # entries written before write_mp3 are not silently skipped.
+            if src.suffix.lower() == ".wav":
+                mp3 = src.with_suffix(".mp3")
+                if not mp3.exists():
+                    try:
+                        wav_to_mp3(str(src), str(mp3))
+                    except Exception:
+                        logger.exception("Zip: could not convert %s", src)
+                        continue
+                src = mp3
+
+            stem = _safe_filename(req.names.get(entry["id"], "") or entry.get("preset_name", "voiceover"))
+            # Zip entries are keyed by name: two voiceovers called the same
+            # thing would otherwise silently overwrite each other inside the
+            # archive, and the user would get fewer files than they selected.
+            arcname = f"{stem}.mp3"
+            n = 2
+            while arcname in used:
+                arcname = f"{stem} ({n}).mp3"
+                n += 1
+            used.add(arcname)
+            zf.write(src, arcname)
+
+    if not used:
+        raise HTTPException(404, "No audio files found for those voiceovers")
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="voiceovers.zip"'},
+    )
 
 
 @app.delete("/api/history/{entry_id}")

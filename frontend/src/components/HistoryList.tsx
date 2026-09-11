@@ -5,6 +5,7 @@ import {
   cancelQueuedJob,
   deleteQueueJob,
   retryQueueJob,
+  zipHistory,
   downloadUrl,
   mediaUrl,
   type HistoryEntry,
@@ -14,6 +15,7 @@ import { downloadName, formatClock, timeAgo } from '../format'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useElapsed } from '../hooks/useElapsed'
 import { useOptimisticProgress } from '../hooks/useOptimisticProgress'
+import { toast } from 'sonner'
 import { usePersistedRecord } from '../hooks/usePersistedRecord'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
@@ -70,6 +72,11 @@ const MAX_TICKS = 60
  * in index.css -- above it the list scrolls, below it the page does, and the two
  * effects below have to pick their scroll root accordingly. Change all three
  * together; nothing enforces it. */
+/** How long a deleted voiceover can be brought back. Longer than sonner's
+ *  4s default because this one is irreversible once it fires: 4s is enough to
+ *  notice a toast, not always enough to read it, decide, and move the mouse. */
+const UNDO_MS = 7000
+
 const TWO_COLUMN_QUERY = '(min-width: 1025px)'
 
 function truncate(text: string, max = 96): string {
@@ -361,6 +368,8 @@ function VoiceoverRow({
   downloadHref,
   onRequeue,
   onDelete,
+  selected,
+  onToggleSelect,
 }: {
   entry: HistoryEntry
   nameControl: NameControl
@@ -368,6 +377,8 @@ function VoiceoverRow({
   downloadHref: string
   onRequeue: () => void
   onDelete: () => void
+  selected: boolean
+  onToggleSelect: () => void
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const created = timeAgo(entry.created_at)
@@ -385,6 +396,21 @@ function VoiceoverRow({
           have the last line to itself and the row get shorter. The player is
           the flexible element, so the icon strip is never pushed off. */}
       <div className="flex min-w-0 items-center gap-2.5">
+        {/* Ahead of the transport rather than at the row's edge: it lines up
+            with the play buttons down the column, so the checkboxes read as
+            one strip instead of a second ragged column. Dimmed until the row
+            is hovered or the box is checked, matching .result-actions -- a
+            column of eight permanently visible checkboxes was the thing this
+            list was pared back to avoid. */}
+        <input
+          type="checkbox"
+          className={`size-3.5 flex-none accent-audio transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100 ${
+            selected ? 'opacity-100' : 'opacity-0'
+          }`}
+          checked={selected}
+          onChange={onToggleSelect}
+          aria-label={`Select ${name}`}
+        />
         <VoiceoverPlayer
           src={mediaUrl(entry.audio_url)}
           durationS={entry.duration_s}
@@ -503,6 +529,40 @@ export default function HistoryList({
   // Without this flag Enter would commit twice, and Escape would commit the
   // very edit it just discarded.
 
+  // Rows deleted in the UI but NOT yet on the server. A voiceover can be forty
+  // minutes of GPU time and the delete is irreversible server-side -- it
+  // rewrites history.json and unlinks both the .wav and the .mp3 -- so the
+  // click hides the row and the request is held for UNDO_MS.
+  //
+  // Deferred on the client rather than soft-deleted on the server: a real
+  // undo would need a deleted_at flag, a restore route, a purge policy, and a
+  // way to un-unlink files already removed, which is a lot of machinery for a
+  // single-user local tool.
+  //
+  // THE FAILURE MODE, stated so it is not later found as a bug: close the tab
+  // inside the undo window and the DELETE never fires, so the row comes back
+  // on reload. That is the safe direction -- nothing is lost -- but it is a
+  // real inconsistency, not an oversight.
+  // Selection is keyed by id and is NOT derived from what is on screen.
+  // Selecting rows, then typing a search, then acting has to operate on what
+  // was selected -- filtering the action down to the visible rows would
+  // silently do less than the count says.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [zipping, setZipping] = useState(false)
+
+  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(() => new Set())
+  const deleteTimers = useRef(new Map<string, number>())
+
+  // Timers are cleared, NOT flushed, on unmount. Flushing would turn a
+  // navigation into a destructive act the user never confirmed.
+  useEffect(() => {
+    const timers = deleteTimers.current
+    return () => {
+      for (const id of timers.values()) window.clearTimeout(id)
+      timers.clear()
+    }
+  }, [])
+
   const listRef = useRef<HTMLUListElement>(null)
   const sentinelRef = useRef<HTMLLIElement>(null)
 
@@ -575,14 +635,26 @@ export default function HistoryList({
   // matches nearly everything and the result is a list that has not been
   // narrowed. Names are short, deliberate and the thing people actually
   // remember a voiceover by.
+  // Pending deletes are dropped here, with the search, and for the same
+  // reason they cannot be dropped earlier: `number` is a row's position in the
+  // WHOLE list, so removing rows before numbering would renumber everything
+  // beneath a row the user just deleted.
+  const visible = numbered.filter(({ entry }) => !pendingDeletes.has(entry.id))
+
+  // A selected row that has since been deleted (here or in another tab) must
+  // not keep inflating the count or be sent to the zip endpoint.
+  const liveIds = new Set(visible.map(({ entry }) => entry.id))
+  const selectedIds = [...selected].filter((id) => liveIds.has(id))
+  const selectedCount = selectedIds.length
+
   const needle = draft.trim().toLowerCase()
   const shown = needle
-    ? numbered.filter(
+    ? visible.filter(
         ({ entry, name }) =>
           name.toLowerCase().includes(needle) ||
           (entry.preset_name ?? '').toLowerCase().includes(needle),
       )
-    : numbered
+    : visible
 
     // Load the next slice when the end of the list scrolls into view.
   // IntersectionObserver rather than a scroll handler: it fires once per
@@ -703,9 +775,103 @@ export default function HistoryList({
     }
   }
 
-  function handleDelete(id: string) {
+  /** Commit or cancel a held delete. Both paths clear the timer and un-hide
+   *  nothing the other has already handled -- `pendingDeletes.delete` is
+   *  idempotent and the timer id is dropped either way. */
+  function settleDelete(id: string, commit: boolean) {
+    const timer = deleteTimers.current.get(id)
+    if (timer !== undefined) window.clearTimeout(timer)
+    deleteTimers.current.delete(id)
+    setPendingDeletes((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+    if (!commit) return
+    // The localStorage name goes with the row, and only now. Removing it at
+    // click time would make an Undo restore the row under its default
+    // "Voiceover N" instead of the name the user gave it.
     removeFileName(id)
     onDelete(id)
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function handleZipSelected() {
+    if (selectedCount === 0 || zipping) return
+    setZipping(true)
+    try {
+      // The display names go with the request: they are a localStorage
+      // override the server has never seen, so without them every file in the
+      // zip would be named after its voice instead.
+      const names: Record<string, string> = {}
+      for (const { entry, name } of visible) {
+        if (selected.has(entry.id)) names[entry.id] = name
+      }
+      const blob = await zipHistory(selectedIds, names)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'voiceovers.zip'
+      a.click()
+      // Revoking immediately can cancel the download in some browsers; one
+      // frame is enough for the click to have been taken.
+      requestAnimationFrame(() => URL.revokeObjectURL(url))
+    } catch (e) {
+      onError(e instanceof ApiError ? e.message : 'Could not download those voiceovers.')
+    } finally {
+      setZipping(false)
+    }
+  }
+
+  function handleDeleteSelected() {
+    if (selectedCount === 0) return
+    const ids = selectedIds
+    setPendingDeletes((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) next.add(id)
+      return next
+    })
+    setSelected(new Set())
+    // ONE timer and ONE toast for the batch, not one per row -- a stack of
+    // nine identical toasts is unreadable and each would need its own Undo.
+    const timer = window.setTimeout(() => {
+      for (const id of ids) settleDelete(id, true)
+    }, UNDO_MS)
+    for (const id of ids) deleteTimers.current.set(id, timer)
+    // Pluralised into a variable rather than interpolated mid-word. This is a
+    // toast message and not a class list, but check_orphan_css.py scans for a
+    // word glued to an interpolation anywhere in a .tsx -- comments included,
+    // which is how an earlier version of THIS comment failed the guard while
+    // explaining why it should not.
+    const label = ids.length === 1 ? '1 voiceover' : `${ids.length} voiceovers`
+    toast(`${label} deleted`, {
+      duration: UNDO_MS,
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          window.clearTimeout(timer)
+          for (const id of ids) settleDelete(id, false)
+        },
+      },
+    })
+  }
+
+  function handleDelete(id: string, label: string) {
+    setPendingDeletes((prev) => new Set(prev).add(id))
+    const timer = window.setTimeout(() => settleDelete(id, true), UNDO_MS)
+    deleteTimers.current.set(id, timer)
+    toast(`${label} deleted`, {
+      duration: UNDO_MS,
+      action: { label: 'Undo', onClick: () => settleDelete(id, false) },
+    })
   }
 
   async function handleCancel(jobId: string) {
@@ -842,6 +1008,48 @@ export default function HistoryList({
         </button>
       )}
 
+      {/* OUT OF FLOW, and that is the whole point. This started as a normal
+          block above the list, which meant ticking one checkbox inserted a
+          ~40px row and pushed every voiceover down -- the exact layout shift
+          the rest of this column was rebuilt to remove.
+
+          Reserving the row permanently was the alternative and costs 40px of
+          a column that was deliberately pared back, to advertise an action
+          that is irrelevant most of the time. Putting the buttons in the
+          VOICEOVERS heading does not work either: that line is ~17px and
+          ghost-btn is 32px, so the heading grows and the shift comes back
+          smaller.
+
+          `fixed`, not `absolute` inside .results: above 1025px the page is
+          pinned to one viewport, but BELOW it the page scrolls and an
+          absolutely-positioned bar would sit at the bottom of a long list,
+          off-screen exactly when a phone user needs it.
+
+          z-100 puts it under the modal backdrop (200) and well under sonner
+          (999999999), so a dialog or a toast is never obscured by it. */}
+      {selectedCount > 0 && (
+        <div
+          className="fixed bottom-4 left-1/2 z-100 flex -translate-x-1/2 items-center gap-2 rounded-md border border-control bg-surface-card px-3 py-2 shadow-(--shadow-menu)"
+          role="group"
+          aria-label="Actions for selected voiceovers"
+        >
+          <span className="mono text-[11px] whitespace-nowrap text-muted">{selectedCount} selected</span>
+          <button type="button" className="ghost-btn" disabled={zipping} onClick={handleZipSelected}>
+            {zipping ? 'Zipping…' : 'Download'}
+          </button>
+          <button
+            type="button"
+            className="ghost-btn ghost-btn-danger"
+            onClick={handleDeleteSelected}
+          >
+            Delete
+          </button>
+          <button type="button" className="ghost-btn" onClick={() => setSelected(new Set())}>
+            Clear
+          </button>
+        </div>
+      )}
+
       {shown.length === 0 && active.length === 0 ? (
         <p className="m-0 py-5 text-[13px] text-faint">
           {loading
@@ -900,7 +1108,9 @@ export default function HistoryList({
                     entryFileNames[entry.id]?.trim() || downloadName(name, entry.created_at),
                   )}
                   onRequeue={() => onRequeue(entry)}
-                  onDelete={() => handleDelete(entry.id)}
+                  onDelete={() => handleDelete(entry.id, name)}
+                  selected={selected.has(entry.id)}
+                  onToggleSelect={() => toggleSelected(entry.id)}
                 />
               )
             })}

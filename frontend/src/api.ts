@@ -290,6 +290,40 @@ export function downloadUrl(audioUrl: string, name: string): string {
   return apiUrl(`/api/download/${filename}?name=${encodeURIComponent(name)}`)
 }
 
+/** Several voiceovers as one .zip.
+ *
+ * Returns a Blob rather than a URL, so the request goes through the same
+ * error handling as everything else here -- a link would surface a failure as
+ * a browser error page with no way to catch it.
+ *
+ * `names` carries the display names, because the server has never seen them:
+ * they are a localStorage override per browser. Anything omitted falls back
+ * server-side to the voice name.
+ */
+export async function zipHistory(
+  ids: string[],
+  names: Record<string, string>,
+): Promise<Blob> {
+  const res = await authFetch(apiUrl('/api/history/zip'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, names }),
+  })
+  if (!res.ok) {
+    // Mirrors parseOrThrow, which cannot be reused here: the SUCCESS body is a
+    // zip, not JSON, so this path only exists for the failure case.
+    let detail = res.statusText
+    try {
+      const body = (await res.json()) as { detail?: string }
+      if (body.detail) detail = body.detail
+    } catch {
+      // ignore -- fall back to statusText
+    }
+    throw new ApiError(detail)
+  }
+  return res.blob()
+}
+
 export function listQueue(): Promise<{ queue: QueueEntry[] }> {
   return authFetch(apiUrl('/api/queue')).then(parseOrThrow<{ queue: QueueEntry[] }>)
 }

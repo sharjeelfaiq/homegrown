@@ -533,14 +533,28 @@ body {
   text-overflow: ellipsis;
   transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
 
-  &:hover {
-    border-color: var(--line);
-  }
+  /* No hover border and no focus fill. The field reads as the row's title
+     rather than as a control, which is what it is 99% of the time -- a name
+     you read, not a box you fill in.
 
+     The transparent 1px border STAYS. It is not decoration: every
+     box-affecting property has to be identical focused and unfocused or
+     clicking the name shifts the row, and removing the border would collapse
+     the box by 2px at the moment of the click.
+
+     The focus ring is suppressed too, by request: clicking the name to rename
+     it should not light the field up. That has to be `outline: none` rather
+     than leaving it to :focus-visible, because a TEXT input matches
+     :focus-visible even on a mouse click -- browsers assume anything you
+     click into to type deserves an indicator -- so the app-wide ring in
+     tokens.css would still fire on exactly the interaction being removed.
+
+     What remains as the focus affordance is the caret. For a text field that
+     is the conventional one and it is genuinely visible, but it is weaker
+     than a ring: see the note in CLAUDE.md before adding another control to
+     this utility. */
   &:focus {
     outline: none;
-    background: var(--bg-raised);
-    border-color: var(--accent-2-line);
   }
 
   &::placeholder {

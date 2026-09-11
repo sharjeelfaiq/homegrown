@@ -182,6 +182,43 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   satisfies the same requirement *and* stops a failed upload growing the panel, which had been the
   one remaining thing that could shift the fixed-height voices dialog.
 
+- **Deleting a voiceover is DEFERRED on the client, not soft-deleted on the server.** The click hides
+  the row and holds the request for `UNDO_MS` (7s) behind an Undo toast; the backend's
+  `DELETE /api/history/{id}` is unchanged and still irreversible — it rewrites `history.json` and
+  unlinks both the `.wav` and the `.mp3`. A real server-side undo would need a `deleted_at` flag, a
+  restore route, a purge policy and a way to un-unlink files, which is a lot for a single-user local
+  tool. **The failure mode, so it is not later found as a bug:** close the tab inside the undo window
+  and the `DELETE` never fires, so the row returns on reload. Safe direction, real inconsistency.
+  `removeFileName` is deferred with it, or an Undo would restore the row under its default
+  `Voiceover N` instead of its custom name. Pending ids are filtered **after** numbering, with the
+  search — same trap, same fix.
+
+- **The bulk-action bar is `fixed`, and was in-flow for exactly one iteration.** Ticking a checkbox
+  inserted a ~40px block above the list and pushed every row down — the shift this column was rebuilt
+  to remove. Reserving the row permanently costs 40px to advertise a usually-irrelevant action; moving
+  the buttons into the `VOICEOVERS` heading regrows that line (it is ~17px, `ghost-btn` is 32px).
+  `fixed` rather than `absolute` inside `.results` because below 1025px the page scrolls and an
+  absolute bar would sit at the bottom of a long list, off-screen. Measured after the fix: row 0, list
+  top and list height all move **0.0px** at 700/1024/1440px. `z-100` keeps it under the modal (200)
+  and sonner (999999999). Selection is keyed by id and is **not** filtered to what is visible — the
+  count must not lie when a search is active.
+
+- **The script box is persisted (`usePersistedDraft`), which is why there is no `beforeunload`.**
+  It was the one place real work lived only in memory; a reload or a closed tab discarded up to
+  `MAX_SCRIPT_CHARS` silently. Restoring it removes the need for a "Leave site?" prompt guarding
+  something already safe. Debounced (400ms) because the naive version serialises the whole script per
+  keystroke, and restored in the `useState` initialiser rather than an effect — an effect renders an
+  empty box first, which reads as losing the script and then finding it. The re-queue wand now offers
+  an **Undo** instead of silently overwriting a typed script; a confirm would tax every re-queue to
+  protect the rare one, and `window.confirm` is already rejected elsewhere in this app.
+
+- **`POST /api/history/zip` takes the display names from the client.** They are localStorage overrides
+  the server has never seen, so without them every file in the archive is named after its *voice*.
+  `ZIP_STORED`, not deflate — mp3 is already compressed. Unknown or other-user ids are skipped rather
+  than failing the batch, but an empty result is a 404: a zip of nothing looks like a successful
+  download. Names are de-duplicated inside the archive (`name (2).mp3`), or two voiceovers called the
+  same thing silently overwrite each other and the user gets fewer files than they selected.
+
 - **`modal-body` is a JS hook with no CSS rule, and deleting it silently breaks focus.**
   `Modal.tsx`'s open effect queries `.modal-body` to land focus on the dialog body's first
   control. The class was absent for a long time, so the query always missed and focus fell
