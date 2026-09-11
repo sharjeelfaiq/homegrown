@@ -16,8 +16,8 @@ No accounts, no credits, no billing — every request runs as a single local use
 ## Quick start
 
 ```bash
-git clone git@github.com:sharjeelfaiq/voice-clone-agent.git
-cd voice-clone-agent
+git clone git@github.com:sharjeelfaiq/homegrown.git
+cd homegrown
 bash setup.sh
 ```
 
@@ -263,9 +263,11 @@ The reference clip and your script share a single 1024-position context window. 
 
 When too little is left, the app is forced into chunk sizes below the point where this model starts padding
 and dragging — which you hear as murmuring, long pauses, and dropped words. The backend logs a warning when
-a voice is in that state. The hard limit is 60s, but **longer is not better**: 10–20 seconds of clean
-speech clones better than 60 seconds of anything, and past ~23s output has been observed to garble
-regardless of the budget arithmetic.
+a voice is in that state. Anything longer than 40 seconds is **trimmed to the first 40 seconds of speech**
+rather than rejected (`REF_TRIM_SECS`), and the upload itself is only capped at 30 minutes
+(`MAX_REF_AUDIO_SECS`) — a guard on buffering the file in memory, not a quality limit. But **longer is not
+better**: 10–20 seconds of clean speech clones better than 40 seconds of anything, and past ~23s output has
+been observed to garble regardless of the budget arithmetic.
 
 **2. Record dry and close-mic.** Voice cloning copies the *room*, not just the voice. A reverberant clip
 produces reverberant output — measurably so: a clip with a 0.618 reverb tail generated audio at 0.474. No
@@ -287,7 +289,8 @@ in a direct comparison it produced *less* silence and finished faster.
 
 The **✚** button beside the voice dropdown opens the Voices dialog.
 
-- **Add a voice** — drop or pick a `.wav`/`.mp3` reference clip (2–60s accepted, **10–20s recommended**).
+- **Add a voice** — drop or pick a `.wav`/`.mp3` reference clip (2s–30min accepted and trimmed to the
+  first 40 seconds of speech, **10–20s recommended**). A spinner runs on the dropzone while it clones.
   That is the whole step: the voice is cloned and saved on drop, with no name field and no Save button.
   The name comes from the filename and is edited in place on the row afterwards. The language is detected
   from the recording by faster-whisper and stamped onto the voice, which is what generation uses — so
@@ -297,8 +300,12 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
   Unlike a voiceover's name, this is stored on the server (`PATCH /api/presets/{id}`), because the backend
   reads it on every generate. Renaming does **not** change the voice name recorded on voiceovers you have
   already made — that is a snapshot of what the voice was called at the time.
-- **Clips over 40s** are accepted and shortened to the first 40 seconds; the row says what it was cut
-  from. Shorter is better anyway — see "Making a voice that actually works".
+- **Clips over 40s** are shortened to the first 40 seconds *of speech* — long internal pauses are packed
+  out first, so a mostly-silent voice note still yields a full window. The limit is stated up front under
+  the dropzone rather than reported per clip afterwards. Shorter is better anyway — see "Making a voice
+  that actually works".
+- **The dialog does not change height** as voices are added or removed: the list is a fixed six-row window
+  that scrolls past six.
 - **Play** — the ▶ on a row plays that voice's *reference clip*, not a live generation. Available both in
   the dialog and on each row of the voice dropdown.
 - **Download** — the ⭳ on a dialog row saves the reference clip, named after the voice and in whatever
@@ -309,12 +316,14 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
 
 ### Script
 
-One script box, up to 60,000 characters, fixed height — drag the corner grip to resize it. The footer shows
-a word count and nothing else. Below it sits one action row: **✚**, the voice dropdown, and **Generate** at
-the right.
+One script box, up to 60,000 characters, fixed height — drag the corner grip to resize it. A word count sits
+in the bottom-right corner *inside* the box rather than in a row of its own. Below it sits one action row:
+**✚**, the voice dropdown, and **Generate** at the right.
 
-Keyboard shortcuts still work but are no longer advertised on screen: **Ctrl+Enter** generates, **Space**
-plays the newest voiceover, **/** focuses the script, **Escape** dismisses an error.
+Keyboard shortcuts: **Ctrl/Cmd+Enter** generates, **/** focuses the script, **Ctrl/Cmd+F** focuses the
+voiceovers search, **Escape** dismisses an error. `/` and `Ctrl+F` are shown as key caps on the controls
+they drive; Generate shows its shortcut on hover. There is no Space shortcut — it was removed, because
+binding a bare Space globally means taking over page scrolling everywhere outside a text field.
 
 ### While it generates
 
@@ -334,6 +343,12 @@ turn comes.
 Elapsed rather than remaining, deliberately: `eta_s` is a rolling chars/second average that moves in both
 directions as chunks land. The **Generate** button stays a button and keeps its label throughout: progress
 belongs in the Voiceovers column, not on the control you press.
+
+**A toast reports each job as it ends** — "Voiceover ready" with the voice name, or a failure toast that
+does not auto-dismiss. Transient errors elsewhere in the app are toasts too. Three notices stay inline
+instead, because they describe a *condition* rather than an event and would be wrong to fade out while
+still true: the model-down banner (which carries **Retry**), the CPU-fallback notice, and the
+long-reference-clip warning.
 
 **Cancel** stops a running job after the current chunk, within about a second. There is no pause — a paused
 job would hold the GPU lock and stall the whole queue.
@@ -355,6 +370,13 @@ There is no queue list and no reorder control in the UI, though `POST /api/queue
 — see the API table below.
 
 ### Voiceovers
+
+A **search box** sits under the heading, focused by `Ctrl/Cmd+F` (the shortcut is printed inside the
+field). It filters as you type, with no delay, and matches a voiceover's **name** and the **voice** that
+spoke it — not the script, since a 60,000-character script makes any common word match nearly everything.
+It runs entirely in the browser, because two of the things it searches are not on the server at all: a
+custom name is a `localStorage` override, and the default `Voiceover 27` is derived from the row's
+position. While a search is running, the whole history is loaded and the queue rows are hidden.
 
 Every finished job, newest first, in a **fixed window about eight rows tall**. The newest 20 arrive on
 first paint and scrolling to the bottom of that window fetches ten more — there is no paginator, and on a
@@ -395,9 +417,12 @@ script -> chunk_text() -> per-chunk generate -> resample if degenerate -> trim e
 - **Chunks are balanced, not greedily packed**, so there is no undersized final chunk — those are the ones
   that misbehave.
 - **Each chunk gets a fresh KV cache**, which is what keeps quality stable however long the script is.
-- **Degenerate output is resampled.** Roughly one chunk in three comes out wrong on this model — babbling, or
-  stopping short. Each chunk's audio is checked against how long its text should take and regenerated (up to
-  3 attempts) if it is wildly off.
+- **Degenerate output is resampled.** Each chunk's audio is checked against how long its text should take
+  and regenerated (up to 3 attempts) if it is wildly off. This was written when roughly one chunk in three
+  came out wrong — babbling, or stopping short. **It has since stopped reproducing**: a re-measurement on
+  2026-09-09 produced 32/32 clean chunks over 8 runs and the retry loop never fired, most likely because
+  `_seq_budget()`, balanced chunking and the per-chunk token cap each removed a cause. The check stays —
+  one voice on one machine is not a proof of absence. Numbers in `docs/gpu-notes.md`.
 - **No partial delivery.** You get audio when the whole job finishes; progress is chunk-level.
 
 Time estimates come from a rolling average of characters/second over the last 20 completed jobs, seeded from
@@ -489,7 +514,13 @@ Environment overrides:
 - **Not reproducible.** Sampling is unseeded — see the note at the top.
 - **No test suite.** There is no pytest, no vitest, no test files. Verification is `npm run lint`,
   `npm run build` (which is also the typecheck), and running the app. Do not trust any claim that tests pass.
-- **No search** in the voice list; voiceovers are paginated 20 at a time.
+- **Search covers names and voices, not scripts.** The voiceovers column has a search box
+  (`Ctrl/Cmd+F`) matching a voiceover's name and the voice that spoke it. Script text is deliberately
+  excluded: a script runs to 60,000 characters, so a common word matches nearly everything. The voice list
+  in the dialog has no search.
+- **Voiceover names are per-browser.** A voiceover's display name is a `localStorage` override, so a
+  rename — and therefore searching for that name — only exists in the browser that made it. A *voice's*
+  name is server-side and shared.
 
 ---
 
@@ -514,6 +545,8 @@ docs/
 qwen/          Vendored FasterQwen3TTS (CUDA-graph Qwen3-TTS wrapper). Treat as third-party.
 backend/
   main.py            FastAPI app: model load, REST API, job queue, worker thread
+  run.py             Frozen-desktop entrypoint: path resolution, first-run model download, :8731
+  boot_status.py     Startup phases, published to storage/boot_status.json
   text_chunker.py    Splits scripts into chunks (sentence -> clause -> word fallback), balanced
   audio_stitcher.py  Trims chunk edge silence, concatenates with a gap
   audio_convert.py   wav/mp3 conversion
@@ -524,7 +557,9 @@ frontend/      React 19 + Vite + TypeScript dashboard (the app)
 landing-page/  Marketing page -- the only thing Vercel deploys; separate release cadence
 launcher/      Frozen-app launcher (PyInstaller)
 installer/     NSIS installer script (unusable at current payload size, see above)
-scripts/       Dev/ops utilities (check_design_tokens.py, check_desktop_port.py)
+scripts/       Build gates and dev utilities. build.sh runs five: check_design_tokens.py,
+               check_contrast.py, check_orphan_css.py, check_desktop_port.py and
+               build_splash.py --check. Also build_og_image.sh and measure_landing.sh
 assets/        Build-time binaries: icon.ico, consumed by launcher.spec and setup.nsi
 ```
 

@@ -570,16 +570,17 @@ export default function HistoryList({
     }
   })
 
-  // Matches the voiceover's name, the voice that spoke it, and the script.
-  // casefold-ish: toLowerCase on both sides, matching the backend's casefold()
-  // closely enough for a substring test on a local tool.
+  // Matches the voiceover's NAME and the VOICE that spoke it. Deliberately
+  // NOT the script: a script runs to 60,000 characters, so a common word
+  // matches nearly everything and the result is a list that has not been
+  // narrowed. Names are short, deliberate and the thing people actually
+  // remember a voiceover by.
   const needle = draft.trim().toLowerCase()
   const shown = needle
     ? numbered.filter(
         ({ entry, name }) =>
           name.toLowerCase().includes(needle) ||
-          (entry.preset_name ?? '').toLowerCase().includes(needle) ||
-          (entry.text ?? '').toLowerCase().includes(needle),
+          (entry.preset_name ?? '').toLowerCase().includes(needle),
       )
     : numbered
 
@@ -795,8 +796,8 @@ export default function HistoryList({
             aria-keyshortcuts={`${MOD_ARIA}+F`}
             title={`Search voiceovers (${MOD_KEY}+F)`}
             className="peer h-10 w-full rounded-sm border border-control bg-surface-raised pr-16 pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
-            placeholder="Search scripts and voices…"
-            aria-label="Search voiceovers by script text or voice name"
+            placeholder="Search by name or voice…"
+            aria-label="Search voiceovers by name or voice"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {

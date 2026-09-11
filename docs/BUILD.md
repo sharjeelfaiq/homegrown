@@ -2,7 +2,7 @@
 
 Every step needed to turn the current source into a distributable executable, in
 the order they must run. Run everything in **Git Bash** from the repo root
-(`D:\dev-projects\websites\voice-clone-agent`).
+(`D:\dev-projects\websites\homegrown`).
 
 Git Bash, not PowerShell — `setup.sh` needs bash, and the final SFX step
 concatenates two binaries, which PowerShell's `>` corrupts by rewriting them as
@@ -52,7 +52,7 @@ need to re-run just that part.
 ## 1. Python environment and model
 
 ```bash
-cd /d/dev-projects/websites/voice-clone-agent
+cd /d/dev-projects/websites/homegrown
 bash setup.sh
 ```
 

@@ -36,14 +36,18 @@ button reads **"Waiting for the voice model"**.
 The **✚** button beside the voice dropdown opens the **Voices** dialog. You can also drop an audio file
 anywhere in the window — that opens the same dialog with the file already loaded.
 
-1. Drop or pick a reference clip. **10–20 seconds is the sweet spot**; 2–60s is accepted. Longer is not
+1. Drop or pick a reference clip. **10–20 seconds is the sweet spot**; 2s–30min is accepted. Longer is not
    better: the clip and your script share one 1024-position context window, so a long clip crowds out the
    script and the output starts murmuring and dropping words. Past ~23s it has been observed to garble
    regardless. Record dry and close-mic — room reverb gets cloned along with the voice. Measurements are in
    `README.md`, "Making a voice that actually works".
 2. That is it. **There is no Save button** — the voice is cloned and saved as the clip lands, and appears
-   as a row in the dialog. A clip longer than 40s is shortened to the first 40 seconds and the row says
-   what it was cut from.
+   as a row in the dialog. A spinner runs on the dropzone while that happens. A clip longer than 40s is
+   shortened to the first 40 seconds *of speech* (long internal pauses are packed out first), and that
+   limit is stated under the dropzone up front rather than reported per clip afterwards.
+
+   The dialog **does not change height** as voices come and go: the list is a fixed six-row window that
+   scrolls past six.
 
 Everything else about the voice is decided for you, because it can be: the **name** comes from the
 filename with separators turned into spaces, the **language** is detected from the recording itself, and
@@ -70,16 +74,19 @@ voice.
 
 ## 3. Write a script and generate
 
-One script box, up to 60,000 characters, fixed height — drag the corner grip to resize. The footer shows a
-**word count** and nothing else.
+One script box, up to 60,000 characters, fixed height — drag the corner grip to resize. A **word count**
+sits in the bottom-right corner inside the box, not in a row of its own.
 
 Underneath sits one action row: **✚**, the **voice dropdown**, and **Generate** at the right.
 
 Style and Stability still exist in the backend and default to `natural`/`balanced`, but nothing in the UI
 sends them.
 
-Shortcuts work but are not shown on screen: **Ctrl+Enter** generates, **Space** plays the newest voiceover,
-**/** focuses the script, **Escape** dismisses an error.
+Shortcuts: **Ctrl/Cmd+Enter** generates, **/** focuses the script, **Ctrl/Cmd+F** focuses the voiceovers
+search, **Escape** dismisses an error. `/` and `Ctrl+F` appear as key caps on the controls they drive;
+Generate shows its shortcut on hover. **There is no Space shortcut** — it used to play the newest
+voiceover and was removed, since binding a bare Space globally means taking over page scrolling
+everywhere outside a text field.
 
 ## 4. Watch it run
 
@@ -135,6 +142,11 @@ The voice dropdown stays usable while a job runs, so you can line up the next on
 There is no queue list and no reorder control in the UI, although `POST /api/queue/reorder` exists and
 works. If the backend becomes unreachable, an error row with a **Retry** button appears above the script.
 
+**Each finished or failed job raises a toast** — "Voiceover ready" with the voice name, or a failure toast
+that stays until dismissed. Transient errors elsewhere are toasts too. Three notices stay inline because
+they describe a condition rather than an event: the model-down row above (which carries Retry), the
+CPU-fallback notice, and the long-reference-clip warning.
+
 **While the backend is still starting**, a status row sits above the script showing the phase
 (*Tuning*, *Almost there*), a ticking elapsed counter and a progress bar, and both columns say they are
 loading rather than that they are empty. In `vite dev` the phase comes from the backend's own
@@ -143,8 +155,18 @@ reports its actual error here rather than timing out after ten minutes.
 
 ## 5. Review past voiceovers
 
-Finished jobs land in **Voiceovers** in the right-hand column, newest first. The column is a **fixed
-window showing about eight rows**; the newest 20 load up front and scrolling to the bottom fetches ten
+Finished jobs land in **Voiceovers** in the right-hand column, newest first.
+
+A **search box** sits under the heading, focused by **Ctrl/Cmd+F** — the shortcut is printed inside the
+field so you find it before pressing it. It filters as you type with no delay, matching a voiceover's
+**name** and the **voice** that spoke it. It deliberately does **not** search the script: a script runs to
+60,000 characters, so a common word matches nearly everything and the list is not narrowed. The whole
+search runs in the browser, because two of the things it matches are not on the server at all — a custom
+name is a `localStorage` override, and the default `Voiceover 27` comes from the row's position rather
+than being stored. While a search is running the full history is loaded and the in-progress rows are
+hidden, since an unfinished job is not in the history the filter reads.
+
+The column is a **fixed window showing about eight rows**; the newest 20 load up front and scrolling to the bottom fetches ten
 more. There is no paginator
 and, on a desktop-width window, no page scroll at all — the list is the only thing that scrolls. Below
 1025px the layout collapses to one column — the composer on top, Voiceovers beneath it — and the page

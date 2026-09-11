@@ -208,13 +208,15 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   Relatedly, the elapsed-time span in `HistoryList` is **no longer `aria-live`** -- it announced a
   new time every second and said nothing at the finish. Sonner's own polite region replaced it.
 
-- **Voiceover search is CLIENT-SIDE, and a server `q` was built and then removed.** Two of the three
-  things worth searching are invisible to the backend: a voiceover's display name is a localStorage
-  override per browser (the two-name-stores rule below), and the default `Voiceover 27` is derived
-  from the row's position rather than stored anywhere. A server filter could only match the script
-  and the voice name, i.e. a search that silently ignores the thing the user is most likely to type.
-  So `/api/history` has no `q`, `HistoryList` filters `history` directly, and there is no debounce —
-  with no request to coalesce, the 250ms wait was pure latency.
+- **Voiceover search matches NAME and VOICE only, client-side, and a server `q` was built and then
+  removed.** Script text is deliberately excluded: a script runs to `MAX_TOTAL_CHARS` (60,000), so a
+  common word matches nearly everything and the list is not narrowed. Of what remains, both fields the
+  user most often types are invisible to the backend — a voiceover's display name is a localStorage
+  override per browser (the two-name-stores rule below), and the default `Voiceover 27` is derived from
+  the row's position rather than stored anywhere. A server filter could therefore only have matched the
+  voice name. So `/api/history` has no `q` (its docstring says why, so it is not re-added),
+  `HistoryList` filters `history` directly, and there is no debounce — with no request to coalesce, the
+  250ms wait was pure latency.
   Two consequences that are easy to break:
   **numbering happens BEFORE filtering.** The number is `total - i` over the *whole* list, so
   numbering the filtered array would renumber every row as you typed — "Voiceover 26" becoming
