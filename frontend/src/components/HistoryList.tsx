@@ -20,6 +20,7 @@ import InlineName from './InlineName'
 import VoiceoverPlayer from './VoiceoverPlayer'
 import { DownloadIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
+import Kbd from './Kbd'
 
 interface Props {
   history: HistoryEntry[]
@@ -754,21 +755,53 @@ export default function HistoryList({
           INPUT, but Escape is NOT gated by it and would clear the composer's
           error banner behind the column. */}
       {(total > 0 || query !== '' || history.length > 0) && (
-        <input
-          ref={searchRef}
-          type="search"
-          aria-keyshortcuts={`${MOD_ARIA}+F`}
-          title={`Search voiceovers (${MOD_KEY}+F)`}
-          className="mb-2 h-10 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
-          placeholder="Search scripts and voices…"
-          aria-label="Search voiceovers by script text or voice name"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Escape') setDraft('')
-          }}
-        />
+        <div
+          // shrink-0 is the whole reason the height works. .results is a flex
+          // column with a CONSTRAINED height above 1025px (wide:h-full), and a
+          // flex item's default flex-shrink: 1 treats `height` as a starting
+          // size, not a commitment -- so this box was squashed to its content
+          // height, measured at ~19px while the class said 40, and three
+          // separate increases to the h-* utility changed the emitted CSS and
+          // nothing on screen. .result-list is flex: 1 1 auto and takes the
+          // space instead.
+          className="relative mb-2 shrink-0"
+        >
+          <input
+            ref={searchRef}
+            type="search"
+            aria-keyshortcuts={`${MOD_ARIA}+F`}
+            title={`Search voiceovers (${MOD_KEY}+F)`}
+            className="peer h-10 w-full rounded-sm border border-control bg-surface-raised pr-16 pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+            placeholder="Search scripts and voices…"
+            aria-label="Search voiceovers by script text or voice name"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Escape') setDraft('')
+            }}
+          />
+          {/* The shortcut, inside the thing it opens -- the convention every
+              search field with a hotkey uses, and the only placement that is
+              read BEFORE the key is pressed rather than after.
+
+              Only while empty AND unfocused, and both halves matter:
+                - type="search" grows a native clear ✕ on the right the moment
+                  it has a value, in exactly this spot. Rendering on `draft`
+                  being empty means the two can never occupy it at once.
+                - peer-focus hides it once you are typing, when it has already
+                  done its job and is only competing with the caret.
+
+              pr-16 on the field, not just absolute placement: the cap is
+              ~42px wide and text scrolling past it would run underneath,
+              which is the same mistake the word count and the "/" cap each
+              had to be fixed for. */}
+          {draft === '' && (
+            <Kbd className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 transition-opacity duration-(--fast) ease-(--ease) peer-focus:opacity-0">
+              {`${MOD_KEY}+F`}
+            </Kbd>
+          )}
+        </div>
       )}
 
       {/* Surfaced instead of scrolling the list out from under a reader. */}
