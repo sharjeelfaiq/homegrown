@@ -49,8 +49,13 @@ export default function GenerateButton({
           ? `Generate ${count} voiceovers`
           : 'Generate'
 
+  // ml-auto and flex-none, because nothing else in the compose row is
+  // flexible -- the voice field is fixed, so without this the controls bunch
+  // up on the left and Generate stops being the row's right-hand anchor. This
+  // was `.compose-bar .generate` in App.css; there is only ever one call site,
+  // so the context is not actually a variable.
   return (
-    <section className="generate">
+    <section className="ml-auto flex flex-none flex-col gap-2.5">
       <button type="button" className="generate-btn" disabled={disabled} onClick={onClick}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.span

@@ -55,10 +55,10 @@ export default function VoiceoverPlayer({ src, durationS, entryKey, label, audio
   const duration = durationS ?? decodedDuration
 
   return (
-    <div className="voiceover-player">
+    <div className="flex min-w-0 flex-1 items-center gap-2">
       <button
         type="button"
-        className="icon-btn voiceover-play-btn"
+        className="icon-btn voiceover-play-btn size-6 flex-none border-none bg-transparent text-muted hover:text-audio"
         aria-label={playing ? `Pause ${label}` : `Play ${label}`}
         onClick={toggle}
       >

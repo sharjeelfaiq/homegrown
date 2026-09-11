@@ -10,11 +10,21 @@ finished loading. Ctrl-C stops both.
 
 Or the same thing in two terminals by hand (see `README.md` "Running it" for exact commands):
 - Backend: `../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000` from `backend/`
-- Frontend: `npm run dev` from `frontend/` (needs `frontend/.env.local` with
-  `VITE_BACKEND_URL=http://127.0.0.1:8000` -- there is no dev proxy)
+- Frontend: `npm run dev` from `frontend/` (`frontend/.env.local` should set nothing —
+  `vite.config.ts` proxies `/api`, `/audio` and `/refs` to the backend)
 
-Open `http://localhost:5173` — **`localhost`, not `127.0.0.1`**, unless `backend/.env`'s `ALLOWED_ORIGINS`
-lists both; they are different origins to CORS. For the single-port LAN setup instead, see `README.md`.
+Open `http://localhost:5173`. **Other devices on the same wifi can open it too**, at
+`http://<this-PC's-IP>:5173` — `dev.sh` prints that address when it starts. Nothing to configure on the
+visiting device: the proxy means its API calls go to whatever address it typed, so they come back here.
+
+Two things worth knowing about that:
+
+- **There is no sign-in.** Anyone who can reach the address can create voices, generate voiceovers and
+  delete other people's. Keep it to a network you trust.
+- **Do not set `VITE_BACKEND_URL` in `frontend/.env.local`.** It hardcodes one address into the page, so
+  every visiting device would call its own machine and find nothing. `dev.sh` warns if you have.
+
+For the built single-port LAN setup instead, see `README.md`.
 
 There is no status badge to wait for. uvicorn runs the model load *before* it binds the socket, so until
 the model is ready the port simply refuses connections and every API call fails — that is expected, not a
@@ -31,14 +41,25 @@ anywhere in the window — that opens the same dialog with the file already load
    script and the output starts murmuring and dropping words. Past ~23s it has been observed to garble
    regardless. Record dry and close-mic — room reverb gets cloned along with the voice. Measurements are in
    `README.md`, "Making a voice that actually works".
-2. The **name** pre-fills from the filename, with separators turned into spaces. Edit it if you like.
-3. Pick a **language**. This is stamped onto the voice and is what generation uses — there is no language
-   control on the compose path, and re-queueing an old voiceover does not restore a per-job language.
-4. **Save voice.** The transcript is always produced automatically with faster-whisper; there is no
-   transcript field to fill in.
+2. That is it. **There is no Save button** — the voice is cloned and saved as the clip lands, and appears
+   as a row in the dialog. A clip longer than 40s is shortened to the first 40 seconds and the row says
+   what it was cut from.
 
-The dialog also lists your saved voices, each with **▶** to hear its reference clip and a two-step delete
-(the row flips to Delete/Keep). Deleting the voice you had selected clears the selection.
+Everything else about the voice is decided for you, because it can be: the **name** comes from the
+filename with separators turned into spaces, the **language** is detected from the recording itself, and
+the **transcript** is produced with faster-whisper. There is no language control anywhere — asking was
+inviting a wrong answer about your own audio.
+
+**To rename a voice**, click its name and type, exactly as you would rename a voiceover. Enter or clicking
+away saves it; Escape cancels. One difference worth knowing: a voiceover's name is remembered by your
+browser, while a voice's name is stored on the server — so renaming a voice sticks across machines, and
+renaming a voiceover does not. Renaming a voice leaves the name shown on voiceovers you already made
+alone; that is a record of what the voice was called at the time.
+
+Each row also has **▶** to hear its reference clip, **⭳** to download it, and a two-step delete (the row
+flips to Delete/Keep). The download is the original file, not a re-encode, named after the voice — so it
+is a way of getting a clip back out if the copy you uploaded from is gone. Deleting the voice you had
+selected clears the selection.
 
 Every row of the voice **dropdown** carries the same ▶, so you can audition without opening the dialog.
 Delete is only in the dialog — it is destructive, and it does not belong on a menu you open to pick a

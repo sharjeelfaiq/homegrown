@@ -75,3 +75,16 @@ export function PauseIcon({ size = 14 }: IconProps) {
     </svg>
   )
 }
+
+/** Theme control. A circle with the right half filled -- the standard
+ *  light/dark contrast glyph, and it stays legible at 16px where a sun or a
+ *  moon turns to mush. Half-fill is drawn as an arc rather than a clipped
+ *  rect so it survives the stroke on the outer circle. */
+export function ThemeIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}

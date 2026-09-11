@@ -56,13 +56,16 @@ export default function ScriptBlock({
   const words = trimmed ? trimmed.split(/\s+/).length : 0
 
   return (
-    <div className="block">
+    // focus-within carries the audio accent: focusing the script is the most
+    // common interaction in the app and it earns colour at rest, not only
+    // during a render.
+    <div className="rounded-md border border-hairline bg-surface-card transition-[border-color] duration-(--base) ease-(--ease) focus-within:border-audio-line">
       {/* Fixed height, resized by dragging the corner grip -- not auto-growing.
           The user sets the working height once and it stays put instead of the
           page reflowing on every keystroke. */}
       <textarea
         ref={textareaRef}
-        className="block-input"
+        className="block h-[clamp(140px,30svh,260px)] min-h-[140px] w-full resize-y overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-6 text-[15px]/[1.7] outline-none placeholder:text-faint"
         placeholder="Write what the voice should say…"
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
@@ -72,9 +75,9 @@ export default function ScriptBlock({
           all still exist -- the estimate request below is unchanged, because
           StudioShell renders its `warning` field as the long-reference-clip
           notice -- they simply are not shown here any more. */}
-      <div className="block-foot">
-        <span className="mono block-meta">
-          <span className={overLimit ? 'over' : undefined}>
+      <div className="flex h-[30px] items-center justify-end border-t border-hairline px-3.5">
+        <span className="mono flex min-w-0 items-center gap-2.5 overflow-hidden text-[11px] whitespace-nowrap text-faint">
+          <span className={overLimit ? 'text-danger' : undefined}>
             {words.toLocaleString()} word{words === 1 ? '' : 's'}
           </span>
         </span>

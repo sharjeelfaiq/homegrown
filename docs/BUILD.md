@@ -247,7 +247,7 @@ means deleting the folder.
 | `frontend/dist is missing` during step 5 | Step 4 was skipped |
 | Loader never appears | Stale launcher exe — re-run step 5 |
 | Firewall prompt on first run | Stale `backend.exe`; `run.py` must bind `127.0.0.1` |
-| App works locally, dead on LAN | `frontend/.env.local` survived step 3 |
+| App works locally, dead on LAN | `frontend/.env.local` survived step 3 and set `VITE_BACKEND_URL`. `start_server.bat` catches this before serving; the frozen build does not, so check the bundle |
 | Chunk count missing under the script box | Backend predates the `POST /api/estimate` change — rebuild |
 | PyInstaller runs out of disk | `TMP`/`TEMP` not redirected in step 5 |
 | `No matching distribution` for torch | `--extra-index-url` header in `requirements.txt` was bypassed |

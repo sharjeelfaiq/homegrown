@@ -4,7 +4,79 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Studio's --bg-nav. Repointed at the live theme by applyTheme() in
+         src/theme.ts, which reads it off the resolved token rather than
+         mirroring five more hexes into this file. The address bar is
+         therefore Studio-coloured for the ~100ms before React mounts; that
+         is a fair trade against a sixth hand-mirror. -->
+    <meta name="theme-color" content="#16171f" />
     <title>Homegrown</title>
+
+    <!-- ==== Pre-paint theme ================================================
+         All of this has to happen before the first frame, which rules out
+         React, and in `vite dev` rules out index.css too: there the
+         stylesheets arrive through the JS module graph and land AFTER the
+         first paint, so the page has no stylesheet at all for that frame.
+         A saved Daylight would otherwise open on a dark flash every time.
+
+         So the page background for every theme is inlined here, and a
+         blocking classic script picks one before the parser moves on.
+
+         Both lists below are hand-mirrors: the backgrounds mirror --bg-base
+         in tokens.css, the theme names mirror THEMES in src/theme.ts. Hand-
+         mirroring is unavoidable (a blocking script cannot import a module
+         and stay blocking) but silent drift is not, so this file is scanned
+         by scripts/check_design_tokens.py -- same guard, same reason, as
+         launcher.py. Adding a theme means touching both lists here. -->
+    <style>
+      html { background: #14151a }
+      html[data-theme='daylight'] { background: #fbfbfd }
+      html[data-theme='tape'] { background: #f6efe2 }
+      html[data-theme='greenroom'] { background: #0e1512 }
+      html[data-theme='booth'] { background: #08090b }
+    </style>
+    <script>
+      ;(function () {
+        // Arrays with indexOf, not object lookups. `DARK['__proto__']`
+        // returns Object.prototype, which is truthy, so an object map would
+        // wave through '__proto__' and 'constructor' as valid theme names.
+        // Harmless here -- they match no palette and render as Studio -- but
+        // it is the kind of validation that is wrong everywhere else too.
+        var DARK = ['studio', 'greenroom', 'booth']
+        var LIGHT = ['daylight', 'tape']
+        var choice = null
+        // Reading localStorage THROWS outright in some private-browsing and
+        // locked-down-LAN configurations -- not on write, on read. An
+        // exception here would block the first paint entirely, so the app
+        // must boot regardless; falling through to the system preference is
+        // the right answer either way.
+        try {
+          choice = localStorage.getItem('homegrown-theme')
+        } catch (e) {}
+        // Anything unrecognised resolves to system rather than being trusted.
+        // A theme name left over from an older build would otherwise set
+        // data-theme to a value with no palette behind it, which renders as
+        // Studio's tokens under someone else's name -- confusing to debug and
+        // worse than simply not honouring it.
+        if (choice !== 'system' && DARK.indexOf(choice) < 0 && LIGHT.indexOf(choice) < 0) {
+          choice = 'system'
+        }
+        var theme =
+          choice === 'system'
+            ? window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'studio'
+              : 'daylight'
+            : choice
+        var el = document.documentElement
+        el.setAttribute('data-theme', theme)
+        // Inline, so native scrollbars and form controls are right on the
+        // frame before any stylesheet exists. An inline style beats every
+        // rule in tokens.css, so applyTheme() re-sets this on every change --
+        // the `color-scheme` in each theme block is the belt, this is the
+        // braces, and the two must never be allowed to disagree.
+        el.style.colorScheme = DARK.indexOf(theme) >= 0 ? 'dark' : 'light'
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

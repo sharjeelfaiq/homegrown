@@ -118,27 +118,36 @@ export default function VoicePicker({
 
   if (presets.length === 0) {
     return (
-      <span className="empty-inline">
+      <span className="m-0 text-[12px] text-faint">
         {loading ? 'Loading your voices…' : 'No voices yet — add one to get started.'}
       </span>
     )
   }
 
+  // Fixed at 220px on desktop so the field does not read as a search bar --
+  // absorbing the compose row's slack made it as wide as the composer, which
+  // looked like search rather than a choice between a handful of voices.
+  // Below the breakpoint it gives way instead: at 320px the row is [+] 32 +
+  // gap 8 + 220px, which fits by 12px and stops fitting the moment a
+  // scrollbar appears, so it shrinks to a 150px floor.
   return (
-    <div className="voice-field" ref={rootRef}>
+    <div
+      className="relative min-w-[150px] flex-[0_1_220px] wide:min-w-0 wide:flex-[0_0_220px]"
+      ref={rootRef}
+    >
       <button
         type="button"
         ref={triggerRef}
-        className="select voice-trigger"
+        className="select flex w-full items-center gap-1.5 text-left"
         aria-label="Voice"
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => (open ? close() : setOpen(true))}
       >
-        <span className="voice-trigger-label">{selected ? selected.name : 'Choose a voice…'}</span>
+        <span className="overflow-hidden text-ellipsis whitespace-nowrap">{selected ? selected.name : 'Choose a voice…'}</span>
         {generating && (
           <span
-            className="generating-dot"
+            className="size-1.5 rounded-full bg-progress animate-pulse-soft"
             title={`${selected?.name} is generating`}
             aria-hidden="true"
           />
@@ -146,12 +155,18 @@ export default function VoicePicker({
       </button>
 
       {open && (
-        <ul className="voice-menu" onKeyDown={onMenuKeyDown}>
+        <ul
+          className="absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-[280px] list-none overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu)"
+          onKeyDown={onMenuKeyDown}
+        >
           {presets.map((p) => (
-            <li key={p.id} className="voice-menu-row">
+            <li
+              key={p.id}
+              className="flex min-h-9 items-center gap-1 border-b border-hairline last:border-b-0"
+            >
               <button
                 type="button"
-                className="voice-menu-pick"
+                className="voice-menu-pick flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm bg-transparent py-0 pr-1 pl-1.5 text-left text-[13px] text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink aria-[current=true]:text-ink"
                 aria-current={p.id === selectedPresetId}
                 onClick={() => {
                   onSelect(p.id)
@@ -159,10 +174,10 @@ export default function VoicePicker({
                   triggerRef.current?.focus()
                 }}
               >
-                <span className="voice-menu-name">{p.name}</span>
+                <span className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</span>
                 {runningPresetNames.has(p.name) && (
                   <span
-                    className="generating-dot"
+                    className="size-1.5 rounded-full bg-progress animate-pulse-soft"
                     title={`${p.name} is generating`}
                     aria-hidden="true"
                   />
@@ -172,7 +187,7 @@ export default function VoicePicker({
               {/* Audition only. Deleting a voice is destructive and lives in
                   the Voices dialog, where voices are managed -- it does not
                   belong on a dropdown you open to pick one. */}
-              <span className="voice-menu-actions">
+              <span className="ml-auto flex flex-none items-center gap-0.5">
                 <button
                   type="button"
                   className="icon-btn"

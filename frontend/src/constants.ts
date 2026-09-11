@@ -11,4 +11,4 @@ export const MAX_SCRIPT_CHARS = 60_000 // must match backend's MAX_TOTAL_CHARS (
  * backend/main.py -- the backend enforces it; this is only so the modal can
  * warn before a long file is uploaded rather than reporting it afterwards.
  * Nothing keeps the two in step. */
-export const REF_TRIM_SECS = 25
+export const REF_TRIM_SECS = 40

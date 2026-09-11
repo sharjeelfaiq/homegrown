@@ -4,9 +4,15 @@
 #   bash dev.sh
 #
 # Backend on 127.0.0.1:8000, Vite dev server on :5173, both stopped together
-# with Ctrl-C. This is deployment mode 1 of the four in CLAUDE.md -- the two
-# processes are separate origins, which is why backend/.env needs
-# ALLOWED_ORIGINS and frontend/.env.local needs VITE_BACKEND_URL.
+# with Ctrl-C. This is deployment mode 1 of the four in CLAUDE.md.
+#
+# Reachable from other devices on the network: Vite binds every interface and
+# proxies /api, /audio and /refs to the backend, so a phone's API calls arrive
+# same-origin and come back here. Nothing to configure on the visiting device.
+# That is also why frontend/.env.local must NOT set VITE_BACKEND_URL -- an
+# absolute URL bakes one machine's address into the page. The backend itself
+# stays on loopback; the proxy reaches it from this host, so a wildcard bind
+# there would buy nothing. The address to type is printed below.
 #
 # No --reload on uvicorn, deliberately. Loading the model takes tens of seconds
 # to minutes; a watcher that restarts the process on every backend edit would
@@ -95,26 +101,33 @@ PY=".venv/Scripts/python.exe"
 [ -f backend/.env ] || die "backend/.env is missing. Run: bash setup.sh"
 grep -qE '^MODEL_PATH=.+' backend/.env || die "backend/.env has no MODEL_PATH. Run: bash setup.sh"
 
-# The dev server and the backend are different origins, so the browser needs
-# both spellings allowed -- localhost:5173 and 127.0.0.1:5173 are distinct
-# origins to CORS even though they are the same socket.
+# ALLOWED_ORIGINS only matters for requests a browser sends straight to the
+# backend. Through the dev proxy they arrive from Vite instead, server-side,
+# and CORS never applies -- but a leftover VITE_BACKEND_URL puts the browser
+# back on that path, and then a LAN origin nobody listed is the failure.
 if ! grep -qE '^ALLOWED_ORIGINS=.*127\.0\.0\.1:5173' backend/.env; then
   warn "backend/.env ALLOWED_ORIGINS does not list http://127.0.0.1:5173 --"
-  warn "open the app at http://localhost:5173, or API calls will be CORS-blocked."
+  warn "harmless while the dev proxy is in use, but not if something bypasses it."
 fi
 
-# VITE_BACKEND_URL is what points the dev frontend at :8000. Unset, api.ts
-# falls back to relative paths, which hit the Vite dev server -- and
-# vite.config.ts deliberately has no proxy, so every call 404s.
-if [ ! -f frontend/.env.local ]; then
-  die "frontend/.env.local is missing. Create it: cp frontend/.env.local.example frontend/.env.local"
+# This check is the reverse of what it used to be. vite.config.ts now proxies
+# /api, /audio and /refs, so api.ts's BACKEND_URL falls back to '' and every
+# call is same-origin against whatever address the browser typed -- which is
+# what lets another device on the network work with no configuration of its
+# own. Setting VITE_BACKEND_URL overrides that and hardcodes one address:
+# point it at 127.0.0.1 and every visiting device calls its own loopback,
+# loading a page that can never reach anything. A warning, not a failure -- it
+# is still the right setting for the dormant Vercel+RunPod split (CLAUDE.md,
+# deployment mode 4).
+if [ -f frontend/.env.local ] && grep -qE '^[[:space:]]*VITE_BACKEND_URL=.+' frontend/.env.local; then
+  warn "frontend/.env.local sets VITE_BACKEND_URL. The dev proxy makes it unnecessary,"
+  warn "and other devices on your network will call their own machine, not this one."
+  warn "Comment it out to serve the LAN."
 fi
-grep -qE '^VITE_BACKEND_URL=.+' frontend/.env.local \
-  || die "frontend/.env.local has no VITE_BACKEND_URL -- every API call will 404 against Vite."
 
 [ -d frontend/node_modules ] || die "frontend/node_modules is missing. Run: cd frontend && npm install"
 
-echo "    venv, backend/.env, frontend/.env.local and node_modules all present."
+echo "    venv, backend/.env and node_modules all present."
 
 # frontend/dist only matters here as a footgun: the backend registers its SPA
 # catch-all when dist exists, so :8000 will serve a *built* copy of the app
@@ -130,9 +143,12 @@ mkdir -p .tmp
 : > "$BACKEND_LOG"
 : > "$FRONTEND_LOG"
 
-# 127.0.0.1, not 0.0.0.0: a wildcard bind makes Windows Defender Firewall
-# prompt, and clicking Cancel writes a permanent Block rule for the exe. LAN
-# access is start_server.bat's job, not this script's.
+# 127.0.0.1, not 0.0.0.0, even though reaching this from other devices is now
+# a goal of the script. Nothing off-host talks to :8000 -- Vite proxies to it
+# from here -- so a wildcard bind would buy nothing and cost a second Windows
+# Defender Firewall prompt, this one on python.exe. Clicking Cancel on one of
+# those writes a permanent Block rule for that exe path, which nothing in the
+# app can undo. One prompt (Node, for :5173) is enough.
 bold "Backend   http://127.0.0.1:8000   (loading the model, this takes a while)"
 ( cd backend && exec "$REPO_ROOT/$PY" -m uvicorn main:app --host 127.0.0.1 --port 8000 ) \
   > "$BACKEND_LOG" 2>&1 &
@@ -141,6 +157,22 @@ BACKEND_PID=$!
 bold "Frontend  http://localhost:5173"
 ( cd frontend && exec npm run dev ) > "$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
+
+# The address to type on a phone or another laptop. Filtered, not listed: this
+# machine also carries a Hyper-V vEthernet 172.28.x.x that no other device can
+# reach, and printing both invites picking the wrong one. Best-effort -- a
+# missing address is not worth failing a dev run over.
+LAN_IP=""
+if command -v powershell >/dev/null 2>&1; then
+  LAN_IP=$(powershell -NoProfile -Command \
+    "(Get-NetIPAddress -AddressFamily IPv4 -PrefixOrigin Dhcp -ErrorAction SilentlyContinue | Where-Object { \$_.InterfaceAlias -notmatch 'vEthernet|Loopback' } | Select-Object -First 1).IPAddress" \
+    2>/dev/null | tr -d '\r' | head -1) || LAN_IP=""
+fi
+if [ -n "$LAN_IP" ]; then
+  bold "On your network   http://$LAN_IP:5173"
+  echo "    Anyone who can reach that address has the whole app -- there is no sign-in."
+  echo "    Windows may ask to allow Node.js through the firewall; allow it."
+fi
 
 # Colours built with printf rather than written as sed escapes: \o033 in a
 # replacement is a GNU-sed extension, and this is the one line that would

@@ -26,10 +26,16 @@ ENV_STASH=".tmp/env.local.stash"
 SEVENZIP="/c/Program Files/7-Zip/7z.exe"
 SFX="/c/Program Files/7-Zip/7z.sfx"
 
-# The one line the app actually needs for local development. Only two Vite
-# variables are read anywhere in frontend/src -- VITE_BACKEND_URL and
-# VITE_USE_RUNPOD_WAKE -- and the latter is unset outside the Vercel project.
-ENV_LOCAL_DEFAULT='VITE_BACKEND_URL=http://127.0.0.1:8000'
+# What to write if .env.local has gone missing entirely. Deliberately an empty
+# setting: dev needs NOTHING here now that vite.config.ts proxies /api, /audio
+# and /refs, and an active VITE_BACKEND_URL would break dev on the LAN exactly
+# the way it breaks a LAN build -- every visiting device calling its own
+# loopback. Only two Vite variables are read anywhere in frontend/src, and the
+# other (VITE_USE_RUNPOD_WAKE) is unset outside the Vercel project.
+ENV_LOCAL_DEFAULT='# Intentionally empty. Vite proxies /api, /audio and /refs, so relative paths
+# work in dev -- including from other devices on your network, which an
+# absolute VITE_BACKEND_URL here would break. Set it only for the dormant
+# Vercel + RunPod split. See .env.local.example.'
 
 START_TS=$SECONDS
 step() { printf '\n\033[1m==> %s\033[0m  (+%dm%02ds)\n' "$1" $(( (SECONDS-START_TS)/60 )) $(( (SECONDS-START_TS)%60 )); }
@@ -85,6 +91,8 @@ fi
 # Cheap, and they run before the 20-minute freeze rather than after it.
 step "Pre-build checks"
 python scripts/check_design_tokens.py
+python scripts/check_contrast.py
+python scripts/check_orphan_css.py
 python scripts/check_desktop_port.py
 ( cd frontend && npm install --no-fund --no-audit --loglevel=error && npm run lint )
 

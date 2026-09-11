@@ -37,14 +37,14 @@ from auth import get_current_user, get_last_activity
 from qwen import FasterQwen3TTS
 from qwen.utils import resolve_device
 from audio_convert import wav_to_mp3, write_mp3
-from audio_stitcher import stitch_audio, trim_edge_silence
+from audio_stitcher import pack_speech, stitch_audio, trim_edge_silence
 from text_chunker import chunk_text
 
 _whisper_model = None
 _whisper_lock = threading.Lock()
 
 
-def _transcribe_audio(path: str) -> str:
+def _transcribe_audio(path: str) -> tuple[str, str]:
     """Auto-transcribe a reference clip with faster-whisper (CPU, so it doesn't
     contend with the TTS model for this machine's 4GB of VRAM)."""
     global _whisper_model
@@ -58,10 +58,14 @@ def _transcribe_audio(path: str) -> str:
         # duplicated, giving 361 chars for 15s (~24 chars/sec, about double a
         # real speaking rate). That matters beyond tidiness -- ref_text is spent
         # from the same max_seq_len budget generation needs (see _seq_budget).
-        segments, _ = _whisper_model.transcribe(
+        segments, info = _whisper_model.transcribe(
             path, condition_on_previous_text=False, vad_filter=True,
         )
-        return " ".join(seg.text.strip() for seg in segments).strip()
+        text = " ".join(seg.text.strip() for seg in segments).strip()
+        # Whisper detects the language as a side effect of transcribing, so the
+        # voice can carry the language of its own recording instead of asking
+        # the user to declare it.
+        return text, (info.language or "")
 
 def _trim_reference_clip(path: str, keep_secs: float) -> Optional[tuple[Path, float]]:
     """Cut a long upload down to the first `keep_secs` of speech, in place.
@@ -87,12 +91,22 @@ def _trim_reference_clip(path: str, keep_secs: float) -> Optional[tuple[Path, fl
     transcript of the original two minutes against a 25s clip would report a
     speaking rate roughly 5x too high.
     """
-    audio, sample_rate = sf.read(path, dtype="float32", always_2d=False)
+    # Bounded: read the opening, never the whole file. Verified that
+    # soundfile's `frames=` works on MP3 and returns the exact prefix, so an
+    # upload of any length costs the same here as a short one. This is what
+    # lets MAX_REF_AUDIO_SECS be a formality rather than a gate.
+    sample_rate = sf.info(path).samplerate
+    want = int(keep_secs * REF_READ_MULTIPLE * sample_rate)
+    audio, sample_rate = sf.read(path, dtype="float32", always_2d=False, frames=want)
     if audio.ndim > 1:
         # write_mp3 wants mono; a stereo upload arrives as (n, channels).
         audio = audio.mean(axis=1)
 
     audio = trim_edge_silence(audio, sample_rate)
+    # Then the pauses INSIDE it. The window is charged by duration, so silence
+    # in the middle costs exactly as much sequence budget as speech and teaches
+    # the clone nothing.
+    audio = pack_speech(audio, sample_rate)
     if audio.size == 0:
         return None
     keep = int(keep_secs * sample_rate)
@@ -253,24 +267,37 @@ IDLE_STOP_THRESHOLD_MIN = float(os.environ.get("IDLE_STOP_THRESHOLD_MIN", "10"))
 # so watch for garbled/looping output on long reference clips and lower this
 # again if it reproduces.
 MIN_REF_AUDIO_SECS = 2.0
-# The UPLOAD cap, not the reference length. Anything longer than
-# REF_TRIM_SECS is cut down before it is stored, so this only bounds how big a
-# file the user may hand over -- generosity here costs nothing but disk.
-MAX_REF_AUDIO_SECS = 120.0
+# A guard on the UPLOAD, nothing more. Length stopped mattering once clips are
+# trimmed -- _trim_reference_clip reads only the opening, so a ten-minute file
+# costs the same as a forty-second one. What still scales with the whole file
+# is create_preset's `dest.write_bytes(await audio.read())`, which buffers the
+# upload in memory, so some ceiling is wanted. Set well clear of any real
+# recording: a cap that a genuine clip can hit defeats the trimming it sits in
+# front of, which is exactly what a 120s limit did to a 123.5s file.
+MAX_REF_AUDIO_SECS = 1800.0
 # What actually becomes the reference clip, and the number that matters.
 #
 # The clip and the script share ONE MAX_SEQ_LEN window: a clip costs
 # duration x CODEC_FRAME_HZ frames plus its transcript's tokens, and whatever
-# is left is all the room the generated speech has. At 25s that is
+# is left is all the room the generated speech has. Solved against the real
+# constants (_GEN_SLACK, _FALLBACK_SPEECH_CHARS_PER_SEC, SEQ_SAFETY_MARGIN):
 #
-#     313 frames + ~80 text tokens = ~393 of 1024, leaving ~570
+#     25s -> refcost 393, avail 567, chunk_chars 200, max_new_tokens 517  OK
+#     40s -> refcost 630, avail 330, chunk_chars 200, max_new_tokens 280  OK
+#     44s -> refcost 693, avail 267, chunk_chars 196, max_new_tokens 218  OK
+#     50s -> refcost 787, avail 173, chunk_chars 127, max_new_tokens 141  BAD
 #
-# which keeps chunk_chars at the full ELISION_SAFE_CHUNK_CHARS ceiling. Past
-# ~44s chunks shrink below PADDING_SAFE_MIN_CHARS (murmuring, dragging), and
-# past ~57s _seq_budget leaves less than MIN_GEN_FRAMES and rejects the job
-# outright -- which is what a 60s upload cap used to allow: a voice that
-# saved fine and could never generate anything.
-REF_TRIM_SECS = 25.0
+# 40 is the LAST comfortable value, not an arbitrary one: it still holds the
+# full ELISION_SAFE_CHUNK_CHARS ceiling, 44 starts dropping below it, and 50 is
+# into the PADDING_SAFE_MIN_CHARS regime this file documents as murmuring and
+# dragging. Do not raise it without re-solving that table.
+REF_TRIM_SECS = 40.0
+# How much source to read to fill REF_TRIM_SECS of SPEECH. Internal pauses are
+# packed out (see pack_speech), so a recording that is half silence needs twice
+# the source to yield a full window. 4x covers a clip that is 75% dead air,
+# which is about as sparse as a real voice note gets; 160s of stereo float32 at
+# 48k is ~61MB, read once at upload.
+REF_READ_MULTIPLE = 4.0
 # Loose sanity check that ref_text is plausibly a transcript of ref audio,
 # not a placeholder (e.g. "ZAZA" for a 23s clip). Real speech is roughly
 # 12-15 chars/sec; anything under ~3 chars/sec is almost certainly wrong.
@@ -1159,6 +1186,30 @@ def estimate(req: EstimateRequest, user_id: str = Depends(get_current_user)) -> 
     return result
 
 
+# faster-whisper reports ISO 639-1; the model names its languages in full.
+# Only the ones this model actually speaks are worth mapping -- anything else
+# falls back to the request's value.
+_WHISPER_TO_MODEL_LANGUAGE = {
+    "en": "English", "zh": "Chinese", "de": "German", "es": "Spanish",
+    "ru": "Russian", "ko": "Korean", "fr": "French", "ja": "Japanese",
+    "pt": "Portuguese", "tr": "Turkish", "pl": "Polish", "ca": "Catalan",
+    "nl": "Dutch", "ar": "Arabic", "sv": "Swedish", "it": "Italian",
+    "id": "Indonesian", "hi": "Hindi", "fi": "Finnish", "vi": "Vietnamese",
+    "he": "Hebrew", "uk": "Ukrainian", "el": "Greek", "ms": "Malay",
+    "cs": "Czech", "ro": "Romanian", "da": "Danish", "hu": "Hungarian",
+    "ta": "Tamil", "no": "Norwegian", "th": "Thai", "ur": "Urdu",
+}
+
+
+def _model_language_name(whisper_code: str) -> Optional[str]:
+    """Whisper's language code as a name this model recognises, or None."""
+    name = _WHISPER_TO_MODEL_LANGUAGE.get(whisper_code.lower())
+    if name is None or _tts is None:
+        return name
+    supported = _tts.model.model.config.talker_config.codec_language_id
+    return name if name.lower() in supported else None
+
+
 def _preset_response(preset: dict) -> dict:
     """Add fields derivable/servable at read time without persisting them
     redundantly (preview_url is just the reference file exposed over HTTP)."""
@@ -1208,8 +1259,10 @@ async def create_preset(
         dest.unlink(missing_ok=True)
         raise HTTPException(
             400,
-            f"Reference audio is {duration_s:.1f}s, too long (maximum {MAX_REF_AUDIO_SECS:.0f}s). "
-            "Trim it to a shorter, clean clip.",
+            f"That file is {duration_s / 60:.0f} minutes long, past the "
+            f"{MAX_REF_AUDIO_SECS / 60:.0f}-minute upload limit. Length is not the problem -- "
+            f"only the first {REF_TRIM_SECS:.0f} seconds are used either way -- but a file "
+            "this big has to be uploaded before it can be shortened.",
         )
 
     # Longer than the model can hold alongside a script: keep the opening and
@@ -1232,10 +1285,12 @@ async def create_preset(
         )
         duration_s = trimmed
 
+    supplied_ref_text = bool(ref_text)
+    detected_language = ""
     if not ref_text:
         try:
             logger.info("Auto-transcribing reference audio for preset %r with faster-whisper", name)
-            ref_text = _transcribe_audio(str(dest))
+            ref_text, detected_language = _transcribe_audio(str(dest))
         except Exception as e:
             dest.unlink(missing_ok=True)
             logger.exception("Auto-transcription failed for preset %r", name)
@@ -1248,14 +1303,47 @@ async def create_preset(
                 "Provide ref_text manually.",
             )
 
+    # Only ever reject a transcript the CALLER supplied. This guard was written
+    # to catch a placeholder ("ZAZA" for a 23s clip), which is a mistake a
+    # human makes and can correct. Applied to our own auto-transcription it is
+    # a dead end: the UI sends an empty ref_text every time, so the only thing
+    # this could reject was faster-whisper's own output, and the message then
+    # told the user to supply a transcript the app gives them no way to supply.
+    # Reported from a WhatsApp voice note -- 105 chars for 40s, unusable, with
+    # no way forward.
+    #
+    # A sparse auto-transcript is worth knowing about but is not fatal: the
+    # clone is conditioned on the audio, ref_text mainly sets the speaking rate,
+    # and _ref_profile already clamps that to a sane range.
     if len(ref_text) / duration_s < MIN_REF_TEXT_CHARS_PER_SEC:
-        dest.unlink(missing_ok=True)
-        raise HTTPException(
-            400,
-            f"ref_text ({len(ref_text)} chars) looks too short to be an accurate transcript of "
-            f"{duration_s:.1f}s of audio. ref_text must be the exact transcript of what's spoken "
-            "in the reference clip -- a mismatched transcript causes unstable voice cloning.",
+        if supplied_ref_text:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(
+                400,
+                f"ref_text ({len(ref_text)} chars) looks too short to be an accurate transcript "
+                f"of {duration_s:.1f}s of audio. ref_text must be the exact transcript of what's "
+                "spoken in the reference clip -- a mismatched transcript causes unstable voice "
+                "cloning.",
+            )
+        logger.warning(
+            "Preset %r: auto-transcript is sparse (%d chars for %.1fs = %.1f chars/sec). "
+            "Accepting it -- the clip may be quiet, heavily paused, or in a language "
+            "faster-whisper handles poorly.",
+            name, len(ref_text), duration_s, len(ref_text) / duration_s,
         )
+
+    # Same reasoning as above, but this one still bites for generated text:
+    # an inflated transcript (whisper's repetition loop duplicating a passage)
+    # eats sequence budget that generation needs. Truncating our own output is
+    # better than refusing the upload over it.
+    if len(ref_text) / duration_s > MAX_REF_TEXT_CHARS_PER_SEC and not supplied_ref_text:
+        keep = int(duration_s * MAX_REF_TEXT_CHARS_PER_SEC)
+        logger.warning(
+            "Preset %r: auto-transcript implausibly long (%d chars for %.1fs) -- "
+            "likely a whisper repetition loop. Truncating to %d chars.",
+            name, len(ref_text), duration_s, keep,
+        )
+        ref_text = ref_text[:keep].rstrip()
 
     if len(ref_text) / duration_s > MAX_REF_TEXT_CHARS_PER_SEC:
         dest.unlink(missing_ok=True)
@@ -1271,6 +1359,24 @@ async def create_preset(
         "Creating preset %r: duration=%.1fs ref_text_len=%d language=%s",
         name, duration_s, len(ref_text), language,
     )
+
+    # The recording knows its own language; asking the user to declare it was
+    # a question they could get wrong about their own audio. Whisper detects it
+    # while transcribing, so prefer that and keep the request field only as a
+    # fallback for a language this model cannot speak.
+    if detected_language:
+        mapped = _model_language_name(detected_language)
+        if mapped:
+            if mapped != language:
+                logger.info(
+                    "Preset %r: language detected as %s (request said %s)", name, mapped, language,
+                )
+            language = mapped
+        else:
+            logger.info(
+                "Preset %r: detected language %r is not one this model speaks; keeping %s",
+                name, detected_language, language,
+            )
 
     preset = {
         "id": preset_id,
@@ -1293,6 +1399,73 @@ async def create_preset(
         round(original_duration_s, 1) if original_duration_s > duration_s + 0.05 else None
     )
     return response
+
+
+class RenamePresetRequest(BaseModel):
+    name: str
+
+
+@app.patch("/api/presets/{preset_id}")
+def rename_preset(
+    preset_id: str,
+    req: RenamePresetRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """Rename a voice.
+
+    Deliberately does NOT touch `preset_name` on existing history entries.
+    That field is a snapshot of what the voice was called when the voiceover
+    was generated (see _process_job), and back-filling it would rewrite the
+    past -- a voiceover made by "Narrator" did not stop having been made by
+    "Narrator" because the voice is called something else now.
+
+    The name has to live here rather than in the browser. The Voiceovers list
+    renames its rows in localStorage, which works because nothing server-side
+    reads those names; a voice's name is read here on every generate and
+    stamped into history, so a client-only rename would show one name in the
+    voices dialog and a different one on every voiceover it had produced.
+    """
+    preset = _find_preset(preset_id)
+    if preset is None or preset.get("user_id") != user_id:
+        raise HTTPException(404, "Unknown preset_id")
+
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    with _store_lock:
+        preset["name"] = name
+        _save_json(PRESETS_FILE, _presets)
+    return _preset_response(preset)
+
+
+@app.get("/api/presets/{preset_id}/download")
+def download_reference(preset_id: str, user_id: str = Depends(get_current_user)):
+    """Serve a voice's reference clip as a named download.
+
+    A route rather than linking straight at the /refs mount, for three
+    reasons: the on-disk name is a uuid hex, so a bare link downloads
+    "a3f9c2...mp3"; the name has to follow the voice's CURRENT name, which
+    only the server knows after a rename; and /refs is an unauthenticated
+    StaticFiles mount, while this checks ownership like the rest of /api.
+
+    No conversion, unlike /api/download -- a reference clip is whatever the
+    user uploaded (.mp3, .wav, .ogg, .m4a...) and re-encoding it to hand it
+    back would return something other than what they put in. FileResponse
+    infers the media type from the suffix.
+    """
+    preset = _find_preset(preset_id)
+    if preset is None or preset.get("user_id") != user_id:
+        raise HTTPException(404, "Unknown preset_id")
+
+    src = Path(preset["audio_path"])
+    if not src.exists():
+        raise HTTPException(404, "Reference clip is missing")
+
+    return FileResponse(
+        str(src),
+        filename=f"{_safe_filename(preset['name'])}{src.suffix.lower()}",
+    )
 
 
 @app.delete("/api/presets/{preset_id}")

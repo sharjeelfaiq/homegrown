@@ -26,6 +26,13 @@ export interface Preset {
   is_builtin: boolean
   preview_url: string
   created_at: number
+  /** Both are returned by POST /api/presets only, never by the list. The
+   *  measured length of what was kept, and -- when the clip was longer than
+   *  the model can hold alongside a script -- what it was cut down from.
+   *  `trimmed_from_seconds` is null unless a trim actually happened, so it is
+   *  both the value and its own condition. */
+  ref_seconds?: number
+  trimmed_from_seconds?: number | null
 }
 
 export interface HistoryEntry {
@@ -155,6 +162,32 @@ export function createPreset(
   form.append('ref_text', refText)
   form.append('language', language)
   return authFetch(apiUrl('/api/presets'), { method: 'POST', body: form }).then(parseOrThrow<Preset>)
+}
+
+/** Rename a voice.
+ *
+ * Server-side, unlike a voiceover's name -- which is a localStorage display
+ * override (see usePersistedRecord in HistoryList). A voice's name is read by
+ * the backend on every generate and stamped into history as `preset_name`, so
+ * it has to be stored where the backend can see it.
+ */
+export function renamePreset(presetId: string, name: string): Promise<Preset> {
+  return authFetch(apiUrl(`/api/presets/${presetId}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  }).then(parseOrThrow<Preset>)
+}
+
+/** Href for downloading a voice's reference clip.
+ *
+ * A URL, not a fetch: the browser does the download, same as the voiceover
+ * one. Routed through /api rather than at the /refs mount so the file comes
+ * back named after the voice rather than after its uuid, and so a rename is
+ * reflected without the client knowing anything about it.
+ */
+export function presetDownloadUrl(presetId: string): string {
+  return apiUrl(`/api/presets/${presetId}/download`)
 }
 
 export function deletePreset(presetId: string): Promise<{ ok: boolean }> {

@@ -22,72 +22,47 @@
 
    Typography is self-hosted via @fontsource (see main.tsx). Nothing loads from
    a CDN -- this app ships as a desktop install and must render with the network
-   unplugged. */
+   unplugged.
+
+   ======================================================================
+   THREE LAYERS. Read them in this order:
+
+     0. Invariants  -- geometry, type, layout, motion. No theme touches these,
+                       so they are stated once and never repeated.
+     1. Raw palette -- the 22 values a theme must state. :root carries Studio,
+                       which is both the default and the fallback when
+                       data-theme is missing or unrecognised.
+     2. Derived     -- everything computable from layer 1, stated ONCE.
+
+   Layer 2 works because a var() inside a custom-property declaration is
+   substituted against the element the declaration lands on. Layer 2 is
+   declared on :root (i.e. <html>); a theme block `:root[data-theme='tape']`
+   also lands on <html>, with higher specificity (0,2,0 vs 0,1,0). So
+   `--accent-soft: color-mix(..., var(--accent) ...)` declared once picks up
+   the *themed* --accent automatically. A theme that wants a different value
+   simply redeclares that one derived token inside its own block and wins.
+
+   This is also why data-theme must go on <html> and not on a wrapper div:
+   Modal.tsx portals to document.body, outside #root, and a wrapper would
+   leave every dialog unthemed.
+
+   ADDING A THEME = one layer-1 block. If you add a raw token, add it to ALL
+   FIVE blocks -- an omitted token silently inherits Studio's dark value,
+   which is a bug that only shows up on one theme.
+
+   The Tailwind bridge is NOT here, it is the `@theme inline` block in
+   index.css. It maps --color-* onto these names; `inline` is what makes the
+   utilities emit var() rather than baking a value, which is the whole reason
+   switching themes at runtime works. Add a token here and it is inert until
+   it is mapped there.
+
+   color-mix() sets the browser floor at Chrome 111 / Safari 16.2 / FF 113
+   (2023). Vite's default build target is slightly below that; esbuild passes
+   color-mix through untouched, so nothing fails to build, and this ships as
+   a desktop install and a LAN tool on current browsers. */
+
+/* ==== Layer 0: invariants ============================================== */
 :root {
-  color-scheme: dark;
-
-  /* ---- Surfaces. Cool-tinted, widely stepped, never gradients. ---------- */
-  --bg-deepest: #0d0e13; /* page gutter, behind everything */
-  --bg-base: #14151a; /* app background */
-  --bg-nav: #16171f; /* header / inset wells */
-  --bg-card: #1d1f28; /* raised panels, result rows */
-  --bg-hero: #1d1f28;
-  --bg-raised: #242732; /* inputs, controls */
-  --bg-hover: #2d3140; /* hover state on interactive surfaces */
-
-  /* ---- Hairlines. Still the only separator -- no shadows, no glows. ----- */
-  --line: rgba(255, 255, 255, 0.1);
-  --line-strong: rgba(255, 255, 255, 0.17);
-  --line-focus: rgba(255, 255, 255, 0.28);
-
-  /* ---- Text ------------------------------------------------------------
-     Every one of these must clear WCAG AA (4.5:1) against --bg-base,
-     --bg-card AND --bg-raised, not just the page background. The previous
-     --text-faint (#71768a) measured 4.05 / 3.64 / 3.30:1 and failed on all
-     three, which is what made the whole app read as washed out -- it colours
-     nearly all secondary text (empty states, counters, timestamps, voiceover
-     lengths, voice names, field labels). Re-measure before changing.
-       current: 16.86 / 8.14 / 5.75:1 on base. */
-  --text-primary: #f5f6f8;
-  --text-muted: #a9adba;
-  --text-faint: #8b90a4;
-
-  /* ---- Accent 1: amber = work in progress ------------------------------ */
-  --accent: #ffb43a;
-  --accent-dim: #c98a26;
-  --accent-soft: rgba(255, 180, 58, 0.14);
-  --accent-line: rgba(255, 180, 58, 0.4);
-
-  /* ---- Accent 2: cyan = audio ------------------------------------------ */
-  /* Waveforms are most of what is on screen once you have generated
-     anything, so this is the colour that actually stops the page reading as
-     greyscale. */
-  --accent-2: #4dd4e8;
-  /* Played portion of a waveform, and the landing page's hot accent. Mirrored
-     by hand in WaveRibbon.tsx (canvas cannot read custom properties) -- the
-     drift check in scripts/ is what keeps the two in step. */
-  --accent-2-bright: #7ee4f3;
-  --accent-2-soft: rgba(77, 212, 232, 0.14);
-  --accent-2-line: rgba(77, 212, 232, 0.4);
-
-  /* ---- Status ---------------------------------------------------------- */
-  /* Queued-but-not-started, and nothing else. Named for its meaning rather
-     than as --accent-3 so it does not get borrowed as decoration: amber is
-     "work happening", this is "work waiting". Measured against the two
-     surfaces a voiceover row actually sits on -- 6.03:1 on --bg-card and
-     5.47:1 on --bg-raised -- because the --text-faint note above records the
-     mistake of checking only the page background. */
-  --queued: #a78bfa;
-  --queued-soft: rgba(167, 139, 250, 0.14);
-  --queued-line: rgba(167, 139, 250, 0.4);
-  --danger: #ff6169;
-  /* Error body text: --danger is a border/icon weight and drops below AA as a
-     paragraph colour on a tinted error panel. */
-  --danger-text: #ffc9cc;
-  --danger-soft: rgba(255, 97, 105, 0.14);
-  --green: #4ade80;
-  --amber: var(--accent);
-
   /* ---- Geometry. Small radii read as precision; pills read as toys. ---- */
   --radius-sm: 5px;
   --radius-md: 8px;
@@ -122,11 +97,180 @@
   --fast: 120ms;
   --base: 200ms;
   --slow: 420ms;
+}
+
+/* ==== Layer 1: raw palette — Studio (default, dark) ==================== */
+:root {
+  color-scheme: dark;
+
+  /* ---- Surfaces. Cool-tinted, widely stepped, never gradients. ---------- */
+  --bg-deepest: #0d0e13; /* page gutter, behind everything */
+  --bg-base: #14151a; /* app background */
+  --bg-nav: #16171f; /* header / inset wells */
+  --bg-card: #1d1f28; /* raised panels, result rows */
+  --bg-hero: #1d1f28;
+  --bg-raised: #242732; /* inputs, controls */
+  --bg-hover: #2d3140; /* hover state on interactive surfaces */
+
+  /* ---- Hairlines. Still the only separator -- no shadows, no glows. -----
+     This is the PIGMENT the three hairlines are mixed from, not a hairline
+     itself. A dark theme rules with light, a light theme rules with ink;
+     without this indirection the white-alpha hairlines that read correctly
+     on charcoal are simply invisible on cream. */
+  --line-ink: #ffffff;
+
+  /* ---- Text ------------------------------------------------------------
+     Every one of these must clear WCAG AA (4.5:1) against --bg-base,
+     --bg-card AND --bg-raised, not just the page background. The previous
+     --text-faint (#71768a) measured 4.05 / 3.64 / 3.30:1 and failed on all
+     three, which is what made the whole app read as washed out -- it colours
+     nearly all secondary text (empty states, counters, timestamps, voiceover
+     lengths, voice names, field labels). Re-measure before changing.
+       current: 16.86 / 8.14 / 5.75:1 on base. */
+  --text-primary: #f5f6f8;
+  --text-muted: #a9adba;
+  --text-faint: #8b90a4;
+
+  /* ---- Accent 1: amber = work in progress ------------------------------ */
+  --accent: #ffb43a;
+  --accent-dim: #c98a26;
+
+  /* ---- Accent 2: cyan = audio ------------------------------------------ */
+  /* Waveforms are most of what is on screen once you have generated
+     anything, so this is the colour that actually stops the page reading as
+     greyscale. */
+  --accent-2: #4dd4e8;
+  /* Played portion of a waveform, and the landing page's hot accent. The
+     canvas no longer mirrors this by hand -- see --wave-* in layer 2. */
+  --accent-2-bright: #7ee4f3;
+
+  /* ---- Status ---------------------------------------------------------- */
+  /* Queued-but-not-started, and nothing else. Named for its meaning rather
+     than as --accent-3 so it does not get borrowed as decoration: amber is
+     "work happening", this is "work waiting". Measured against the two
+     surfaces a voiceover row actually sits on -- 6.03:1 on --bg-card and
+     5.47:1 on --bg-raised -- because the --text-faint note above records the
+     mistake of checking only the page background. */
+  --queued: #a78bfa;
+  --danger: #ff6169;
+  /* Error body text: --danger is a border/icon weight and drops below AA as a
+     paragraph colour on a tinted error panel. */
+  --danger-text: #ffc9cc;
+  --green: #4ade80;
+
+  /* What scrims and the one real shadow are mixed from. Deliberately darker
+     than --bg-deepest, and it stays dark in the light themes: a pale scrim
+     over a pale page reads as nothing at all. */
+  --scrim-ink: #08090c;
+
+  /* The highlight that sweeps a filled progress bar. White in every theme so
+     far -- the bar underneath is always a saturated accent, light page or
+     dark -- but it is a raw token so a theme can disagree. */
+  --sheen-ink: #ffffff;
+}
+
+/* ==== Layer 2: derived ================================================= */
+:root {
+  --line: color-mix(in srgb, var(--line-ink) 10%, transparent);
+  --line-strong: color-mix(in srgb, var(--line-ink) 17%, transparent);
+  --line-focus: color-mix(in srgb, var(--line-ink) 28%, transparent);
+
+  /* ---- Control edges ---------------------------------------------------
+     A button or a dropdown is not a separator, and it should not be drawn at
+     separator weight. --line is the hairline between things that merely sit
+     next to each other -- row dividers, card edges, the rule under a
+     heading -- and at 10% it is deliberately almost subliminal.
+
+     An interactive edge has a different job: it has to say "this is a
+     control" before you hover it. Both used --line before, which is why the
+     buttons and the voice dropdown read as flat text on a panel. These are
+     separate tokens rather than a blanket bump of --line, because raising
+     --line would also thicken every divider in the voiceovers list, which is
+     the one place the near-invisibility is correct.
+
+     Their own percentages rather than aliases onto --line-strong /
+     --line-focus, so the control weight can be tuned without dragging the
+     hover states of everything else with it. THESE TWO NUMBERS ARE THE KNOB:
+     raise them to make every button, dropdown and popover edge read harder,
+     and nothing else in the app moves.
+
+     A theme can disagree: Booth already pushes --line-ink harder, so its
+     controls come out heavier without anything special here. */
+  --control-edge: color-mix(in srgb, var(--line-ink) 18%, transparent);
+  --control-edge-hover: color-mix(in srgb, var(--line-ink) 30%, transparent);
+
+  /* Buttons are ghosts, fields are raised -- the original distinction, and
+     it is a real one: a field is a place where something sits, a button is
+     a thing you press. Only the hover gets a surface.
+
+     These briefly went to 40% and a permanent --bg-raised fill, which was
+     an overcorrection to a bug rather than to a design problem: the control
+     rules were not rendering at all (an unlayered `button` reset was
+     outranking them -- see index.css), so no value looked like anything.
+     Once they rendered, the heavy treatment was obviously too much. */
+  --control-fill: transparent;
+  --control-fill-hover: var(--bg-hover);
+
+  /* These used to restate their base colour in decimal -- --accent-2-soft was
+     rgba(77, 212, 232, 0.14), i.e. #4dd4e8 written twice, so every retheme had
+     to touch both. color-mix with transparent premultiplies, so the output is
+     identical to the old literals. 7 tokens x 5 themes collapses to 7. */
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 40%, transparent);
+  --accent-2-soft: color-mix(in srgb, var(--accent-2) 14%, transparent);
+  --accent-2-line: color-mix(in srgb, var(--accent-2) 40%, transparent);
+  --queued-soft: color-mix(in srgb, var(--queued) 14%, transparent);
+  --queued-line: color-mix(in srgb, var(--queued) 40%, transparent);
+  --danger-soft: color-mix(in srgb, var(--danger) 14%, transparent);
+
+  --amber: var(--accent);
+
+  /* Scrims. Were three hand-mixed rgba() literals in App.css. */
+  --scrim-boot: color-mix(in srgb, var(--scrim-ink) 62%, transparent);
+  --scrim-modal: color-mix(in srgb, var(--scrim-ink) 72%, transparent);
+  --scrim-drop: color-mix(in srgb, var(--scrim-ink) 84%, transparent);
+
+  /* The app's only real shadow (the popovers). The --shadow-* below are the
+     deliberate no-ops; this one is not. */
+  --shadow-menu: 0 8px 24px color-mix(in srgb, var(--scrim-ink) 35%, transparent);
+
+  --sheen: color-mix(in srgb, var(--sheen-ink) 28%, transparent);
+
+  /* The inverted primary button. Hover pushes the fill FURTHER from the page
+     rather than toward white, which is the same gesture in both directions:
+     --line-ink is white on a dark theme and ink on a light one, so a dark
+     theme brightens and a light theme deepens. One rule, no per-theme hover.
+     The old literal #ffffff hover was not just un-themable, it was wrong on a
+     light theme -- there --text-primary is near-black, so the button is black
+     and hovering it to white made it vanish. */
+  --btn-invert-bg: var(--text-primary);
+  --btn-invert-fg: var(--bg-deepest);
+  --btn-invert-bg-hover: color-mix(in srgb, var(--text-primary) 85%, var(--line-ink));
+
+  /* ---- Waveform --------------------------------------------------------
+     The canvas cannot read custom properties, which is why WaveRibbon.tsx
+     used to carry three hand-mirrored literals. It can read *resolved*
+     colours, so these are read back through a probe element in theme.ts and
+     handed to the canvas as rgb() strings. Defining them here rather than in
+     JS is what makes a waveform follow the theme: Booth's ribbons are red and
+     Tape's are rust with no JavaScript involved.
+
+     --wave-playhead is the one that matters most. Hardcoded white, it is
+     invisible on Daylight and Tape; derived from --text-primary it is
+     near-white on dark themes (indistinguishable from the old
+     rgba(255,255,255,0.9)) and near-black on light ones. */
+  --wave-base: color-mix(in srgb, var(--accent-2) 34%, transparent);
+  --wave-played: var(--accent-2-bright);
+  --wave-playhead: color-mix(in srgb, var(--text-primary) 90%, transparent);
 
   /* ==== Legacy aliases =================================================
      Older rules are written against these names. They are repointed onto
      the palette above rather than deleted, so a retheme lands everywhere at
-     once. Prefer the canonical names above in new styles. */
+     once. Prefer the canonical names above in new styles.
+
+     These survive the move to themes for free, for the same reason layer 2
+     does: they are var() indirections declared on :root, and a theme block
+     also lands on :root. */
   --bg-panel: var(--bg-card);
   --bg-panel-solid: var(--bg-card);
   --bg-inset: var(--bg-nav);
@@ -143,7 +287,9 @@
   --accent-red: var(--danger);
   --accent-red-soft: var(--danger-soft);
   --accent-green: var(--green);
-  --accent-green-soft: rgba(74, 222, 128, 0.14);
+  /* Was a raw rgba() literal, the one alias that was not an indirection --
+     it would have kept Studio's green under every theme. */
+  --accent-green-soft: color-mix(in srgb, var(--green) 14%, transparent);
 
   --blue-primary: var(--accent-2);
   --blue-accent: var(--accent-2);
@@ -167,6 +313,182 @@
   --glow-accent: 0 0 0 1px var(--line-strong);
   --glow-amber: 0 0 0 1px var(--accent-line);
   --blur-panel: 0px;
+}
+
+/* ==== Layer 1: the other four themes ===================================
+   Each block restates the full raw contract.
+
+   Contrast is computed, not eyeballed: `python scripts/check_contrast.py`
+   measures all three text tokens against all three surfaces they can land
+   on, plus the accents and status colours, for every theme. It is the
+   authority -- do not copy its numbers into comments here, they drift.
+
+   Headroom is thinnest on the light themes, which is where a "small tweak"
+   is most likely to break AA:
+     daylight  --text-faint  4.88:1 on --bg-raised  (floor 4.5)
+     tape      --text-faint  5.76:1 on --bg-raised
+   Run the script after touching any of this.
+   ======================================================================= */
+
+/* ---- Daylight: the neutral light counterpart to Studio. ---------------- */
+:root[data-theme='daylight'] {
+  color-scheme: light;
+
+  /* "deepest" means most recessed, which on a light theme is the DARKEST of
+     the lights, not the lightest. It is also --btn-invert-fg, so it has to
+     stay readable on a near-black button fill. */
+  --bg-deepest: #e7e9ef;
+  --bg-base: #fbfbfd;
+  --bg-nav: #f2f3f7;
+  --bg-card: #ffffff;
+  --bg-hero: #ffffff;
+  --bg-raised: #f2f3f7;
+  --bg-hover: #e7e9ef;
+
+  /* Ink, not light. The percentages are raised too: 10% black on white is not
+     perceptually the same separator as 10% white on charcoal. */
+  --line-ink: #0d1220;
+  --line: color-mix(in srgb, var(--line-ink) 12%, transparent);
+  --line-strong: color-mix(in srgb, var(--line-ink) 20%, transparent);
+  --line-focus: color-mix(in srgb, var(--line-ink) 34%, transparent);
+
+  --text-primary: #14151a;
+  --text-muted: #4e5464;
+  --text-faint: #636a7c;
+
+  --accent: #9a5b05;
+  --accent-dim: #7a4804;
+
+  /* On a light theme "played" is DEEPER, not brighter -- the inversion lives
+     here rather than in the --wave-* derivation. */
+  --accent-2: #0b7f93;
+  --accent-2-bright: #095e6e;
+
+  --queued: #6d43d6;
+  --danger: #c5282f;
+  --danger-text: #7d1418;
+  --green: #147a3d;
+
+  --scrim-ink: #0d1220;
+  --scrim-boot: color-mix(in srgb, var(--scrim-ink) 40%, transparent);
+  --scrim-modal: color-mix(in srgb, var(--scrim-ink) 46%, transparent);
+  --scrim-drop: color-mix(in srgb, var(--scrim-ink) 58%, transparent);
+}
+
+/* ---- Tape: warm analog. Cream paper, rust for audio, amber in progress. - */
+:root[data-theme='tape'] {
+  color-scheme: light;
+
+  --bg-deepest: #e3d7c3;
+  --bg-base: #f6efe2;
+  --bg-nav: #f0e7d6;
+  --bg-card: #fdf8ee;
+  --bg-hero: #fdf8ee;
+  --bg-raised: #f0e7d6;
+  --bg-hover: #e8dcc7;
+
+  --line-ink: #3b2a18;
+  --line: color-mix(in srgb, var(--line-ink) 14%, transparent);
+  --line-strong: color-mix(in srgb, var(--line-ink) 22%, transparent);
+  --line-focus: color-mix(in srgb, var(--line-ink) 36%, transparent);
+
+  --text-primary: #241a12;
+  --text-muted: #5c4633;
+  --text-faint: #6b5440;
+
+  --accent: #8a5209;
+  --accent-dim: #6d4107;
+
+  /* Rust replaces cyan as the audio accent. Still one hue, still only audio. */
+  --accent-2: #a83f1c;
+  --accent-2-bright: #822f11;
+
+  --queued: #5d4394;
+  --danger: #a8231c;
+  --danger-text: #6d150f;
+  --green: #37662e;
+
+  --scrim-ink: #2a1d10;
+  --scrim-boot: color-mix(in srgb, var(--scrim-ink) 42%, transparent);
+  --scrim-modal: color-mix(in srgb, var(--scrim-ink) 48%, transparent);
+  --scrim-drop: color-mix(in srgb, var(--scrim-ink) 60%, transparent);
+}
+
+/* ---- Greenroom: dark, deep desaturated green, warm accents. ------------ */
+:root[data-theme='greenroom'] {
+  color-scheme: dark;
+
+  --bg-deepest: #080d0b;
+  --bg-base: #0e1512;
+  --bg-nav: #111a16;
+  --bg-card: #17211c;
+  --bg-hero: #17211c;
+  --bg-raised: #1d2823;
+  --bg-hover: #27342d;
+
+  --line-ink: #ffffff;
+
+  --text-primary: #eef3ef;
+  --text-muted: #a3b0a7;
+  --text-faint: #8d9b92;
+
+  --accent: #e8a33d;
+  --accent-dim: #b87f2e;
+
+  /* Jade, not the surface green -- two accents have to stay two signals, and
+     --green (healthy) is a separate job again. */
+  --accent-2: #79c9a8;
+  --accent-2-bright: #a4e3c6;
+
+  --queued: #a996e0;
+  --danger: #ef6b6b;
+  --danger-text: #f8c9c9;
+  --green: #63c98a;
+
+  --scrim-ink: #050a08;
+}
+
+/* ---- Booth: near-black, high contrast, ON AIR red. --------------------- */
+:root[data-theme='booth'] {
+  color-scheme: dark;
+
+  --bg-deepest: #000000;
+  --bg-base: #08090b;
+  --bg-nav: #0c0e11;
+  --bg-card: #121418;
+  --bg-hero: #121418;
+  --bg-raised: #181b20;
+  --bg-hover: #23272e;
+
+  /* Higher than the other dark themes: on near-black, a 10% hairline is a
+     rumour. Booth is the high-contrast theme and its separators should read. */
+  --line-ink: #ffffff;
+  --line: color-mix(in srgb, var(--line-ink) 16%, transparent);
+  --line-strong: color-mix(in srgb, var(--line-ink) 26%, transparent);
+  --line-focus: color-mix(in srgb, var(--line-ink) 40%, transparent);
+
+  --text-primary: #ffffff;
+  --text-muted: #c3c8d0;
+  --text-faint: #a2a9b4;
+
+  --accent: #ffc24d;
+  --accent-dim: #c9962f;
+
+  /* The tally light. This is the one theme where the audio accent is red. */
+  --accent-2: #ff3b30;
+  --accent-2-bright: #ff7a72;
+
+  /* Both of these moved off their usual hues, and the reason is the red
+     above. Destructive cannot also be red here, so it goes magenta; and once
+     danger is magenta, the usual violet --queued sits too close to it, so
+     queued goes blue. Three signals, three clearly separate hues. It is the
+     accents that moved, never the meanings. */
+  --queued: #7fb2ff;
+  --danger: #ff4f8b;
+  --danger-text: #ffd0e0;
+  --green: #4ade80;
+
+  --scrim-ink: #000000;
 }
 
 :focus-visible {

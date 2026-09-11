@@ -25,7 +25,8 @@ bash dev.sh
 # Backend dev (loads the model on startup; needs CUDA + backend/.env with MODEL_PATH)
 cd backend && python -m uvicorn main:app --host 127.0.0.1 --port 8000
 
-# Frontend dev (needs frontend/.env.local -> VITE_BACKEND_URL=http://127.0.0.1:8000)
+# Frontend dev -- reachable from other devices at http://<this-PC's-LAN-IP>:5173.
+# frontend/.env.local should set NOTHING; vite.config.ts proxies /api, /audio and /refs.
 cd frontend && npm run dev          # http://localhost:5173
 
 cd frontend && npm run lint         # oxlint (see .oxlintrc.json)
@@ -217,16 +218,85 @@ it:
   a ceiling, not a height: `flex: 1 1 auto` clamps the list to whatever the aside actually has, so on a
   768px-tall laptop it renders fewer than eight rows and the `max-height` never applies. Raising the
   multiplier alone does nothing there.
-- **1025px is written in three places and guarded in none.** The `@media (min-width: 1025px)` and
-  `(max-width: 1024px)` pair in `App.css`, and `TWO_COLUMN_QUERY` in `HistoryList.tsx`. The component needs
-  it because both of its scroll effects have to pick a root: above the breakpoint the list is the scroller,
-  below it `overflow-y: visible` makes the page the scroller. Rooting the `IntersectionObserver` at the
-  list below the breakpoint reports intersecting immediately and chain-loads the whole history in one go;
-  reading `list.scrollTop` there returns 0 forever, i.e. permanently "at the top". Change all three
-  together. Below the
-  breakpoint that is all switched off and the page scrolls normally — a short inner scroller inside a
-  locked page is two nested scroll regions on a phone. A missing `min-height: 0` anywhere in that chain
-  puts the scrollbar back on the page.
+- **1025px is now written in two places, and one of them is a token.** `--breakpoint-wide: 1025px` in
+  `frontend/src/index.css` gives the `wide:` utility prefix used throughout the layout, and
+  `TWO_COLUMN_QUERY` in `HistoryList.tsx` still hardcodes the same number. **Use `wide:`, never Tailwind's
+  `lg:` — `lg` is 1024px and the off-by-one decides which element is the scroll root.** The component needs
+  the query because both of its scroll effects have to pick a root: above the breakpoint the list is the
+  scroller, below it the page is. Rooting the `IntersectionObserver` at the list below the breakpoint
+  reports intersecting immediately and chain-loads the whole history in one go; reading `list.scrollTop`
+  there returns 0 forever, i.e. permanently "at the top". Below the breakpoint all of that is switched off
+  and the page scrolls normally — a short inner scroller inside a locked page is two nested scroll regions
+  on a phone. A missing `min-h-0` anywhere in the `.studio → workspace → .aside → .results → .result-list`
+  chain puts the scrollbar back on the page; all five carry it, and `scripts/check_orphan_css.py` guards
+  the class hooks that chain depends on.
+
+### Styling: Tailwind v4, five themes, no App.css
+
+`App.css` is gone. The SPA is Tailwind utilities plus two stylesheets:
+
+- **`frontend/src/styles/tokens.css`** — the palettes, in three layers. Layer 0 is invariants (geometry,
+  type, layout, motion). Layer 1 is the 22 raw values a theme states, with Studio on `:root` as the
+  default *and* the fallback. Layer 2 is everything derivable from layer 1, stated once. Layer 2 works
+  because a `var()` inside a custom-property declaration resolves against the element it lands on, and a
+  `:root[data-theme='x']` block lands on the same `<html>` with higher specificity — so `--accent-soft`
+  picks up the themed `--accent` for free. Adding a theme is one layer-1 block; **omit a raw token and it
+  silently inherits Studio's dark value**, which only shows up on one theme.
+- **`frontend/src/index.css`** — the Tailwind entry, the `@theme inline` bridge, keyframes, the `@utility`
+  primitives, and the base element reset that came out of App.css.
+
+**`@theme inline` is load-bearing.** A plain `@theme` copies the token's *value* into each utility at build
+time, freezing the palette on Studio. `inline` emits `var(--bg-card)` instead, which is the only reason
+flipping `data-theme` re-themes the page at runtime. If themes ever stop switching, check that word first.
+
+**Preflight is imported, and is not optional.** Tailwind's `border` utility compiles to
+`border-style: var(--tw-border-style); border-width: 1px`, and the thing that establishes that variable
+for every element is Preflight's `*, ::before, ::after { border: 0 solid }`. Without it the width applies
+and the style falls back to the UA default `none`, so every bordered surface draws nothing while the build
+and all four guards stay green. It was correctly *omitted* during the migration, while unlayered App.css
+still beat `@layer base`; that trade ended when App.css did.
+
+**The app's own base rules must stay inside `@layer base`.** This one cost a long debugging detour, and
+nothing catches it. Unlayered CSS outranks *every* cascade layer, `utilities` included. When the base
+element rules came out of App.css they were written unlayered — which looked harmless, since they had been
+unlayered in App.css too — and `button { background: none; border: none }` then silently outranked
+`@utility ghost-btn`, `select`, `generate-btn` and `icon-btn`. Generate lost its fill, the voice dropdown
+lost its border *and* its fill, every icon button lost its hover, and no amount of raising `--control-edge`
+brought them back because the border was never being drawn. In App.css the same reset was also unlayered
+but came *earlier in source order*, so the component rules won; moving the file inverted that without
+changing one declaration. Diagnostic tell: `<div>`-based surfaces (the script box) render fine while
+`<button>`-based ones do not.
+
+**The theme attribute lives on `<html>`, set before first paint by a blocking script in `index.html`.** It
+cannot be React: `Modal.tsx` portals to `document.body` (outside `#root`), and in `vite dev` the
+stylesheets arrive through the JS module graph, so the first frame has no CSS at all — hence the five
+inlined per-theme backgrounds in that same `<head>`. The script and `src/theme.ts` are a deliberate
+hand-mirror (a blocking script cannot import a module and stay blocking); `check_design_tokens.py` scans
+`index.html` for exactly that reason. localStorage carries the *choice* (`'system'` or a theme id); the
+attribute carries the *resolved* theme. Do not read the attribute as the source of truth — it cannot tell
+System-resolving-to-Studio from an explicit Studio.
+
+**The canvas waveform no longer mirrors the palette by hand.** `WaveRibbon.tsx` used to carry three
+hardcoded colours. `resolveWavePalette()` in `theme.ts` now reads them through a one-off probe element:
+`getComputedStyle(html).getPropertyValue('--wave-base')` returns the *unevaluated* `color-mix(...)` token
+sequence, which `fillStyle` silently ignores, whereas real colour properties resolve to `rgb()`. The
+palette resolves once per theme change in `ThemeProvider` (not per ribbon — the history window mounts ~20),
+and the three strings are **dependencies of `draw`'s `useCallback`**, which is the entire mechanism that
+repaints a *paused* ribbon. Nothing else in that component asks for a repaint at rest.
+
+**Controls have a surface, separators do not.** `--line` (10%) is the hairline between things that
+merely sit next to each other — row dividers, card edges, the rule under a heading — and is
+deliberately almost subliminal. `--control-edge` (40%) plus `--control-fill` (`--bg-raised`) is what
+makes a button or a dropdown read as a control. They were the same token once, which is why buttons
+looked like outlined text; raising the shared value would have thickened every divider in the
+voiceovers list, which is the one place the near-invisibility is correct. `.icon-btn` stays borderless
+on purpose — boxing four glyphs across eight rows turns the Voiceovers column into a grid of buttons.
+
+**Four build gates, all in `build.sh`.** `check_design_tokens.py` (hex outside the palette; two palettes —
+the full five-theme set for the SPA, Studio-only for `launcher.py` and the landing page, which can never be
+another theme), `check_contrast.py` (WCAG AA for every theme, computed not eyeballed), `check_orphan_css.py`
+(CSS classes no component uses — written after a ported component left `.compose-bar .generate` matching
+nothing and silently un-anchored the Generate button), and `check_desktop_port.py`.
 
 **Startup progress in dev comes from a Vite plugin, not from the API.** `frontend/vite-boot-status.ts`
 (`apply: 'serve'`) reads `backend/storage/boot_status.json` off disk and serves it at `/__boot-status`;
@@ -239,14 +309,31 @@ from `launcher/launcher.py`'s `WORDS`/`TAGLINE` on purpose so dev and the deskto
 product; change both together.
 
 All API calls go through `src/api.ts`, which prefixes every path with `VITE_BACKEND_URL` when it's set —
-an absolute URL, since `vite.config.ts` deliberately has no dev proxy, so dev mode needs it. Unset, the
-prefix is `''` and every call is a relative path, which is exactly what single-port/LAN and installer mode
-rely on.
+an absolute URL. Unset, the prefix is `''` and every call is a relative path, which is what single-port/LAN
+and installer mode rely on, **and now dev too**: `vite.config.ts` proxies `/api`, `/audio` and `/refs` to
+`127.0.0.1:8000`, so leaving `VITE_BACKEND_URL` unset is the correct dev setting rather than a broken one.
+
+That proxy exists for one reason — **reaching dev from another device**. An absolute `VITE_BACKEND_URL`
+bakes a single address into the page, so pointing it at `127.0.0.1` means every visitor calls *their own*
+loopback: the page renders, nothing works. Proxying instead makes every call same-origin against whatever
+address the browser typed. Two consequences: `/audio` and `/refs` must be proxied alongside `/api` because
+`mediaUrl()` resolves against the same base (miss them and the API works while playback 404s), and
+`dev.sh`'s preflight now **warns when `VITE_BACKEND_URL` is set** — the reverse of what it used to check.
+The setting is still correct for deployment mode 4, which is why it warns rather than fails.
+
+The dev backend stays bound to `127.0.0.1` even so. Vite reaches it from this host, so a wildcard bind
+would add nothing but a second Windows Firewall prompt, on `python.exe` — see the desktop-bind note
+below for why one wrong click there is unrecoverable.
 
 ### Deployment modes (there are four, sharing one codebase)
 
-1. **Local dev** — Vite :5173 + uvicorn :8000, cross-origin, needs `ALLOWED_ORIGINS`.
+1. **Local dev** — Vite :5173 + uvicorn :8000. Same-origin from the browser's point of view: Vite
+   proxies `/api`, `/audio` and `/refs`, so `ALLOWED_ORIGINS` only matters for anything that bypasses
+   it. Reachable from other devices at `http://<LAN-IP>:5173` with no per-device configuration.
 2. **LAN single-port** — built `frontend/dist` served by FastAPI on :8000. The current primary target.
+   `start_server.bat` preflights three things before it binds: `frontend/dist/index.html` exists (see
+   `FRONTEND_DIST` below), no localhost address is compiled into the bundle, and nothing already holds
+   :8000. Each has cost a misdiagnosis; the port one has cost three.
 3. **Frozen desktop installer** — on **:8731**, not 8000: it is the one mode whose port nobody types
    (single loopback origin, relative API paths), and sharing 8000 let the launcher mistake a dev uvicorn
    for a running app and never start `backend.exe`. `backend/run.py` is the PyInstaller entrypoint (path
@@ -262,6 +349,23 @@ rely on.
 - **`VITE_BACKEND_URL` is baked in at build time, including `npm run build`.** If `frontend/.env.local`
   sets `http://127.0.0.1:8000` when you build for LAN mode, every LAN client calls *their own* localhost and
   the app is broken for everyone but the GPU machine. Unset it (or set it empty) before a LAN/installer build.
+  `build.sh` stashes the file to prevent it; a hand-run `npm run build` does not, so `start_server.bat`
+  greps the emitted bundle for a localhost address and refuses to serve one. The same value now breaks
+  *dev* on the LAN too, which is why `frontend/.env.local` ships with it commented out.
+- **No pipes in the PowerShell one-liners inside `start_server.bat`.** In a `for /f ... ('powershell …')`
+  cmd reads a bare `|` as its own pipe and passes `^|` through as a literal caret. Neither runs, and both
+  fail *silently* — that is how the port guard first shipped not firing at all. Use `@(…)` with indexing
+  and `.Where({…})` instead. Related: `findstr /s` re-anchors the pattern per subdirectory and returns 1
+  both for "no match" and "cannot open that path", so it cannot be used for a guard; the bundle check is
+  PowerShell with distinct exit codes for *matched* and *nothing to check*.
+- **`.venv/Scripts/activate.bat` is stale and must not be used.** It hardcodes
+  `VIRTUAL_ENV=D:\dev-projects\websites\voice-clone-agent\.venv` — the path this repo had before it was
+  renamed to `homegrown`, and a directory that no longer exists. Activating therefore prepends a dead
+  directory to `PATH`, `python` resolves to whatever is on the system PATH, and you get
+  `No module named uvicorn` that reads as a broken install. `start_server.bat` used to `call` it, which
+  meant LAN mode had been silently broken since the rename. Call `.venv\Scripts\python.exe` by absolute
+  path instead — it locates its own venv through `pyvenv.cfg` and needs no activation, which is what
+  `dev.sh` has always done. Recreating the venv would also fix it; nothing depends on activation.
 - **`FRONTEND_DIST` is checked once at import time.** If `frontend/dist` doesn't exist when the backend
   process starts, the SPA route never registers for that process's life. Build the frontend *before*
   starting the backend, or restart it.
@@ -322,8 +426,31 @@ rely on.
   (`main.py`), no "Studio Voices" gallery section exists in the frontend any more, and
   `NewVoiceModal` no longer filters on it -- the field survives only in `Preset` on both sides.
 - **`language` is a property of the voice, not of a script.** `handleGenerate` reads it from the
-  selected preset; the new-voice modal is the only place it is set. There is no language control on
-  the compose path, and `handleRequeue` deliberately does not restore a per-job language.
+  selected preset; it is set once, at creation, from what faster-whisper detected in the reference
+  clip. There is no language control anywhere, and `handleRequeue` deliberately does not restore a
+  per-job language.
+- **A voice saves on drop. There is no name field and no Save button.** `handleAddVoice` in
+  `StudioShell` derives the name with `presetNameFromFile` and calls `createPreset` immediately;
+  `ReferenceUpload` is now only a dropzone. Two consequences that are easy to undo by accident:
+  the voices dialog **must not close** after a successful create (it used to) — the row it just
+  made, with its editable name, is the thing the user came to see; and the over-length warning is
+  now a report *after* the fact, from the create response's `trimmed_from_seconds`, rather than a
+  client-side probe of the file before saving.
+- **Two names, two completely different stores, one component.** `InlineName` is the shared
+  rename field, but what a commit *does* is a prop, because the two callers could not be more
+  different. A **voiceover's** name is a localStorage display override (`usePersistedRecord`,
+  `historyFileNames`) — nothing server-side knows it exists. A **voice's** name goes to
+  `PATCH /api/presets/{id}`, and has to: the backend reads `preset["name"]` on every generate and
+  stamps it into history as `preset_name`, so a client-only rename would show one name in the
+  dialog and a different one on every voiceover that voice had produced. Do not "unify" the
+  storage. Relatedly, `rename_preset` deliberately does **not** back-fill `preset_name` on
+  existing history entries — that field is a snapshot of the name at generation time.
+  `PATCH /api/presets/{id}` is also the only PATCH route in the backend.
+- **`GET /api/presets/{id}/download` exists rather than linking at `/refs`.** The on-disk name is a
+  uuid hex, the download has to be named after the voice's *current* name (which only the server
+  knows after a rename), and `/refs` is an unauthenticated StaticFiles mount while this checks
+  ownership. It does not convert, unlike `/api/download` -- a reference clip is returned as whatever
+  was uploaded, because re-encoding would hand back something other than what went in.
 - **The desktop build ships as a 7-Zip SFX, not an NSIS installer.** NSIS caps output at 2 GB; the frozen
   payload is 4.47 GB (torch is 3.84 GB of it). `makensis` does not error on this -- it spins for ~25 minutes
   at exactly 2 GB and emits nothing. `installer/setup.nsi` carries a banner saying so. Also redirect `TEMP`

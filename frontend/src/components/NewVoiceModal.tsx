@@ -1,27 +1,39 @@
 import { useEffect, useRef, useState } from 'react'
-import { mediaUrl, type Preset } from '../api'
+import { mediaUrl, presetDownloadUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
+import { formatClock } from '../format'
+import { REF_TRIM_SECS } from '../constants'
+import InlineName from './InlineName'
 import Modal from './Modal'
 import ReferenceUpload from './ReferenceUpload'
-import { PauseIcon, PlayIcon, TrashIcon } from './Icons'
+import { DownloadIcon, PauseIcon, PlayIcon, TrashIcon } from './Icons'
 
 interface Props {
   open: boolean
   onClose: () => void
   presets: Preset[]
-  name: string
-  onNameChange: (value: string) => void
-  file: File | null
-  onFileSelected: (file: File | null) => void
-  language: string
-  onLanguageChange: (value: string) => void
-  languages: string[]
-  creating: boolean
-  onCreate: () => void
+  onFileSelected: (file: File) => void
+  uploading: boolean
+  /** Why the last upload or rename failed, rendered inside the dialog. */
+  error: string | null
+  /** Reference clips the backend shortened, by preset id. */
+  trimmed: Record<string, number>
+  onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
 }
 
 /** Add a voice, and manage the ones already saved.
+ *
+ * One dropzone and one row per voice: name on the left, actions on the right.
+ * Adding a voice is a single gesture -- the clip saves on drop and the row
+ * appears -- so there is no name field and no Save button, and the name is
+ * corrected in place afterwards if the filename was not what you wanted.
+ *
+ * Renaming here goes to the BACKEND, unlike the Voiceovers column, which
+ * keeps its names in localStorage. A voice's name is read server-side on
+ * every generate and stamped into history, so a client-only rename would
+ * disagree with every voiceover the voice had already produced. The shared
+ * InlineName knows nothing about either; the difference is in onCommit.
  *
  * Deletion lives here rather than next to the picker on the compose path: it
  * is a management action, it is destructive, and it was the reason the old
@@ -31,20 +43,17 @@ interface Props {
  *
  * Each row also plays its reference clip. Without it the recording a voice was
  * cloned from was write-only: you could upload it and delete it, but never hear
- * what the clone was actually built on. */
+ * what the clone was actually built on.
+ */
 export default function NewVoiceModal({
   open,
   onClose,
   presets,
-  name,
-  onNameChange,
-  file,
   onFileSelected,
-  language,
-  onLanguageChange,
-  languages,
-  creating,
-  onCreate,
+  uploading,
+  error,
+  trimmed,
+  onRename,
   onDelete,
 }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
@@ -78,32 +87,25 @@ export default function NewVoiceModal({
 
   return (
     <Modal open={open} title="Voices" onClose={onClose}>
-      <ReferenceUpload
-        name={name}
-        onNameChange={onNameChange}
-        fileName={file?.name ?? null}
-        file={file}
-        onFileSelected={onFileSelected}
-        language={language}
-        onLanguageChange={onLanguageChange}
-        languages={languages}
-        creating={creating}
-        onCreate={onCreate}
-      />
+      <ReferenceUpload onFileSelected={onFileSelected} uploading={uploading} error={error} />
 
       {/* No is_builtin filter: no preset is ever builtin (see CLAUDE.md), so
           filtering on it only ever returned the whole list. */}
       {presets.length > 0 && (
-        <section className="voice-manage">
-          <h3 className="section-rule">
-            <span>Your voices</span>
-          </h3>
-          <ul className="voice-manage-list">
-            {presets.map((preset) => (
-              <li key={preset.id} className="voice-manage-row">
-                <span className="voice-manage-name">{preset.name}</span>
+        <ul className="m-0 list-none p-0">
+          {presets.map((preset) => (
+            <li key={preset.id} className="border-b border-hairline py-1 last:border-b-0">
+              <div className="flex min-h-9 items-center justify-between gap-3">
+                <InlineName
+                  value={preset.name}
+                  placeholder="Name this voice"
+                  ariaLabel={`Name of voice ${preset.name}`}
+                  title="Click to rename"
+                  onCommit={(next) => onRename(preset.id, next)}
+                />
+
                 {confirmingId === preset.id ? (
-                  <span className="voice-manage-confirm">
+                  <span className="flex flex-none gap-1.5">
                     <button
                       type="button"
                       className="ghost-btn ghost-btn-danger"
@@ -123,7 +125,7 @@ export default function NewVoiceModal({
                     </button>
                   </span>
                 ) : (
-                  <span className="voice-manage-actions">
+                  <span className="flex flex-none items-center gap-0.5">
                     <button
                       type="button"
                       className="icon-btn"
@@ -141,6 +143,18 @@ export default function NewVoiceModal({
                         <PlayIcon size={13} />
                       )}
                     </button>
+                    {/* An <a download>, matching the voiceover rows. The
+                        filename comes from the server, so it follows a
+                        rename without this knowing anything about it. */}
+                    <a
+                      href={presetDownloadUrl(preset.id)}
+                      download
+                      className="icon-btn"
+                      aria-label={`Download ${preset.name} reference clip`}
+                      title="Download reference clip"
+                    >
+                      <DownloadIcon size={13} />
+                    </a>
                     <button
                       type="button"
                       className="icon-btn icon-btn-danger"
@@ -152,10 +166,22 @@ export default function NewVoiceModal({
                     </button>
                   </span>
                 )}
-              </li>
-            ))}
-          </ul>
-        </section>
+              </div>
+
+              {/* Reported after the fact rather than warned about before it.
+                  Saving is now one gesture, so there is no moment to warn in
+                  -- and this is the measured trim from the server, not a
+                  guess from the file's own metadata. The voice is one click
+                  from deletion right here if the cut is wrong. */}
+              {trimmed[preset.id] != null && (
+                <p className="m-0 pb-1 text-[11px] text-faint">
+                  Trimmed from {formatClock(trimmed[preset.id])} — the first {REF_TRIM_SECS}s are
+                  used.
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
 
       {/* crossOrigin is required even though this element only plays and never

@@ -73,10 +73,24 @@ cd frontend && npm run build      # once, and again after any frontend change
 cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Or double-click **`start_server.bat`** in the repo root, which runs that second command for you.
+Or double-click **`start_server.bat`** in the repo root, which runs that second command for you and
+prints the exact address to type on other devices. Prefer it: it also refuses to start in three states
+that otherwise fail silently or blame the wrong thing —
+
+| It stops when | Because otherwise |
+|---|---|
+| `frontend/dist/index.html` is missing | `FRONTEND_DIST` is read once at import, so every page load answers `{"detail":"Not Found"}` while `/api` works fine |
+| a localhost address is compiled into the bundle | the app works on this PC and fails on every other device, with nothing at runtime able to detect it |
+| something already holds :8000 | uvicorn dies with a bind traceback that never mentions the usual culprit, a `dev.sh` backend still running |
 
 - On this PC: **http://localhost:8000**
-- From other devices: **http://\<this-PC's-LAN-IP\>:8000** (find it with `ipconfig`)
+- From other devices: **http://\<this-PC's-LAN-IP\>:8000** — `start_server.bat` prints it. If you look it
+  up yourself with `ipconfig`, pick the real adapter: a machine with Hyper-V or WSL also lists a
+  `172.x.x.x` vEthernet address that no other device can reach.
+
+> ⚠️ **There is no sign-in.** `auth.py` is a stub that returns the same user for every request. Anyone who
+> can reach the port can create voices, generate voiceovers, and delete other people's. Run it on a network
+> you trust.
 
 > **Do not open `http://0.0.0.0:8000`.** `0.0.0.0` means "listen on every interface" — it is a bind address,
 > not a destination. Browsers reject it with `ERR_ADDRESS_INVALID`.
@@ -117,13 +131,12 @@ including the orphaned node child that `kill` alone leaves holding `:5173` on Wi
 No `--reload` on the backend, deliberately: the model takes tens of seconds to minutes to load, and a
 watcher would pay that on every edit. Restart `dev.sh` by hand after backend changes.
 
-The same thing by hand is two terminals, two ports. **`vite.config.ts` has no dev proxy, on purpose**, so
-the frontend must be told where the backend is:
+**Dev is reachable from other devices too**, at `http://<this-PC's-IP>:5173`. `dev.sh` prints the address.
+Nothing to configure on the visiting phone or laptop — `vite.config.ts` proxies `/api`, `/audio` and
+`/refs` to the backend, so each device's API calls are same-origin against whatever address it typed. The
+same "no sign-in" warning above applies.
 
-```bash
-# frontend/.env.local
-VITE_BACKEND_URL=http://127.0.0.1:8000
-```
+The same thing by hand is two terminals:
 
 ```bash
 # terminal 1
@@ -133,14 +146,24 @@ cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 -
 cd frontend && npm run dev        # http://localhost:5173
 ```
 
-That is cross-origin, so `backend/.env` also needs
-`ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173`. Both spellings: they are the same socket but
-*different origins* to CORS, so listing only one makes the app work at one URL and fail every API call at
-the other.
+`frontend/.env.local` should set **nothing**. `VITE_BACKEND_URL` hardcodes one backend address into the
+page, which is right for the dormant Vercel + RunPod split and wrong everywhere else: point it at
+`127.0.0.1` and every device except this one loads the app, calls its own loopback, and finds nothing.
+`dev.sh` warns if it is set.
 
-> ⚠️ **Delete or empty `frontend/.env.local` before building for LAN or the installer.** `VITE_BACKEND_URL`
-> is baked into the bundle at build time. If it says `127.0.0.1` when you run `npm run build`, every LAN
-> client calls *their own* localhost and the app is broken for everyone except this machine.
+The backend stays on `127.0.0.1` even in this mode. Vite reaches it from this machine, so binding it wide
+would add nothing but a second Windows Firewall prompt.
+
+`ALLOWED_ORIGINS` in `backend/.env` only matters for requests that skip the proxy — through it they arrive
+server-side from Vite and CORS never applies. Keep
+`ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173` anyway; both spellings, since they are the
+same socket but different origins to CORS.
+
+> ⚠️ **`VITE_BACKEND_URL` must be unset before building for LAN or the installer.** It is baked into the
+> bundle at build time. If it says `127.0.0.1` when you run `npm run build`, every LAN client calls *their
+> own* localhost and the app is broken for everyone except this machine. `build.sh` stashes
+> `frontend/.env.local` for you; a hand-run `npm run build` does not, which is why `start_server.bat`
+> greps the emitted bundle and refuses to serve one that has it.
 
 ### Standalone Windows build (frozen desktop app)
 
@@ -264,13 +287,22 @@ in a direct comparison it produced *less* silence and finished faster.
 
 The **✚** button beside the voice dropdown opens the Voices dialog.
 
-- **Add a voice** — drop or pick a `.wav`/`.mp3` reference clip (2–60s accepted, **10–20s recommended**),
-  set a name and a language. The name pre-fills from the filename; the language is stamped onto the voice
-  and is what generation uses, so there is no language control on the compose path. The transcript is
-  always auto-transcribed with faster-whisper. Saved to `backend/storage/presets.json`, clip to
-  `backend/storage/references/`.
+- **Add a voice** — drop or pick a `.wav`/`.mp3` reference clip (2–60s accepted, **10–20s recommended**).
+  That is the whole step: the voice is cloned and saved on drop, with no name field and no Save button.
+  The name comes from the filename and is edited in place on the row afterwards. The language is detected
+  from the recording by faster-whisper and stamped onto the voice, which is what generation uses — so
+  there is no language control anywhere. The transcript is auto-transcribed too. Saved to
+  `backend/storage/presets.json`, clip to `backend/storage/references/`.
+- **Rename a voice** — click its name in the dialog, type, press Enter or click away. Escape cancels.
+  Unlike a voiceover's name, this is stored on the server (`PATCH /api/presets/{id}`), because the backend
+  reads it on every generate. Renaming does **not** change the voice name recorded on voiceovers you have
+  already made — that is a snapshot of what the voice was called at the time.
+- **Clips over 40s** are accepted and shortened to the first 40 seconds; the row says what it was cut
+  from. Shorter is better anyway — see "Making a voice that actually works".
 - **Play** — the ▶ on a row plays that voice's *reference clip*, not a live generation. Available both in
   the dialog and on each row of the voice dropdown.
+- **Download** — the ⭳ on a dialog row saves the reference clip, named after the voice and in whatever
+  format it was uploaded in (no re-encoding). Renaming the voice changes the downloaded filename.
 - **Delete** — in the dialog only, and two-step (the row flips to Delete/Keep). Removes the voice and its
   reference audio permanently. Deleting the selected voice clears the selection. The dropdown deliberately
   has no delete: it is a menu you open to pick a voice, not to destroy one.
@@ -384,7 +416,9 @@ All routes are under `/api`, and every request is the same single local user.
 | GET | `/api/languages` | Languages the loaded model supports |
 | POST | `/api/estimate` | `{text, preset_id}` → `estimated_s`, `chunks`, `chunk_chars`, `ref_seconds`, `warning`. POST, and the whole script, because chunk count depends on sentence boundaries *and* on the voice |
 | GET | `/api/presets` | List voice presets |
-| POST | `/api/presets` | Create one (multipart: `audio`, `name`, `ref_text`, `language`, `tag`) |
+| POST | `/api/presets` | Create one (multipart: `audio`, `name`, `ref_text`, `language`, `tag`) → also returns `ref_seconds` and `trimmed_from_seconds` |
+| PATCH | `/api/presets/{id}` | Rename one (`{name}`). Does not touch `preset_name` on existing history entries |
+| GET | `/api/presets/{id}/download` | The voice's reference clip, named after the voice |
 | DELETE | `/api/presets/{id}` | Delete a preset and its reference clip |
 | POST | `/api/generate` | Queue a job → `{job_id, total_chunks, estimated_s, queue_position}` |
 | GET | `/api/jobs/{id}` | One job's status |
@@ -417,7 +451,7 @@ Environment overrides:
 
 | Variable | Purpose |
 |---|---|
-| `VITE_BACKEND_URL` | Frontend only, **baked in at build time**. Unset means relative paths, which is what LAN mode needs. |
+| `VITE_BACKEND_URL` | Frontend only, **baked in at build time**. Leave it unset: relative paths are what LAN mode, the installer *and* dev all need (dev proxies instead). Set it only for the Vercel + RunPod split. |
 | `DECODE_CHUNK_FRAMES` | Vocoder frames per GPU launch (default 100). Lower it if a slower display GPU trips its watchdog. |
 | `REQUIRE_GPU=1` | Makes `setup.sh` fail instead of accepting the CPU fallback. |
 | `MODEL_DIR` / `PIP_CACHE_DIR` / `TMP_OVERRIDE` | `setup.sh` paths. |
@@ -429,8 +463,8 @@ Environment overrides:
 | Symptom | Cause and fix |
 |---|---|
 | `ERR_ADDRESS_INVALID` on `0.0.0.0:8000` | That is a bind address. Use `localhost` or the LAN IP. |
-| LAN devices cannot connect | Add the firewall rule above, and bind `0.0.0.0`, not `127.0.0.1`. |
-| LAN clients load the UI but every action fails | `VITE_BACKEND_URL` was set when you built. Empty `frontend/.env.local` and rebuild. |
+| LAN devices cannot connect | `ERR_CONNECTION_REFUSED` means a loopback bind — use `start_server.bat` (`0.0.0.0`) or `dev.sh` (:5173), not a hand-run `--host 127.0.0.1`. A *timeout* instead means the firewall rule above is missing. |
+| LAN clients load the UI but every action fails | `VITE_BACKEND_URL` was set when you built (or, in dev, is set at all). Comment it out in `frontend/.env.local` and rebuild. `start_server.bat` now catches this before it starts. |
 | `no kernel image is available for execution on the device` | The torch build has no kernels for your GPU. cu126 covers `sm_50`–`sm_90`; Blackwell needs cu128. |
 | `CUDA error: the launch timed out and was terminated` | Windows TDR killed a GPU batch running over ~2s on a display-attached card. It kills the whole process's CUDA context, so the running voiceover **and everything queued behind it** fail together — the app detects this (`gpu_fault`), hides Retry and asks you to restart, because nothing in-app can recover it. Lower `DECODE_CHUNK_FRAMES`, and do not run two model processes at once. |
 | Yellow "Running on CPU" banner | No usable GPU was found; the reason is in the banner and in `/api/health`. |

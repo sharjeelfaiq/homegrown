@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import '../App.css'
 import NewVoiceModal from './NewVoiceModal'
+import ThemeSwitch from './ThemeSwitch'
 import VoicePicker from './VoicePicker'
 import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
@@ -23,21 +23,24 @@ import {
   deleteHistoryEntry,
   deletePreset,
   getHealth,
-  getLanguages,
   listHistory,
   listPresets,
+  renamePreset,
   startGenerate,
   type Estimate,
   type HistoryEntry,
   type Preset,
 } from '../api'
 
+/** Sent only so the backend has something if language detection comes back
+ * empty or names a language this model cannot speak. */
+const LANGUAGE_FALLBACK = 'English'
+
 export default function StudioShell() {
   const [modelStatus, setModelStatus] = useState<'checking' | 'ready' | 'down'>('checking')
   const [wakeMessage, setWakeMessage] = useState<string | null>(null)
   const [wakeNonce, setWakeNonce] = useState(0)
   const [warmingUp, setWarmingUp] = useState(false)
-  const [languages, setLanguages] = useState<string[]>([])
   const [cpuNotice, setCpuNotice] = useState<string | null>(null)
   // A CUDA fault kills the process's context: the running voiceover dies and
   // so does everything queued behind it, and nothing recovers in-process.
@@ -51,10 +54,15 @@ export default function StudioShell() {
   const [presets, setPresets] = useState<Preset[]>([])
   const [voiceId, setVoiceId] = useState<string | null>(null)
 
-  const [newPresetName, setNewPresetName] = useState('')
-  const [refFile, setRefFile] = useState<File | null>(null)
+  // Reference clips that the backend shortened, by preset id. Session-only:
+  // it is a report on what just happened, not a property of the voice.
+  const [trimmed, setTrimmed] = useState<Record<string, number>>({})
   const [voicesOpen, setVoicesOpen] = useState(false)
   const [creatingPreset, setCreatingPreset] = useState(false)
+  // Separate from the composer's `error`, which renders inside .composer and
+  // is therefore UNDERNEATH the open dialog -- a voice that failed to save
+  // reported itself on a page the user could not see.
+  const [voiceError, setVoiceError] = useState<string | null>(null)
 
   // One script, not a list: the "+ Add block" control is gone, so there is no
   // way to create a second one. startGenerate is still called per-script below,
@@ -63,7 +71,6 @@ export default function StudioShell() {
   // Only the new-voice form writes this now: it is the language stamped onto a
   // voice at creation. Generation reads the chosen voice's own language instead
   // (see handleGenerate), so the two can no longer disagree.
-  const [newPresetLanguage, setNewPresetLanguage] = useState('English')
 
   // One accumulating list, not a page. `historyNonce` reloads it from the top,
   // keeping however many slices are already on screen.
@@ -121,9 +128,6 @@ export default function StudioShell() {
         if (cancelled || bootFailedRef.current) return
         setModelStatus('ready')
         setWakeMessage(null)
-        getLanguages()
-          .then((r) => !cancelled && setLanguages(r.languages))
-          .catch(() => {})
         // The backend runs on CPU when no usable GPU was found. It still works,
         // but generation is orders of magnitude slower -- say so up front rather
         // than letting the first job look like it hung.
@@ -253,36 +257,59 @@ export default function StudioShell() {
   // to be derived only on the window-drop path, which meant picking a file
   // inside the modal left the field blank.
   //
-  // Only fills a blank field: a name the user has already typed outranks
-  // anything guessable from a filename.
-  function handleRefFileSelected(file: File | null) {
-    setRefFile(file)
-    if (file && !newPresetName.trim()) {
-      setNewPresetName(presetNameFromFile(file.name))
+  // A dropped clip IS the decision -- there is no Save step and no name to
+  // fill in. The name comes off the filename and is editable in place on the
+  // row this creates, which is the whole point of the dialog now.
+  async function handleAddVoice(file: File) {
+    if (creatingPreset) return
+    setCreatingPreset(true)
+    setVoiceError(null)
+    try {
+      // Language is a fallback, not a choice: the backend replaces it with
+      // whatever faster-whisper detected in the recording itself.
+      const preset = await createPreset(
+        presetNameFromFile(file.name),
+        file,
+        '',
+        LANGUAGE_FALLBACK,
+      )
+      setPresets((prev) => [preset, ...prev])
+      setVoiceId(preset.id) // a voice you just made is the one you want to use
+      // Null unless the clip was actually longer than the model can hold, so
+      // this is both the value and its own condition. Kept per id because
+      // several clips can be added before the dialog is closed.
+      if (preset.trimmed_from_seconds != null) {
+        setTrimmed((prev) => ({ ...prev, [preset.id]: preset.trimmed_from_seconds as number }))
+      }
+      // Deliberately NOT closing. The dialog used to close here, back when
+      // saving was the last step; now the row it just created -- with its
+      // editable name -- is the thing the user came to see.
+    } catch (e) {
+      setVoiceError(e instanceof ApiError ? e.message : 'Failed to add the voice')
+    } finally {
+      setCreatingPreset(false)
     }
   }
 
-  // Dropping an audio file anywhere opens the voices modal with it loaded.
+  // Dropping an audio file anywhere opens the voices dialog. The voice is
+  // already saved by the time it appears.
   const dragging = useFileDrop((file) => {
-    handleRefFileSelected(file)
     setVoicesOpen(true)
+    void handleAddVoice(file)
   })
 
-  async function handleCreatePreset() {
-    if (!refFile) return
-    setCreatingPreset(true)
-    setError(null)
+  async function handleRenamePreset(id: string, name: string) {
+    const trimmedName = name.trim()
+    if (!trimmedName) return
+    const before = presets
+    // Optimistic: the field has already visually committed, and bouncing the
+    // text back on a slow round-trip reads as the edit being rejected.
+    setPresets((prev) => prev.map((p) => (p.id === id ? { ...p, name: trimmedName } : p)))
     try {
-      const preset = await createPreset(newPresetName, refFile, '', newPresetLanguage)
-      setPresets((prev) => [preset, ...prev])
-      setVoiceId(preset.id) // a voice you just made is the one you want to use
-      setNewPresetName('')
-      setRefFile(null)
-      setVoicesOpen(false)
+      await renamePreset(id, trimmedName)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to save voice')
-    } finally {
-      setCreatingPreset(false)
+      setPresets(before)
+      setVoiceError(e instanceof ApiError ? e.message : 'Failed to rename the voice')
     }
   }
 
@@ -396,17 +423,55 @@ export default function StudioShell() {
   })
 
   return (
-    <div className="studio">
-      <h1 className="studio-title">Homegrown</h1>
+    <div className="flex min-h-svh flex-col wide:h-svh wide:overflow-hidden">
+      {/* The wrapper exists only to be a positioning context for the theme
+          control. It adds no height -- it contains just the h1, which keeps
+          its own padding and hairline -- and it is not a flex row, so the
+          wordmark stays optically centred in the full page width. An <h1>
+          takes phrasing content only, so the control cannot live inside it. */}
+      <div className="relative">
+        {/* Equal padding top and bottom so the wordmark sits centred between the
+            window edge and the rule below it. leading-none is what makes that
+            true rather than approximate -- at the inherited 1.55 the line box
+            adds ~7px of half-leading, and since uppercase has no descenders
+            the glyphs then read as sitting high in their own box.
 
-      <main className="workspace">
-        <div className="composer">
+            The hairline is a full-width border beneath, not an underline on
+            the text: it separates the title from the workspace without
+            putting a rule through the wordmark's wide tracking. */}
+        <h1 className="border-b border-hairline px-(--gutter) py-[30px] text-center font-display text-[26px]/none font-semibold tracking-[0.1em] uppercase text-muted">
+          Homegrown
+        </h1>
+        <ThemeSwitch />
+      </div>
+
+      {/* minmax(0, ...) on BOTH tracks is load-bearing: the voiceover
+          waveform is a canvas with an intrinsic width, and on an `auto` track
+          it refuses to shrink and pushes the layout wider than the viewport.
+
+          `wide:` is 1025px, NOT Tailwind's lg (1024px) -- see --breakpoint-wide
+          in index.css. Above it the page is pinned to one viewport and the
+          Voiceovers list is the single scrolling region inside it; below it the
+          grid is one column and the PAGE scrolls, because a short inner
+          scroller inside a locked page is two nested scroll regions on a phone.
+
+          The min-h-0 chain runs .studio -> here -> .aside -> .results ->
+          .result-list. A flex item's default min-height:auto refuses to shrink
+          below its content, so one missing link puts the scrollbar back on the
+          page instead of on the list. All five are marked; do not drop one. */}
+      <main className="mx-auto grid w-full max-w-(--shell) grid-cols-[minmax(0,1fr)] items-start gap-[34px] px-(--gutter) pt-8 pb-[72px] wide:min-h-0 wide:flex-auto wide:grid-cols-[minmax(0,1.15fr)_minmax(0,var(--aside))] wide:gap-10 wide:pb-8">
+        <div className="composer flex min-w-0 flex-col gap-[22px] wide:min-h-0">
           {/* Pairs with the Voiceovers heading opposite, same .section-rule
               treatment: you write a script here, the voiceovers appear there.
               "Script" rather than "Compose" or "New voiceover" because it is
               the word the terminology table fixes for the text the user
               writes. */}
-          <h2 className="section-rule">
+          {/* -mb-3 cancels the gap difference between the columns: the
+              results column is gap-1 (4px + the rule's own 6px = 10px)
+              and this one is gap-[22px]. Both headings must sit the same
+              distance above their content, and shrinking .composer's gap
+              instead would tighten the script card and the notices too. */}
+          <h2 className="section-rule -mb-3">
             <span>Script</span>
           </h2>
 
@@ -416,9 +481,18 @@ export default function StudioShell() {
               act on, and Retry is the app's only recovery control, so it moved
               here rather than disappearing with the header. */}
           {modelStatus === 'down' && (
-            <p className="error status-down-row" role="alert">
-              <span>{wakeMessage ?? 'Backend unreachable'}</span>
-              <button type="button" className="ghost-btn" onClick={() => setWakeNonce((n) => n + 1)}>
+            <p className="m-0 rounded-sm border border-danger bg-danger-soft px-3 py-2.5 text-[13px] text-danger flex items-center justify-between gap-3" role="alert">
+              {/* The model-load failure arrives as the backend's own multi-line
+                  message rather than as one tidy sentence: wrap it and keep its
+                  line breaks, while Retry stays put at the top beside it. */}
+              <span className="min-w-0 whitespace-pre-wrap">
+                {wakeMessage ?? 'Backend unreachable'}
+              </span>
+              <button
+                type="button"
+                className="ghost-btn flex-none self-start"
+                onClick={() => setWakeNonce((n) => n + 1)}
+              >
                 Retry
               </button>
             </p>
@@ -426,7 +500,7 @@ export default function StudioShell() {
 
 
           {cpuNotice && (
-            <p className="notice">Running on CPU — generation will be very slow. {cpuNotice}</p>
+            <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">Running on CPU — generation will be very slow. {cpuNotice}</p>
           )}
 
 
@@ -443,10 +517,10 @@ export default function StudioShell() {
               reference silently multiplies both chunk count and render time.
               The backend only logged this; now it reaches the person who can
               act on it. */}
-          {estimate?.warning && <p className="notice">{estimate.warning}</p>}
+          {estimate?.warning && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">{estimate.warning}</p>}
 
           {error && (
-            <p className="error" role="alert">
+            <p className="m-0 rounded-sm border border-danger bg-danger-soft px-3 py-2.5 text-[13px] text-danger" role="alert">
               {error}
             </p>
           )}
@@ -457,10 +531,10 @@ export default function StudioShell() {
               GenerateButton stays a button throughout -- progress now lives in
               the Voiceovers column, as the first row, where the finished
               voiceover will land. */}
-          <section className="compose-bar">
+          <section className="compose-bar flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className="icon-btn compose-add"
+              className="icon-btn size-8 flex-none border border-control bg-control-fill text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
               aria-label="Add a voice"
               title="Add a voice"
               onClick={() => setVoicesOpen(true)}
@@ -487,7 +561,7 @@ export default function StudioShell() {
 
         </div>
 
-        <aside className="aside" ref={resultsRef}>
+        <aside className="min-w-0 wide:h-full wide:min-h-0" ref={resultsRef}>
           <HistoryList
             history={history}
             total={historyTotal}
@@ -521,18 +595,22 @@ export default function StudioShell() {
             by the time the app is usable -- so telling the user what to do is
             the honest extent of it. A button that quit but could not reopen
             would be a worse trade than a sentence. */}
-        <p className="fault-copy">
+        <p className="m-0 mb-3 text-[13px]/[1.55] text-muted">
           Your graphics card stopped responding, so the voiceovers being made just now have
           failed. Everything you finished earlier is safe.
         </p>
-        <p className="fault-copy">Closing Homegrown and opening it again fixes this.</p>
+        <p className="m-0 mb-3 text-[13px]/[1.55] text-muted">
+          Closing Homegrown and opening it again fixes this.
+        </p>
 
-        <details className="fault-more">
+        <details className="fault-more m-0 mb-4">
           <summary>Technical details</summary>
-          <pre className="fault-detail">{gpuFault}</pre>
+          <pre className="mt-2 mb-0 max-h-[140px] overflow-auto rounded-sm border border-danger bg-danger-soft px-3 py-2.5 font-mono text-[11px]/[1.5] break-words whitespace-pre-wrap text-danger-text">
+            {gpuFault}
+          </pre>
         </details>
 
-        <div className="fault-actions">
+        <div className="flex justify-end gap-2.5">
           <button type="button" className="ghost-btn" onClick={() => setFaultSeenAt(errorCount)}>
             Close
           </button>
@@ -541,17 +619,16 @@ export default function StudioShell() {
 
       <NewVoiceModal
         open={voicesOpen}
-        onClose={() => setVoicesOpen(false)}
+        onClose={() => {
+          setVoicesOpen(false)
+          setVoiceError(null)
+        }}
         presets={presets}
-        name={newPresetName}
-        onNameChange={setNewPresetName}
-        file={refFile}
-        onFileSelected={handleRefFileSelected}
-        language={newPresetLanguage}
-        onLanguageChange={setNewPresetLanguage}
-        languages={languages}
-        creating={creatingPreset}
-        onCreate={handleCreatePreset}
+        onFileSelected={handleAddVoice}
+        uploading={creatingPreset}
+        error={voiceError}
+        trimmed={trimmed}
+        onRename={handleRenamePreset}
         onDelete={handleDeletePreset}
       />
 
@@ -562,8 +639,10 @@ export default function StudioShell() {
       {modelStatus === 'checking' && <BootOverlay boot={boot} elapsed={wakeMessage} />}
 
       {dragging && (
-        <div className="drop-veil">
-          <p>Drop a reference clip to make a voice</p>
+        <div className="pointer-events-none fixed inset-0 z-100 grid place-items-center bg-scrim-drop outline-2 outline-dashed outline-offset-[-14px] outline-audio">
+          <p className="m-0 font-mono text-[13px] tracking-[0.06em] text-audio">
+            Drop a reference clip to make a voice
+          </p>
         </div>
       )}
     </div>

@@ -16,6 +16,7 @@ import { useElapsed } from '../hooks/useElapsed'
 import { useOptimisticProgress } from '../hooks/useOptimisticProgress'
 import { usePersistedRecord } from '../hooks/usePersistedRecord'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
+import InlineName from './InlineName'
 import VoiceoverPlayer from './VoiceoverPlayer'
 import { DownloadIcon, TrashIcon, WandIcon } from './Icons'
 
@@ -56,7 +57,7 @@ const MAX_TICKS = 60
 
 /* The two-column layout, and with it the fixed-height scrolling Voiceovers
  * block. Mirrors the `@media (min-width: 1025px)` / `(max-width: 1024px)` pair
- * in App.css -- above it the list scrolls, below it the page does, and the two
+ * in index.css -- above it the list scrolls, below it the page does, and the two
  * effects below have to pick their scroll root accordingly. Change all three
  * together; nothing enforces it. */
 const TWO_COLUMN_QUERY = '(min-width: 1025px)'
@@ -75,67 +76,30 @@ interface NameControl {
   /** Overrides the "Voiceover N" placeholder. A failed row has no number --
    * it never becomes a voiceover -- so it must not advertise one. */
   placeholder?: string
-  isRenaming: boolean
-  draft: string
-  onDraftChange: (v: string) => void
-  onStartRename: () => void
-  onCommitRename: () => void
-  onCancelRename: () => void
-  skipBlurCommitRef: RefObject<boolean>
+  /** Receives the trimmed draft. The editing mechanics live in InlineName. */
+  onCommitRename: (next: string) => void
 }
 
 function RowHead({
   number,
   name,
   placeholder,
-  isRenaming,
-  draft,
-  onDraftChange,
-  onStartRename,
   onCommitRename,
-  onCancelRename,
-  skipBlurCommitRef,
   voiceName,
   nameTitle,
 }: NameControl & { voiceName: string; nameTitle: string }) {
   return (
-    // Name left, voice right. The name field is sized to its own text via the
-    // `size` attribute -- not `field-sizing: content`, which is Chromium-only.
-    <div className="result-line result-line-head">
-      <input
-        type="text"
-        className="result-name"
-        spellCheck={false}
-        size={Math.max(8, (isRenaming ? draft : name).length + 1)}
-        aria-label={placeholder ?? `Name of voiceover ${number}`}
-        title={nameTitle}
+    // Name left, voice right.
+    <div className="flex min-h-[26px] min-w-0 items-center justify-between gap-2">
+      <InlineName
+        value={name}
         placeholder={placeholder ?? `Voiceover ${number}`}
-        value={isRenaming ? draft : name}
-        onFocus={onStartRename}
-        onChange={(e) => onDraftChange(e.target.value)}
-        onBlur={() => {
-          if (skipBlurCommitRef.current) {
-            skipBlurCommitRef.current = false
-            return
-          }
-          onCommitRename()
-        }}
-        onKeyDown={(e) => {
-          e.stopPropagation()
-          if (e.key === 'Enter') {
-            onCommitRename()
-            skipBlurCommitRef.current = true
-            e.currentTarget.blur()
-          }
-          if (e.key === 'Escape') {
-            skipBlurCommitRef.current = true
-            onCancelRename()
-            e.currentTarget.blur()
-          }
-        }}
+        ariaLabel={placeholder ?? `Name of voiceover ${number}`}
+        title={nameTitle}
+        onCommit={onCommitRename}
       />
 
-      <span className="mono result-voice" title={`Voice: ${voiceName}`}>
+      <span className="mono ml-auto max-w-[55%] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-faint" title={`Voice: ${voiceName}`}>
         {voiceName}
       </span>
     </div>
@@ -211,7 +175,7 @@ function TransportTime({
           makes both states exactly the same width, at any duration. A
           min-width guess cannot do that: 84px was already too narrow for
           "-0:54 / 1:06", and any fixed number breaks again past ten minutes. */}
-      <span className="result-time-sign" aria-hidden="true">
+      <span className="inline-block w-[1ch]" aria-hidden="true">
         {showRemaining ? '-' : ''}
       </span>
       {left} / {formatClock(total)}
@@ -270,20 +234,24 @@ function PendingRow({
 
   return (
     <li
-      className={`result-row result-row-pending${queued ? ' is-queued' : ''}${
-        failed ? ' is-failed' : ''
-      }`}
+      className={[
+        'flex flex-col gap-0.5 border-b border-hairline py-[7px] last:border-b-0',
+        queued && 'is-queued',
+        failed && 'is-failed',
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       <RowHead {...nameControl} voiceName={job.preset_name} nameTitle="Click to rename" />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
           so the two row kinds line up down the column. */}
-      <div className="result-line">
+      <div className="flex min-w-0 items-center gap-2.5">
         {/* One bar for every chunk count. The boundary ticks are a repeating
             gradient driven by --chunks rather than one element per chunk, so
             three chunks and seven hundred cost the same. */}
         <div
-          className={`result-bar${showTicks ? ' has-ticks' : ''}`}
+          className={['result-bar', showTicks && 'has-ticks'].filter(Boolean).join(' ')}
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={total || 100}
@@ -307,12 +275,12 @@ function PendingRow({
           style={{ '--chunks': total || 1 } as CSSProperties}
         >
           <motion.div
-            className="result-bar-fill"
+            className="relative h-full overflow-hidden rounded-sm bg-progress"
             initial={false}
             animate={{ width: `${running ? progress : 0}%` }}
             transition={reduced ? { duration: 0 } : { duration: 0.5, ease: [0.2, 0, 0, 1] }}
           >
-            {running && !reduced && <span className="result-bar-sheen" aria-hidden="true" />}
+            {running && !reduced && <span className="absolute inset-0 animate-sheen bg-[linear-gradient(90deg,transparent,var(--sheen),transparent)]" aria-hidden="true" />}
           </motion.div>
         </div>
 
@@ -324,7 +292,7 @@ function PendingRow({
           {/* The same reserved slot TransportTime puts the minus in. Empty
               here -- there is no remaining to toggle to -- but it keeps this
               row's digits on the same column as a finished row's. */}
-          <span className="result-time-sign" aria-hidden="true" />
+          <span className="inline-block w-[1ch]" aria-hidden="true" />
           {failed
             ? attempt > 1
               ? `Failed · try ${attempt}`
@@ -336,18 +304,18 @@ function PendingRow({
                 : formatClock(elapsed)}
         </span>
 
-        <div className="result-actions">
+        <div className="result-actions flex flex-none items-center gap-0.5">
           {/* Retry first: after a failure that was not the script's fault --
               a GPU fault takes out everything queued behind it -- resubmitting
               is what the user wants, and dismissing throws the script away. */}
           {failed && onRetry && (
-            <button type="button" className="ghost-btn result-cancel" onClick={onRetry}>
+            <button type="button" className="ghost-btn h-6 px-2.5 text-[11px]" onClick={onRetry}>
               Retry
             </button>
           )}
           <button
             type="button"
-            className="ghost-btn ghost-btn-danger result-cancel"
+            className="ghost-btn ghost-btn-danger h-6 px-2.5 text-[11px]"
             onClick={onCancel}
             disabled={canceling}
           >
@@ -356,8 +324,8 @@ function PendingRow({
         </div>
       </div>
 
-      <div className="result-line result-line-meta">
-        <p className="result-text" title={failed ? reason : job.text_preview}>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-muted" title={failed ? reason : job.text_preview}>
           {truncate(failed ? reason : job.text_preview)}
         </p>
       </div>
@@ -389,7 +357,7 @@ function VoiceoverRow({
   const created = timeAgo(entry.created_at)
 
   return (
-    <li className="result-row">
+    <li className="group/row flex flex-col gap-0.5 border-b border-hairline py-[7px] last:border-b-0">
       <RowHead
         {...nameControl}
         voiceName={entry.preset_name}
@@ -400,7 +368,7 @@ function VoiceoverRow({
           line beside the script preview; moving it up is what lets the preview
           have the last line to itself and the row get shorter. The player is
           the flexible element, so the icon strip is never pushed off. */}
-      <div className="result-line">
+      <div className="flex min-w-0 items-center gap-2.5">
         <VoiceoverPlayer
           src={mediaUrl(entry.audio_url)}
           durationS={entry.duration_s}
@@ -411,7 +379,7 @@ function VoiceoverRow({
 
         <TransportTime audioRef={audioRef} fallbackDurationS={entry.duration_s} />
 
-        <div className="result-actions">
+        <div className="result-actions flex flex-none items-center gap-0.5 opacity-50 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
           <a
             href={downloadHref}
             download
@@ -444,8 +412,8 @@ function VoiceoverRow({
 
       {/* The script preview now has this line to itself, so it gets the full
           column width before ellipsising. */}
-      <div className="result-line result-line-meta">
-        <p className="result-text" title={entry.text}>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-muted" title={entry.text}>
           {truncate(entry.text)}
         </p>
       </div>
@@ -476,7 +444,20 @@ function VoiceoverRow({
  *
  * Row actions are always visible but dimmed, brightening on row hover or
  * keyboard focus, so a page of voiceovers still reads as voiceovers rather
- * than as a wall of buttons -- without hiding them behind a gesture. */
+ * than as a wall of buttons -- without hiding them behind a gesture.
+ *
+ * Three class names below are HOOKS, not styles -- everything they look like
+ * is in the utilities sitting beside them:
+ *   .results         part of the min-height: 0 chain (StudioShell's wide:
+ *                    utilities). A flex item's
+ *                    default min-height: auto refuses to shrink below its
+ *                    content, and one missing link anywhere in that chain puts
+ *                    the scrollbar back on the page instead of on the list.
+ *   .result-actions  two media-query behaviours: (hover: none) pins the strip
+ *                    at full opacity, because a touch screen has no hover to
+ *                    reveal it with, and (pointer: coarse) widens its gap.
+ *   .result-text     is-failed colours it --danger-text by descendant selector.
+ * Delete any of them and the thing it hooks stops happening, silently. */
 export default function HistoryList({
   history,
   total,
@@ -497,15 +478,12 @@ export default function HistoryList({
   // persisted: the job either lands within the session and the name moves to
   // localStorage under the real entry id, or it never existed.
   const [pendingNames, setPendingNames] = useState<Record<string, string>>({})
-  const [renamingId, setRenamingId] = useState<string | null>(null)
   // The edit is held locally rather than written straight through, which is
   // what makes Escape able to revert -- the old rename box committed on every
   // keystroke, so there was nothing to go back to.
-  const [draft, setDraft] = useState('')
   // Enter and Escape both blur the field themselves, and blur is what commits.
   // Without this flag Enter would commit twice, and Escape would commit the
   // very edit it just discarded.
-  const skipBlurCommitRef = useRef(false)
 
   const listRef = useRef<HTMLUListElement>(null)
   const sentinelRef = useRef<HTMLLIElement>(null)
@@ -611,18 +589,11 @@ export default function HistoryList({
     })
   }, [queue, history, pendingNames, setFileName])
 
-  function startRename(id: string, current: string) {
-    setDraft(current)
-    skipBlurCommitRef.current = false
-    setRenamingId(id)
-  }
-
   // Blank clears the override so the name falls back to "Voiceover N" -- and so
   // does the default itself. Focusing a row and tabbing straight out otherwise
   // stores "Voiceover 5" as an explicit name, which pins that number and stops
   // it renumbering when an older voiceover is deleted.
-  function commitRename(id: string, pending: boolean, defaultName: string) {
-    const typed = draft.trim()
+  function commitRename(id: string, pending: boolean, defaultName: string, typed: string) {
     const next = typed === defaultName ? '' : typed
     if (pending) {
       setPendingNames((prev) => {
@@ -636,7 +607,6 @@ export default function HistoryList({
     } else {
       removeFileName(id)
     }
-    setRenamingId(null)
   }
 
   function nameControlFor(
@@ -652,13 +622,7 @@ export default function HistoryList({
       number,
       name,
       placeholder,
-      isRenaming: renamingId === id,
-      draft,
-      onDraftChange: setDraft,
-      onStartRename: () => startRename(id, name),
-      onCommitRename: () => commitRename(id, pending, defaultName),
-      onCancelRename: () => setRenamingId(null),
-      skipBlurCommitRef,
+      onCommitRename: (typed: string) => commitRename(id, pending, defaultName, typed),
     }
   }
 
@@ -703,17 +667,17 @@ export default function HistoryList({
   }
 
   return (
-    <section className="results">
+    <section className="results flex flex-col gap-1">
       <h2 className="section-rule">
         <span>Voiceovers</span>
-        {total > 0 && <span className="mono section-count">{total}</span>}
+        {total > 0 && <span className="mono order-3 text-[11px]">{total}</span>}
       </h2>
 
       {/* Surfaced instead of scrolling the list out from under a reader. */}
       {pendingNew > 0 && (
         <button
           type="button"
-          className="ghost-btn new-voiceovers"
+          className="ghost-btn mb-2.5 self-start border-audio-line text-audio hover:not-disabled:border-audio hover:not-disabled:bg-audio-soft hover:not-disabled:text-audio"
           onClick={() => {
             onShowNew()
             listRef.current?.scrollTo({ top: 0 })
@@ -724,7 +688,7 @@ export default function HistoryList({
       )}
 
       {total === 0 && active.length === 0 ? (
-        <p className="empty-hint">
+        <p className="m-0 py-5 text-[13px] text-faint">
           {loading
             ? 'Loading your voiceovers…'
             : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
@@ -790,7 +754,7 @@ export default function HistoryList({
                 signal the user gets. Inside the <ul> so it scrolls with the
                 rows and so IntersectionObserver can scope to this list. */}
             {hasMore && (
-              <li className="result-sentinel" ref={sentinelRef}>
+              <li className="py-3.5 text-center text-[11px] text-faint" ref={sentinelRef}>
                 Loading more…
               </li>
             )}
