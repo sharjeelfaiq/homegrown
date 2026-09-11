@@ -8,7 +8,11 @@ import GenerateButton from './GenerateButton'
 import { MAX_SCRIPT_CHARS } from '../constants'
 import { presetNameFromFile } from '../format'
 import { PlusIcon } from './Icons'
+import { Toaster } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
+import { useJobToasts } from '../hooks/useJobToasts'
+import { useTheme } from '../ThemeContext'
+import { themeMode } from '../theme'
 import { useBootStatus } from '../hooks/useBootStatus'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useHotkeys } from '../hooks/useHotkeys'
@@ -96,6 +100,8 @@ export default function StudioShell() {
   const [estimate, setEstimate] = useState<Estimate | null>(null)
 
   const { queue, refresh: refreshQueue } = useGenerationActivity()
+  useJobToasts(queue)
+  const { theme } = useTheme()
   // Only while we are actually waiting. Null whenever there is no dev-server
   // status source, which is every non-`vite dev` build -- the row below then
   // falls back to wakeMessage's elapsed counter alone.
@@ -653,6 +659,43 @@ export default function StudioShell() {
           Dropped the instant modelStatus leaves 'checking' -- including on
           failure, so the error row below is never trapped behind it. */}
       {modelStatus === 'checking' && <BootOverlay boot={boot} elapsed={wakeMessage} />}
+
+      {/* Toasts. `theme` is derived from OUR five-theme id, not left on
+          sonner's default "light": three of the five are dark, and a light
+          toast stack over Booth is the brightest thing on the screen.
+          themeMode() is the same mapping the pre-paint script in index.html
+          uses, so the two cannot disagree.
+
+          The surface colours are handed over as CSS variables rather than
+          restyled with a className, because sonner sets them on its own
+          elements -- a class would have to win a specificity fight against
+          its stylesheet on every future version. These four are the documented
+          hooks. They resolve against :root, so they re-theme at runtime along
+          with everything else (see the @theme inline note in index.css).
+
+          richColors is deliberately OFF. It ships its own green and red, which
+          would be the only two colours in the app that check_design_tokens.py
+          cannot see and therefore the only two that could drift from the
+          palette unnoticed. */}
+      <Toaster
+        theme={themeMode(theme)}
+        position="bottom-right"
+        closeButton
+        toastOptions={{
+          style: {
+            background: 'var(--bg-card)',
+            border: '1px solid var(--line-strong)',
+            color: 'var(--text-primary)',
+          },
+        }}
+        style={
+          {
+            '--normal-bg': 'var(--bg-card)',
+            '--normal-text': 'var(--text-primary)',
+            '--normal-border': 'var(--line-strong)',
+          } as React.CSSProperties
+        }
+      />
 
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-100 grid place-items-center bg-scrim-drop outline-2 outline-dashed outline-offset-[-14px] outline-audio">

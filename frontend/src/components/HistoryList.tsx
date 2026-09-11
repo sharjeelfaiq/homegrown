@@ -293,7 +293,13 @@ function PendingRow({
             chars/second average that moves in both directions as chunks land,
             so watching it told the user nothing. Same slot the finished row
             puts its clock in, so the two line up. */}
-        <span className="mono result-time" aria-live="polite">
+        {/* NOT aria-live. It was polite-live until the job-completion toast
+            existed, which meant a screen reader read a new elapsed time every
+            second for the whole render and said nothing when it finished --
+            the one event worth announcing was the one thing it did not cover.
+            useJobToasts now announces completion through sonner's own live
+            region. Visual output here is unchanged. */}
+        <span className="mono result-time">
           {/* The same reserved slot TransportTime puts the minus in. Empty
               here -- there is no remaining to toggle to -- but it keeps this
               row's digits on the same column as a finished row's. */}
