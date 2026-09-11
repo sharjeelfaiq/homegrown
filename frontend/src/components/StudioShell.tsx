@@ -120,6 +120,9 @@ export default function StudioShell() {
   // below for why waiting it out is not an option.
   const bootFailedRef = useRef(false)
   const scriptRef = useRef<HTMLTextAreaElement>(null)
+  // Held here rather than in HistoryList because the Ctrl+F binding lives
+  // here, the same way scriptRef serves "/".
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const refreshHistory = useCallback(() => setHistoryNonce((n) => n + 1), [])
 
@@ -433,6 +436,18 @@ export default function StudioShell() {
       if (canGenerate) handleGenerate()
     },
     onFocusScript: () => scriptRef.current?.focus(),
+    // Reports whether it took the key. The search box is only rendered when
+    // there is something to search, so with an empty column this returns
+    // false and the browser's own find opens instead of being swallowed.
+    onFindInApp: () => {
+      const el = searchRef.current
+      if (!el) return false
+      el.focus()
+      // Ctrl+F on a box that already has a query should let you retype rather
+      // than append to it.
+      el.select()
+      return true
+    },
     onCancel: () => setError(null),
   })
 
@@ -590,6 +605,7 @@ export default function StudioShell() {
         <aside className="min-w-0 wide:h-full wide:min-h-0">
           <HistoryList
             history={history}
+            searchRef={searchRef}
             query={historyQuery}
             onQueryChange={setHistoryQuery}
             total={historyTotal}

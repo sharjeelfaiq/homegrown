@@ -230,14 +230,23 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   cap 11-29px against a 15-40.5px first line, and the bottom corners belong to the word count, the
   resize grip and the scrollbar).
 
-- **There were four shortcuts; there are three.** `Ctrl/Cmd+Enter`, `Escape` and `/`.
-  **Space is gone and should not come back without a reason.** It clicked the newest voiceover's
-  play button, which meant binding a bare Space on `window` and calling `preventDefault()` on it --
-  taking over page scrolling everywhere outside a text field, which is a large behaviour to
-  commandeer for one convenience when every row already has a play button. Removing it also
-  retired `.voiceover-play-btn`: that class had **no CSS rule at all** and existed purely as the
-  `querySelector` hook the handler used, along with the `resultsRef` on the `<aside>` that scoped
-  it. If a play shortcut is ever wanted again, all three come back together.
+- **`Ctrl/Cmd+F` focuses the voiceovers search, and its `preventDefault` is CONDITIONAL.** Taking
+  Ctrl+F from the browser is the one hijack every user would notice, so `onFindInApp` returns a
+  **boolean** rather than being a plain void handler: the search box only renders when there is
+  something to search, so with an empty column the handler reports false and the browser's own find
+  opens untouched. It sits above the bare-key guard in `useHotkeys`, next to `Ctrl/Cmd+Enter`, for
+  the same reason — a modifier combo has to work while typing or it is unreachable from the one
+  place people are usually typing. It also `select()`s, so a second Ctrl+F retypes rather than
+  appends.
+
+- **The shortcuts are `Ctrl/Cmd+Enter`, `Ctrl/Cmd+F`, `Escape` and `/`.**
+  **Space was removed and should not come back without a reason.** It clicked the newest
+  voiceover's play button, which meant binding a bare Space on `window` and calling
+  `preventDefault()` on it — taking over page scrolling everywhere outside a text field, which is a
+  large behaviour to commandeer for one convenience when every row already has a play button.
+  Removing it also retired `.voiceover-play-btn`: that class had **no CSS rule at all** and existed
+  purely as the `querySelector` hook the handler used, along with the `resultsRef` on the `<aside>`
+  that scoped it. If a play shortcut is ever wanted again, all three come back together.
 
 `HistoryList`'s `active` filter carries `running | queued | canceling | error` — **`error` is in there
 deliberately**, so a job that dies after acceptance stays visible instead of vanishing, and its `Cancel`

@@ -7,6 +7,10 @@ interface Handlers {
   onCancel?: () => void
   /** "/" . Suppressed while typing. */
   onFocusScript?: () => void
+  /** Ctrl/Cmd+F. Returns true if it actually took the key; when it returns
+   *  false the browser's own find is left alone. See the call site for why
+   *  that is a boolean rather than a plain void handler. */
+  onFindInApp?: () => boolean
 }
 
 /** True when the event came from somewhere the user is entering text.
@@ -44,6 +48,21 @@ export function useHotkeys(handlers: Handlers): void {
           e.preventDefault()
           h.onGenerate()
         }
+        return
+      }
+
+      // Ctrl/Cmd+F, alongside Ctrl/Cmd+Enter and above the bare-key guard for
+      // the same reason: a modifier combo has to work while typing, or it is
+      // unreachable from the one place people are usually typing.
+      //
+      // preventDefault is CONDITIONAL, and that is the whole point of the
+      // boolean. Taking Ctrl+F away from the browser is a real hijack -- it is
+      // the one shortcut every user already knows -- so it is only taken when
+      // there is actually an in-app search to give them. With no voiceovers
+      // there is no search box, the handler says so, and the browser's find
+      // opens as it always did.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        if (h.onFindInApp?.()) e.preventDefault()
         return
       }
 

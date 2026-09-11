@@ -19,10 +19,14 @@ import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
 import VoiceoverPlayer from './VoiceoverPlayer'
 import { DownloadIcon, TrashIcon, WandIcon } from './Icons'
+import { MOD_ARIA, MOD_KEY } from '../keys'
 
 interface Props {
   history: HistoryEntry[]
   total: number
+  /** Focused (and selected) by the Ctrl/Cmd+F shortcut, which is bound in
+   *  StudioShell -- the same arrangement as the script box and "/". */
+  searchRef?: RefObject<HTMLInputElement | null>
   /** The APPLIED search. The draft being typed lives here; this is what the
    *  caller has already fetched against. */
   query: string
@@ -472,6 +476,7 @@ function VoiceoverRow({
 export default function HistoryList({
   history,
   total,
+  searchRef,
   query,
   onQueryChange,
   hasMore,
@@ -750,8 +755,11 @@ export default function HistoryList({
           error banner behind the column. */}
       {(total > 0 || query !== '' || history.length > 0) && (
         <input
+          ref={searchRef}
           type="search"
-          className="mb-2 h-8 w-full rounded-sm border border-control bg-surface-raised px-2.5 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+          aria-keyshortcuts={`${MOD_ARIA}+F`}
+          title={`Search voiceovers (${MOD_KEY}+F)`}
+          className="mb-2 h-9 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
           placeholder="Search scripts and voices…"
           aria-label="Search voiceovers by script text or voice name"
           value={draft}
