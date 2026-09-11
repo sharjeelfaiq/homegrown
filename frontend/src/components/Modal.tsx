@@ -134,7 +134,17 @@ export default function Modal({ open, title, onClose, children }: Props) {
                 ✕
               </button>
             </header>
-            <div className="flex flex-col gap-[22px] overflow-y-auto p-[18px]">{children}</div>
+            {/* `modal-body` is a JS hook, not a style hook -- it has no CSS
+                rule and check_orphan_css.py will list it under "missing
+                rule", which is informational and does not fail. The focus
+                effect above queries for it by name. It was absent for a long
+                time, which meant the querySelector always missed and focus
+                fell through to the panel's first focusable -- the header's
+                close button, i.e. exactly what the comment up there says it
+                is avoiding. Do not remove it to quieten the guard. */}
+            <div className="modal-body flex flex-col gap-[22px] overflow-y-auto p-[18px]">
+              {children}
+            </div>
           </motion.div>
         </motion.div>
       )}
