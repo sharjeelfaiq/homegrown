@@ -75,7 +75,7 @@ TARGETS = [
 TARGETS += sorted((ROOT / "frontend" / "src").rglob("*.tsx"))
 TARGETS += sorted((ROOT / "frontend" / "src").rglob("*.ts"))
 
-# Checked against the DEFAULT theme only, not the full five-theme palette.
+# Checked against the DEFAULT theme only, not the full nine-theme palette.
 # None of these can ever render as anything but Studio: the launcher paints
 # before a browser (and so any stored preference) exists, and the landing page
 # is a separate deployment that is not the studio at all.

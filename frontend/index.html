@@ -77,6 +77,10 @@
       html[data-theme='tape'] { background: #f6efe2 }
       html[data-theme='greenroom'] { background: #0e1512 }
       html[data-theme='booth'] { background: #08090b }
+      html[data-theme='marquee'] { background: #120e1c }
+      html[data-theme='vinyl'] { background: #14100c }
+      html[data-theme='tide'] { background: #0b1220 }
+      html[data-theme='score'] { background: #ffffff }
     </style>
     <script>
       ;(function () {
@@ -85,8 +89,8 @@
         // wave through '__proto__' and 'constructor' as valid theme names.
         // Harmless here -- they match no palette and render as Studio -- but
         // it is the kind of validation that is wrong everywhere else too.
-        var DARK = ['studio', 'greenroom', 'booth']
-        var LIGHT = ['daylight', 'tape']
+        var DARK = ['studio', 'greenroom', 'booth', 'marquee', 'vinyl', 'tide']
+        var LIGHT = ['daylight', 'tape', 'score']
         var choice = null
         // Reading localStorage THROWS outright in some private-browsing and
         // locked-down-LAN configurations -- not on write, on read. An

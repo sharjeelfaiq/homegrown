@@ -222,7 +222,7 @@
   /* These used to restate their base colour in decimal -- --accent-2-soft was
      rgba(77, 212, 232, 0.14), i.e. #4dd4e8 written twice, so every retheme had
      to touch both. color-mix with transparent premultiplies, so the output is
-     identical to the old literals. 7 tokens x 5 themes collapses to 7. */
+     identical to the old literals. 7 tokens x 9 themes collapses to 7. */
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
   --accent-line: color-mix(in srgb, var(--accent) 40%, transparent);
   --accent-2-soft: color-mix(in srgb, var(--accent-2) 14%, transparent);
@@ -515,6 +515,154 @@
    to 49. The six-row window is computed from this token, so without the
    override the dialog would reserve 24px too little on a tablet and the sixth
    row would sit half-hidden behind the scroll edge. */
+/* ---- Marquee: theatre lights. Violet room, magenta live, cyan audio. ---- */
+:root[data-theme='marquee'] {
+  color-scheme: dark;
+
+  --bg-deepest: #0c0915;
+  --bg-base: #120e1c;
+  --bg-nav: #181228;
+  --bg-card: #1b1530;
+  --bg-hero: #1b1530;
+  --bg-raised: #241d3f;
+  --bg-hover: #2f2752;
+
+  --line-ink: #ffffff;
+
+  --text-primary: #f3eefc;
+  --text-muted: #b7abd6;
+  --text-faint: #9d90c2;
+
+  /* The only theme whose "in progress" is not amber. Magenta reads as live
+     rather than as caution, which is the point of this palette -- but it has
+     to stay clear of --danger, so the red here is pushed warm and light. */
+  --accent: #ff6fb8;
+  --accent-dim: #c74d8d;
+
+  --accent-2: #63dcff;
+  --accent-2-bright: #9beaff;
+
+  --queued: #b79cff;
+  --danger: #ff7a7a;
+  --danger-text: #ffc9c9;
+  --green: #5fd6a4;
+
+  --scrim-ink: #07050d;
+}
+
+/* ---- Vinyl: the first WARM dark. Record-shop black, gold, copper. ------- */
+:root[data-theme='vinyl'] {
+  color-scheme: dark;
+
+  --bg-deepest: #0d0a07;
+  --bg-base: #14100c;
+  --bg-nav: #1a1511;
+  --bg-card: #1e1813;
+  --bg-hero: #1e1813;
+  --bg-raised: #292019;
+  --bg-hover: #362b21;
+
+  --line-ink: #ffffff;
+
+  --text-primary: #f5ede1;
+  --text-muted: #c0ae98;
+  --text-faint: #a8977f;
+
+  --accent: #e6ac52;
+  --accent-dim: #b8873f;
+
+  /* Copper, and deliberately close to the gold: this palette is monochrome by
+     design, so the two accents separate by weight rather than by hue. */
+  --accent-2: #e09a6e;
+  --accent-2-bright: #f0b98f;
+
+  --queued: #c9a8dd;
+  --danger: #f07a72;
+  --danger-text: #f9cdc8;
+  --green: #79c98a;
+
+  --scrim-ink: #080604;
+}
+
+/* ---- Tide: midnight navy and teal. The low-fatigue dark. ---------------- */
+:root[data-theme='tide'] {
+  color-scheme: dark;
+
+  --bg-deepest: #070c16;
+  --bg-base: #0b1220;
+  --bg-nav: #0f1728;
+  --bg-card: #121b2e;
+  --bg-hero: #121b2e;
+  --bg-raised: #1a2740;
+  --bg-hover: #243352;
+
+  --line-ink: #ffffff;
+
+  --text-primary: #e9eff9;
+  --text-muted: #a6b6ce;
+  --text-faint: #8fa2bd;
+
+  --accent: #f0b429;
+  --accent-dim: #c08e1f;
+
+  --accent-2: #4fd1c5;
+  --accent-2-bright: #86e6dd;
+
+  --queued: #9db4ff;
+  --danger: #f2777a;
+  --danger-text: #f9c7c9;
+  --green: #5ecf95;
+
+  --scrim-ink: #04070e;
+}
+
+/* ---- Score: sheet music. The high-contrast light. ----------------------- */
+:root[data-theme='score'] {
+  color-scheme: light;
+
+  /* "deepest" is the DARKEST of the lights -- it is also --btn-invert-fg and
+     has to stay readable on a near-black button fill. */
+  --bg-deepest: #e8e8ea;
+  --bg-base: #ffffff;
+  --bg-nav: #ffffff;
+  --bg-card: #fafafa;
+  --bg-hero: #fafafa;
+  --bg-raised: #f1f1f3;
+  --bg-hover: #e6e6e9;
+
+  /* Ink, not light, and at raised percentages -- 10% black on white is not
+     the same separator as 10% white on charcoal. Higher than Daylight's,
+     because this palette is meant to be the crisp one. */
+  --line-ink: #111114;
+  --line: color-mix(in srgb, var(--line-ink) 14%, transparent);
+  --line-strong: color-mix(in srgb, var(--line-ink) 24%, transparent);
+  --line-focus: color-mix(in srgb, var(--line-ink) 38%, transparent);
+
+  --text-primary: #111114;
+  --text-muted: #4a4a55;
+  --text-faint: #5e5e6b;
+
+  --accent: #a63505;
+  --accent-dim: #7d2804;
+
+  /* On a light theme "played" is DEEPER, not brighter. */
+  --accent-2: #015f8a;
+  --accent-2-bright: #01486a;
+
+  --queued: #5b21b6;
+  --danger: #b3261e;
+  --danger-text: #7f1a15;
+  --green: #136c3a;
+
+  /* A light theme MUST restate the scrims. Inherited, they are Studio's
+     dark-derived values and every overlay comes out wrong -- and only on this
+     theme, which is how that goes unnoticed. */
+  --scrim-ink: #1b1b20;
+  --scrim-boot: color-mix(in srgb, var(--scrim-ink) 40%, transparent);
+  --scrim-modal: color-mix(in srgb, var(--scrim-ink) 46%, transparent);
+  --scrim-drop: color-mix(in srgb, var(--scrim-ink) 58%, transparent);
+}
+
 @media (pointer: coarse) {
   :root {
     --voice-row-h: 49px;

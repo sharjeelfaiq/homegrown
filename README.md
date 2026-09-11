@@ -310,6 +310,8 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
   the dialog and on each row of the voice dropdown.
 - **Download** — the ⭳ on a dialog row saves the reference clip, named after the voice and in whatever
   format it was uploaded in (no re-encoding). Renaming the voice changes the downloaded filename.
+- **A voice that is mid-generation is marked `busy`**, and its delete confirmation warns that queued
+  voiceovers will fail. The delete is still allowed — wanting a voice gone is a good enough reason.
 - **Delete** — in the dialog only, and two-step (the row flips to Delete/Keep). Removes the voice and its
   reference audio permanently. Deleting the selected voice clears the selection. The dropdown deliberately
   has no delete: it is a menu you open to pick a voice, not to destroy one.
@@ -317,8 +319,13 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
 ### Script
 
 One script box, up to 60,000 characters, fixed height — drag the corner grip to resize it. A word count sits
-in the bottom-right corner *inside* the box rather than in a row of its own. Below it sits one action row:
-**✚**, the voice dropdown, and **Generate** at the right.
+in the bottom-right corner *inside* the box rather than in a row of its own. The **voice dropdown**
+and **✚** sit *above* the box, at the right; **Generate** sits alone below it.
+
+**Your script survives a reload.** It is kept in `localStorage` as you type, so closing the tab or
+refreshing does not lose it — which is also why there is no "are you sure you want to leave" prompt.
+The re-queue wand, which replaces the box with an old script, offers an **Undo** when it overwrites
+something you had written.
 
 Keyboard shortcuts: **Ctrl/Cmd+Enter** generates, **/** focuses the script, **Ctrl/Cmd+F** focuses the
 voiceovers search, **Escape** dismisses an error. `/` and `Ctrl+F` are shown as key caps on the controls
@@ -350,8 +357,10 @@ instead, because they describe a *condition* rather than an event and would be w
 still true: the model-down banner (which carries **Retry**), the CPU-fallback notice, and the
 long-reference-clip warning.
 
-**Cancel** stops a running job after the current chunk, within about a second. There is no pause — a paused
-job would hold the GPU lock and stall the whole queue.
+**Cancel** stops a running job after the current chunk, within about a second. On a **running** job it
+asks first (`Stop it?` → Stop / Keep going), because a cancel throws away however much of the render
+is already done; a **queued** job cancels in one click, since no GPU time has been spent on it. There
+is no pause — a paused job would hold the GPU lock and stall the whole queue.
 
 A voiceover that **fails** stays visible rather than disappearing: the row turns red, reads `Failed`, and
 carries the backend's own error in place of the script preview, with the full text on hover. It sorts below
@@ -368,6 +377,17 @@ The voice dropdown stays usable throughout, so you can line up the next voice wh
 
 There is no queue list and no reorder control in the UI, though `POST /api/queue/reorder` exists and works
 — see the API table below.
+
+### Themes
+
+Nine, in the picker at the top right: six dark — **Studio** (charcoal and cyan), **Greenroom** (deep
+green and jade), **Booth** (near-black, on air), **Marquee** (violet, magenta and cyan), **Vinyl**
+(warm black and gold), **Tide** (midnight navy and teal) — and three light — **Daylight** (neutral),
+**Tape** (warm paper and rust), **Score** (paper white, high contrast). **System** follows your OS.
+
+The choice is stored in `localStorage` and applied before the first paint, so there is no flash of
+the wrong theme on load. Every palette is checked against WCAG AA by `scripts/check_contrast.py` at
+build time rather than by eye.
 
 ### Voiceovers
 
@@ -397,6 +417,19 @@ Each row is three lines:
    download, re-queue (wand — pulls that script and voice back into the script box), and delete. The clock
    occupies a fixed 14ch so nothing beside it shifts as it ticks.
 3. The first words of the script.
+
+**Click the script preview** to unfold the whole script inside the row — selectable, scrollable, with
+a **Copy script** button. One row opens at a time. This is the only way to read a script in full: the
+row shows 96 characters and re-queue would replace whatever is in the compose box.
+
+**Deleting a voiceover is undoable.** The row disappears at once and a toast offers **Undo** for
+seven seconds; the request is only sent when that expires. One consequence worth knowing: if you
+close the tab inside that window the delete never happens and the row comes back on reload.
+
+**Select rows** with the checkbox that appears on hover, **shift-click** for a range, or use the
+checkbox in the `VOICEOVERS` heading to take everything on screen — with a search running that means
+the matches, and rows you selected before searching stay selected. A floating bar then offers
+**Download** (all of them as one `.zip`) and **Delete** (one toast, one Undo, for the whole batch).
 
 A voiceover finishing while you are scrolled down does not move you; it is counted, and an **N new
 voiceovers — show** button appears above the list.
@@ -452,7 +485,8 @@ All routes are under `/api`, and every request is the same single local user.
 | POST | `/api/queue/{id}/retry` | Resubmit a failed job's own script → same shape as `/api/generate` |
 | DELETE | `/api/queue/{id}` | Dismiss a **canceled or failed** job. Finished ones are deleted through `/api/history` |
 | POST | `/api/queue/reorder` | Reorder queued jobs |
-| GET | `/api/history` | Completed voiceovers |
+| GET | `/api/history` | Completed voiceovers. No `q` — search is client-side, see below |
+| POST | `/api/history/zip` | Several voiceovers as one `.zip` (`{ids, names}`). `names` carries the display names, which the server has never seen |
 | DELETE | `/api/history/{id}` | Delete an entry and its audio |
 | GET | `/api/download/{filename}?name=` | Download with a chosen filename |
 

@@ -77,10 +77,13 @@ voice.
 One script box, up to 60,000 characters, fixed height — drag the corner grip to resize. A **word count**
 sits in the bottom-right corner inside the box, not in a row of its own.
 
-Underneath sits one action row: **✚**, the **voice dropdown**, and **Generate** at the right.
+The **voice picker** and **✚** sit above the box, at the right. **Generate** sits alone beneath it.
 
 Style and Stability still exist in the backend and default to `natural`/`balanced`, but nothing in the UI
 sends them.
+
+**The script is saved as you type** (`localStorage`), so a reload or a closed tab does not lose it.
+The re-queue wand offers an **Undo** when it replaces something you had written.
 
 Shortcuts: **Ctrl/Cmd+Enter** generates, **/** focuses the script, **Ctrl/Cmd+F** focuses the voiceovers
 search, **Escape** dismisses an error. `/` and `Ctrl+F` appear as key caps on the controls they drive;
@@ -108,8 +111,11 @@ Elapsed, never remaining: the backend's `eta_s` is a rolling chars/second averag
 directions as chunks land, so watching it told you nothing. The **Generate** button just says Generate,
 throughout — the Voiceovers column reports the work, so the button does not need to.
 
-**Cancel** stops a running job after the current chunk, within about a second. There is no pause: generation
-is serialised behind one GPU lock, so a paused job would stall everything queued behind it.
+**Cancel** stops a running job after the current chunk, within about a second. On a **running** job it
+asks first — the button becomes `Stop it?` with **Stop** and **Keep going** — because cancelling
+discards however much of the render is already done. A **queued** job cancels in one click; nothing
+has been spent on it yet. There is no pause: generation is serialised behind one GPU lock, so a
+paused job would stall everything queued behind it.
 
 **A voiceover that fails stays on the list.** It turns red, reads `Failed`, and shows the backend's own
 reason in place of the script preview — hover it for the full message. It sorts below anything still
@@ -186,6 +192,17 @@ Each row is three lines:
    it to time remaining (`-0:54`); the total on the right stays put, and the slot is a fixed width so
    nothing beside it shifts.
 3. The first words of the script.
+
+**Click the preview** to unfold the full script in the row, with a **Copy script** button. One row at
+a time. Worth knowing because the row only shows 96 characters and the re-queue wand would otherwise
+be the only way to see the rest — and that replaces whatever is in your script box.
+
+**Deleting is undoable.** The row goes immediately and a toast offers **Undo** for seven seconds; the
+delete is only sent when it expires. Close the tab inside that window and the row returns on reload.
+
+**Select several** — the checkbox appears on hover, shift-click takes a range, and the checkbox in the
+heading takes everything currently on screen. A floating bar offers **Download** (one `.zip`) and
+**Delete** (one Undo for the batch).
 
 A voiceover finishing while you are scrolled down the list does not move you. It is counted instead, and an
 **N new voiceovers — show** button appears above the list.

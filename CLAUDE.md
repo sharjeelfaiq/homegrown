@@ -271,7 +271,7 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   toasts for work already finished. Ids are never removed -- a job id is a uuid the backend never
   reuses and a retry mints a new one, so a retried failure is correctly a separate event.
   Failures use `duration: Infinity`; the row they leave behind carries the Retry.
-  `theme` comes from `themeMode()` over our own five-theme id, not sonner's default light -- three
+  `theme` comes from `themeMode()` over our own nine-theme id, not sonner's default light -- three
   of the five are dark. Surfaces are passed as CSS variables, not a className, because sonner sets
   them on its own elements and a class would have to win a specificity fight on every future
   version. **`richColors` is off**: it ships its own green and red, which would be the only two
@@ -396,7 +396,7 @@ it:
   at 1100, 6.64 at 900, 5.14 at 768, 4.36 at 700, and no overflow anywhere. Note the shell root
   itself carries no `min-h-0` and no `.studio` class — it is the flex *container*, not an item.
 
-### Styling: Tailwind v4, five themes, no App.css
+### Styling: Tailwind v4, nine themes, no App.css
 
 `App.css` is gone. The SPA is Tailwind utilities plus two stylesheets:
 
@@ -409,6 +409,26 @@ it:
   silently inherits Studio's dark value**, which only shows up on one theme.
 - **`frontend/src/index.css`** — the Tailwind entry, the `@theme inline` bridge, keyframes, the `@utility`
   primitives, and the base element reset that came out of App.css.
+
+**Nine themes, and the blocks are NOT uniform — copying the wrong one silently breaks a theme.**
+A dark theme states the 20 layer-1 values (`greenroom` is the reference). `booth` adds `--line`,
+`--line-strong` and `--line-focus` because near-black needs stronger hairlines than the derived
+10%/40% give. **Every LIGHT theme must also restate `--scrim-boot`, `--scrim-modal` and
+`--scrim-drop`** — `daylight`, `tape` and `score` all state 26 — because inherited they are Studio's
+dark-derived values and every overlay comes out wrong, on that one theme only, which is how it would
+go unnoticed. Adding a theme touches four places: the block here, `ThemeId` **and** `THEMES` in
+`theme.ts`, and two hand-mirrors in `index.html` (the `DARK`/`LIGHT` array and an inlined
+`html[data-theme] { background }` that must equal that theme's `--bg-base` exactly —
+`check_design_tokens.py` scans that file for precisely this drift).
+`check_contrast.py` is the gate that matters: every palette is computed, never eyeballed. The four
+added in this round passed unmodified, tuned against the same WCAG maths before being written.
+**Marquee is the one theme whose `--accent` is not amber** — magenta reads as *live* rather than as
+caution, which is the palette's whole point, so its `--danger` is pushed warm and light to stay
+distinguishable.
+
+**The theme menu is capped and scrolls.** `max-h-[min(60svh,332px)]` with `overflow-y: auto` and
+`scrollbar-gutter: stable`, the same shape as `result-list` and `voice-list`. It was uncapped when
+there were five themes; at nine the content is 570px, which ran off the bottom of a 605px viewport.
 
 **`@theme inline` is load-bearing.** A plain `@theme` copies the token's *value* into each utility at build
 time, freezing the palette on Studio. `inline` emits `var(--bg-card)` instead, which is the only reason
@@ -514,7 +534,7 @@ copy is still crawled and indexed as ordinary body text; hidden-behind-a-disclos
 demoted for ordinary ranking. It is only rich-result eligibility that is forfeited.
 
 **Five build gates, all in `build.sh`.** `check_design_tokens.py` (hex outside the palette; two palettes —
-the full five-theme set for the SPA, Studio-only for `launcher.py` and the landing page, which can never be
+the full nine-theme set for the SPA, Studio-only for `launcher.py` and the landing page, which can never be
 another theme), `check_contrast.py` (WCAG AA for every theme, computed not eyeballed), `check_orphan_css.py`
 (CSS classes no component uses — written after a ported component left `.compose-bar .generate` matching
 nothing and silently un-anchored the Generate button), `check_desktop_port.py`, and

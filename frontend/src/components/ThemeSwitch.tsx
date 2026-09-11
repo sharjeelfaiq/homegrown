@@ -16,7 +16,7 @@ interface MenuPos {
 }
 
 /** Theme picker, in the header. A menu rather than a two-state toggle because
- * there are five themes plus System, and a toggle has nowhere to put them.
+ * there are nine themes plus System, and a toggle has nowhere to put them.
  *
  * Modelled on VoicePicker: same pointerdown-to-close, same Escape handling,
  * same arrow-key walk. Two things differ deliberately -- the roles are
@@ -58,6 +58,15 @@ export default function ThemeSwitch() {
       right: Math.round(document.documentElement.clientWidth - r.right),
     })
   }, [open])
+
+  // 332px is about seven rows, so the list scrolls rather than running off a
+  // short screen once the theme count passed five. min() with 60svh because a
+  // fixed cap is still too tall on a laptop in landscape. Same shape as
+  // @utility result-list and voice-list, scrollbar-gutter included, so the
+  // rows do not shift sideways when the scrollbar appears.
+  //
+  // The arrow-key walk below needs nothing extra: .focus() scrolls the focused
+  // element into view in every browser that supports this menu.
 
   // Move focus into the menu once it is positioned, onto the checked row.
   useEffect(() => {
@@ -142,7 +151,7 @@ export default function ThemeSwitch() {
 
       {open && (
         <ul
-          className="fixed z-150 m-0 min-w-[208px] list-none rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu)"
+          className="fixed z-150 m-0 max-h-[min(60svh,332px)] min-w-[208px] list-none overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) [scrollbar-gutter:stable]"
           ref={menuRef}
           role="menu"
           aria-label="Theme"

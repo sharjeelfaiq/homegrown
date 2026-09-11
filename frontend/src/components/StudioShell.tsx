@@ -563,6 +563,30 @@ export default function StudioShell() {
 
 
 
+          {/* Above the script box, right-aligned, rather than beside Generate.
+              Not folded into the Script heading: that line already carries the
+              label, its ::after hairline and the "/" key cap at order-3, and a
+              32px dropdown would regrow a ~17px heading -- the mistake the bulk
+              bar made. */}
+          <div className="-mb-3 flex min-w-0 items-center justify-end gap-2">
+            <VoicePicker
+              presets={presets}
+              selectedPresetId={voiceId}
+              onSelect={setVoiceId}
+              loading={modelStatus === 'checking'}
+            />
+
+            <button
+              type="button"
+              className="icon-btn size-8 flex-none border border-control bg-control-fill text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
+              aria-label="Add a voice"
+              title="Add a voice"
+              onClick={() => setVoicesOpen(true)}
+            >
+              <PlusIcon size={15} />
+            </button>
+          </div>
+
           <ScriptBlock
             text={script}
             onTextChange={setScript}
@@ -593,29 +617,6 @@ export default function StudioShell() {
               onClick={handleGenerate}
             />
 
-            {/* The voice controls are the row's right-hand anchor now, so
-                ml-auto lives here rather than on Generate. Grouped in one
-                wrapper so the dropdown and the [+] beside it move together --
-                they are one control with an affordance attached, not two
-                things that happen to be adjacent. */}
-            <div className="ml-auto flex min-w-0 items-center gap-2">
-              <VoicePicker
-                presets={presets}
-                selectedPresetId={voiceId}
-                onSelect={setVoiceId}
-                loading={modelStatus === 'checking'}
-              />
-
-              <button
-                type="button"
-                className="icon-btn size-8 flex-none border border-control bg-control-fill text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
-                aria-label="Add a voice"
-                title="Add a voice"
-                onClick={() => setVoicesOpen(true)}
-              >
-                <PlusIcon size={15} />
-              </button>
-            </div>
           </section>
 
         </div>
@@ -697,7 +698,7 @@ export default function StudioShell() {
           failure, so the error row below is never trapped behind it. */}
       {modelStatus === 'checking' && <BootOverlay boot={boot} elapsed={wakeMessage} />}
 
-      {/* Toasts. `theme` is derived from OUR five-theme id, not left on
+      {/* Toasts. `theme` is derived from OUR nine-theme id, not left on
           sonner's default "light": three of the five are dark, and a light
           toast stack over Booth is the brightest thing on the screen.
           themeMode() is the same mapping the pre-paint script in index.html

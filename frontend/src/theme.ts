@@ -14,7 +14,16 @@
  * style invalidation and no second paint.
  */
 
-export type ThemeId = 'studio' | 'daylight' | 'tape' | 'greenroom' | 'booth'
+export type ThemeId =
+  | 'studio'
+  | 'daylight'
+  | 'tape'
+  | 'greenroom'
+  | 'booth'
+  | 'marquee'
+  | 'vinyl'
+  | 'tide'
+  | 'score'
 
 /** What the user picked. 'system' is a real choice, not a theme. */
 export type ThemeChoice = ThemeId | 'system'
@@ -33,6 +42,10 @@ export const THEMES: readonly ThemeMeta[] = [
   { id: 'tape', label: 'Tape', mode: 'light', hint: 'Warm paper and rust' },
   { id: 'greenroom', label: 'Greenroom', mode: 'dark', hint: 'Deep green and jade' },
   { id: 'booth', label: 'Booth', mode: 'dark', hint: 'Near-black, on air' },
+  { id: 'marquee', label: 'Marquee', mode: 'dark', hint: 'Violet, magenta and cyan' },
+  { id: 'vinyl', label: 'Vinyl', mode: 'dark', hint: 'Warm black and gold' },
+  { id: 'tide', label: 'Tide', mode: 'dark', hint: 'Midnight navy and teal' },
+  { id: 'score', label: 'Score', mode: 'light', hint: 'Paper white, high contrast' },
 ] as const
 
 export const DEFAULT_THEME: ThemeId = 'studio'
