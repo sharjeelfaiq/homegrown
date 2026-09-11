@@ -1120,7 +1120,7 @@ export default function HistoryList({
             type="search"
             aria-keyshortcuts={`${MOD_ARIA}+F`}
             title={`Search voiceovers (${MOD_KEY}+F)`}
-            className="peer h-10 w-full rounded-sm border border-control bg-surface-raised pr-16 pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+            className="peer h-10 w-full rounded-sm border border-control bg-surface-raised pr-16 pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line coarse:pr-3"
             placeholder="Search by name or voice…"
             aria-label="Search voiceovers by name or voice"
             value={draft}
@@ -1146,7 +1146,7 @@ export default function HistoryList({
               which is the same mistake the word count and the "/" cap each
               had to be fixed for. */}
           {draft === '' && (
-            <Kbd className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 transition-opacity duration-(--fast) ease-(--ease) peer-focus:opacity-0">
+            <Kbd className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 transition-opacity duration-(--fast) ease-(--ease) peer-focus:opacity-0 coarse:hidden">
               {`${MOD_KEY}+F`}
             </Kbd>
           )}

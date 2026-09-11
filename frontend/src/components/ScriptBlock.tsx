@@ -22,10 +22,11 @@ export default function ScriptBlock({
 }: Props) {
   const overLimit = text.length > MAX_SCRIPT_CHARS
 
-  // The estimate is fetched but no longer displayed here. It is not dead code:
-  // onEstimate feeds StudioShell, which renders the result's `warning` as the
-  // long-reference-clip notice and uses `estimated_s` nowhere else. Deleting
-  // this request would silently remove that warning.
+  // The estimate is not displayed HERE, but it is displayed. onEstimate feeds
+  // StudioShell, which renders `warning` as the long-reference-clip notice and
+  // `estimated_s`/`chunks` beside Generate. (For a long time only `warning`
+  // was used and the rest was discarded, which is why this comment used to say
+  // so.) Deleting this request removes both.
   useEffect(() => {
     if (text.trim().length === 0 || overLimit) {
       onEstimate?.(null)

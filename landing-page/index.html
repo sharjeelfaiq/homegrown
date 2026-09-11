@@ -345,9 +345,19 @@
         </svg>
         Download for Windows
       </a>
+      <!--
+        The sizes belong HERE, beside the button, not inside the details sheet.
+        Someone who was sent this link has already decided; what they need is to
+        know what they are committing to before a 1.66 GB download starts, and
+        that the first run pulls the model separately. Hidden behind a
+        disclosure, those numbers arrive as a surprise instead.
+      -->
       <div class="font-mono text-[0.7rem]/[1.5] text-faint">
-        <b class="font-medium text-muted">No admin rights</b> needed<br />
-        Windows 10 / 11 · 64-bit
+        <b class="font-medium text-muted">No admin rights</b> needed ·
+        Windows 10 / 11 · 64-bit<br />
+        <b class="font-medium text-muted">1.66 GB</b> download ·
+        <b class="font-medium text-muted">2.5 GB</b> model on first run ·
+        <b class="font-medium text-muted">8 GB</b> free needed
       </div>
     </div>
 
@@ -357,16 +367,23 @@
     </p>
 
     <p class="rise-490 mt-[clamp(0.6rem,1.6vh,1rem)] mb-0 max-w-[56ch] text-[0.8rem]/[1.5] text-faint">
-      Windows warns that the app is unsigned — click <b class="font-medium text-muted">More info</b>,
+      The link opens Google Drive, which cannot virus-scan a file this large and says so — the
+      download button there is the real one.
+      Then Windows warns that the app is unsigned — click <b class="font-medium text-muted">More info</b>,
       then <b class="font-medium text-muted">Run anyway</b>. Only clone voices you have permission to use.
     </p>
   </section>
 
   <!--
-    A <details>, not the old checkbox + <label for>. The label was focusable
-    but not activatable: Enter and Space do nothing on a label, so the sheet
-    was reachable by keyboard and impossible to open with one. <details> fixes
-    that, adds Escape-to-close, and announces its own state -- with no script.
+    A <dialog> driven by showModal(), and it has been three things.
+
+    First a checkbox toggled by a <label for>, which a keyboard could focus but
+    not activate -- Enter and Space do nothing on a label -- so the sheet was
+    reachable and impossible to open. Then a <details>, which fixed the trigger
+    but is IN FLOW: opening it grew the page, and this page is specified never
+    to scroll (scripts/measure_landing.sh asserts exactly that). <dialog> is
+    out of flow and brings the focus trap, Escape, background inertness and
+    ::backdrop for three lines of script.
 
     id="more", .sheet and .sheet-panel are kept as hooks because
     scripts/measure_landing.sh drives them directly.

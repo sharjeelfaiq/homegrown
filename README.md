@@ -351,6 +351,11 @@ Elapsed rather than remaining, deliberately: `eta_s` is a rolling chars/second a
 directions as chunks land. The **Generate** button stays a button and keeps its label throughout: progress
 belongs in the Voiceovers column, not on the control you press.
 
+**Before you press Generate** the row beneath the script box shows roughly how long the render will
+take and how many chunks it will be split into. It is rounded hard ("about 25 min") on purpose: the
+backend's estimate uses one global characters-per-second average across all voices, while chunk size
+is a property of the voice, so it drifts after switching to a very different reference clip.
+
 **A toast reports each job as it ends** — "Voiceover ready" with the voice name, or a failure toast that
 does not auto-dismiss. Transient errors elsewhere in the app are toasts too. Three notices stay inline
 instead, because they describe a *condition* rather than an event and would be wrong to fade out while

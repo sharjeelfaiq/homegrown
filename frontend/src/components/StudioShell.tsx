@@ -6,7 +6,7 @@ import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
 import GenerateButton from './GenerateButton'
 import { MAX_SCRIPT_CHARS } from '../constants'
-import { presetNameFromFile } from '../format'
+import { approxDuration, presetNameFromFile } from '../format'
 import { PlusIcon } from './Icons'
 import { Toaster, toast } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
@@ -607,6 +607,19 @@ export default function StudioShell() {
               GenerateButton stays a button throughout -- progress now lives in
               the Voiceovers column, as the first row, where the finished
               voiceover will land. */}
+          {/* The estimate was fetched on every keystroke and thrown away --
+              only `warning` was ever rendered. At roughly four minutes of work
+              per minute of speech, a long script was a long commitment made
+              blind, and the answer was already sitting on the client.
+
+              Beside Generate rather than under the script box: it qualifies
+              the button, and it is the last thing read before pressing it.
+
+              Rounded by approxDuration, deliberately. The backend divides by a
+              GLOBAL chars/second average that takes no preset, so it is
+              systematically off just after switching to a voice unlike the
+              recent ones. Keying that average per preset is the real fix and a
+              separate change. */}
           <section className="compose-bar flex flex-wrap items-center gap-2">
             <GenerateButton
               disabled={!canGenerate}
@@ -616,6 +629,15 @@ export default function StudioShell() {
               count={scriptReady ? 1 : 0}
               onClick={handleGenerate}
             />
+
+            {estimate != null && estimate.estimated_s > 0 && scriptReady && (
+              <p className="mono m-0 text-[11px] whitespace-nowrap text-faint">
+                {approxDuration(estimate.estimated_s)}
+                {estimate.chunks != null && estimate.chunks > 1
+                  ? ` · ${estimate.chunks} chunks`
+                  : ''}
+              </p>
+            )}
 
           </section>
 

@@ -148,6 +148,10 @@ The voice dropdown stays usable while a job runs, so you can line up the next on
 There is no queue list and no reorder control in the UI, although `POST /api/queue/reorder` exists and
 works. If the backend becomes unreachable, an error row with a **Retry** button appears above the script.
 
+**Generate shows an estimate first** — roughly how long, and how many chunks. Rounded deliberately:
+the underlying figure is one global chars/second average across every voice, and chunk size depends
+on the voice, so it drifts right after you switch to a very different reference clip.
+
 **Each finished or failed job raises a toast** — "Voiceover ready" with the voice name, or a failure toast
 that stays until dismissed. Transient errors elsewhere are toasts too. Three notices stay inline because
 they describe a condition rather than an event: the model-down row above (which carries Retry), the

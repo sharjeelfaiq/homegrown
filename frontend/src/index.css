@@ -443,6 +443,13 @@ body {
    (a 768px laptop, say) the block has to shrink BELOW eight rows rather than
    push the layout past the fold, and there the max-height never applies at
    all. Raising the multiplier alone does nothing there. */
+/* Touch devices. Used to hide things that describe a physical keyboard --
+   a "Ctrl+F" key cap on a phone advertises a key that is not there, and at
+   phone widths it was eating 12-14% of the search field to do it.
+   `pointer: coarse` rather than a width query on purpose: a narrow window on a
+   desktop still has a Ctrl key, and a large tablet still does not. */
+@custom-variant coarse (@media (pointer: coarse));
+
 @utility result-list {
   flex: 1 1 auto;
   min-height: 0;

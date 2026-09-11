@@ -253,6 +253,23 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   delete confirmation says queued voiceovers will fail. The delete is still allowed: wanting a voice
   gone is a legitimate reason to accept that.
 
+- **The render estimate is shown rounded, and the rounding is not cosmetic.** `_estimate_seconds`
+  (`backend/main.py`) divides by `_avg_chars_per_second()`, a **global** rolling average over the last
+  20 jobs that takes no preset -- but chunk size comes from `_seq_budget(preset)`, so a voice with a
+  long reference clip chunks smaller, makes more chunks and runs slower per character. The estimate is
+  therefore systematically wrong just after switching to a voice unlike the recent ones. `formatDuration`
+  stays for ELAPSED time, which is measured; `approxDuration` exists for this, which is predicted, and
+  reports "about 25 min" rather than "24m 51s" because the underlying number cannot support the second
+  form. **The real fix is keying the timing window per preset**, which is a backend change and was
+  deliberately not made here. `/api/estimate` was already being fetched on a 400ms debounce and its
+  answer discarded; this displays it, and adds no request.
+
+- **`@custom-variant coarse` is the app's only custom variant.** `pointer: coarse`, used to drop the
+  `Ctrl+F` key cap on touch, where it advertised a key that is not on the keyboard and ate 12-14% of
+  the search field at phone widths. A width query would be wrong: a narrow desktop window still has a
+  Ctrl key and a large tablet still does not. Verified emitted **only** inside the media query --
+  one occurrence each of `.coarse\:hidden` and `.coarse\:pr-3`, zero unconditional.
+
 - **`modal-body` is a JS hook with no CSS rule, and deleting it silently breaks focus.**
   `Modal.tsx`'s open effect queries `.modal-body` to land focus on the dialog body's first
   control. The class was absent for a long time, so the query always missed and focus fell
@@ -678,7 +695,8 @@ below for why one wrong click there is unrecoverable.
   written relative to the repo root.
 - **Two things the UI does not do, despite appearances.** `startGenerate()` sends only
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
-  `natural`/`balanced`). Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
+  `natural`/`balanced`). **The estimate is no longer among them** -- `estimated_s` and `chunks` now
+  render beside Generate, rounded by `approxDuration`. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
   this machine, so wiring Stability up would buy nothing — see `docs/gpu-notes.md`. Style is untested. And `is_builtin` is dead weight: the backend hardcodes it `False`
   (`main.py`), no "Studio Voices" gallery section exists in the frontend any more, and
   `NewVoiceModal` no longer filters on it -- the field survives only in `Preset` on both sides.
