@@ -356,7 +356,6 @@ function VoiceoverRow({
   downloadHref,
   onRequeue,
   onDelete,
-  isSpaceTarget = false,
 }: {
   entry: HistoryEntry
   nameControl: NameControl
@@ -364,8 +363,6 @@ function VoiceoverRow({
   downloadHref: string
   onRequeue: () => void
   onDelete: () => void
-  /** Only the row the Space shortcut reaches. See the call site. */
-  isSpaceTarget?: boolean
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const created = timeAgo(entry.created_at)
@@ -389,7 +386,6 @@ function VoiceoverRow({
           entryKey={entry.id}
           label={`${name} voiceover`}
           audioRef={audioRef}
-          isSpaceTarget={isSpaceTarget}
         />
 
         <TransportTime audioRef={audioRef} fallbackDurationS={entry.duration_s} />
@@ -748,7 +744,7 @@ export default function HistoryList({
           type="search", not "text": it gets the native clear affordance and
           the right on-screen keyboard, and Escape clears it for free. The
           onKeyDown stops propagation for the same reason InlineName does --
-          the app binds "/" and Space globally (useHotkeys), so without it
+          the app binds "/" globally (useHotkeys), so without it
           typing a search would fire shortcuts. isTyping() already covers
           INPUT, but Escape is NOT gated by it and would clear the composer's
           error banner behind the column. */}
@@ -847,12 +843,6 @@ export default function HistoryList({
                   )}
                   onRequeue={() => onRequeue(entry)}
                   onDelete={() => handleDelete(entry.id)}
-                  // The FIRST history row, because that is literally what the
-                  // Space handler reaches: it clicks the first
-                  // .voiceover-play-btn inside the results column
-                  // (StudioShell), and the in-progress rows above carry no
-                  // play button -- there is nothing to play yet.
-                  isSpaceTarget={i === 0}
                 />
               )
             })}

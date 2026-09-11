@@ -225,11 +225,19 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   never be the display string. The `<kbd>` is `aria-hidden` -- the attribute is what gets
   announced. The Apple check resolves once at module scope; the composer re-renders on every
   keystroke. Placement is deliberately not uniform: Generate is **tooltip-only** (its label
-  substitutes `blockedReason` and reads as a sentence), `/` sits on the Script heading at
+  substitutes `blockedReason` and reads as a sentence), and `/` sits on the Script heading at
   `order-3` past the `section-rule` hairline (inside the box it overlapped line one -- measured,
   cap 11-29px against a 15-40.5px first line, and the bottom corners belong to the word count, the
-  resize grip and the scrollbar), and `Space` caps **only the first history row**, because that is
-  the row its handler reaches.
+  resize grip and the scrollbar).
+
+- **There were four shortcuts; there are three.** `Ctrl/Cmd+Enter`, `Escape` and `/`.
+  **Space is gone and should not come back without a reason.** It clicked the newest voiceover's
+  play button, which meant binding a bare Space on `window` and calling `preventDefault()` on it --
+  taking over page scrolling everywhere outside a text field, which is a large behaviour to
+  commandeer for one convenience when every row already has a play button. Removing it also
+  retired `.voiceover-play-btn`: that class had **no CSS rule at all** and existed purely as the
+  `querySelector` hook the handler used, along with the `resultsRef` on the `<aside>` that scoped
+  it. If a play shortcut is ever wanted again, all three come back together.
 
 `HistoryList`'s `active` filter carries `running | queued | canceling | error` — **`error` is in there
 deliberately**, so a job that dies after acceptance stays visible instead of vanishing, and its `Cancel`

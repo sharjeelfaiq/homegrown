@@ -120,7 +120,6 @@ export default function StudioShell() {
   // below for why waiting it out is not an option.
   const bootFailedRef = useRef(false)
   const scriptRef = useRef<HTMLTextAreaElement>(null)
-  const resultsRef = useRef<HTMLDivElement>(null)
 
   const refreshHistory = useCallback(() => setHistoryNonce((n) => n + 1), [])
 
@@ -435,14 +434,6 @@ export default function StudioShell() {
     },
     onFocusScript: () => scriptRef.current?.focus(),
     onCancel: () => setError(null),
-    // VoiceoverPlayer owns its own <audio>, so rather than lifting that state up to
-    // service one shortcut, Space clicks the newest voiceover's play button. The
-    // transport stays encapsulated where it belongs. In-progress rows sit above
-    // the finished ones but carry no .voiceover-play-btn -- there is nothing to
-    // play yet -- so this still finds the newest playable voiceover.
-    onPlayPause: () => {
-      resultsRef.current?.querySelector<HTMLButtonElement>('.voiceover-play-btn')?.click()
-    },
   })
 
   return (
@@ -596,7 +587,7 @@ export default function StudioShell() {
 
         </div>
 
-        <aside className="min-w-0 wide:h-full wide:min-h-0" ref={resultsRef}>
+        <aside className="min-w-0 wide:h-full wide:min-h-0">
           <HistoryList
             history={history}
             query={historyQuery}

@@ -209,8 +209,7 @@
 
   /* Coarse pointers get a bigger hit area without changing the visual
      weight: the target grows, the glyph does not. 28px squares are well
-     under the ~44px a finger actually needs. This also covers
-     .voiceover-play-btn, which always carries .icon-btn as well. */
+     under the ~44px a finger actually needs. */
   @media (pointer: coarse) {
     min-width: 40px;
     min-height: 40px;

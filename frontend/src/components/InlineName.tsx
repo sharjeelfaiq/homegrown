@@ -34,7 +34,7 @@ interface Props {
  *    suppress exactly one commit. A boolean ref rather than state: it is read
  *    and cleared inside the same event, and a re-render there would be both
  *    pointless and too late.
- *  - onKeyDown stops propagation. The app binds "/", Space and Ctrl+Enter
+ *  - onKeyDown stops propagation. The app binds "/" and Ctrl+Enter
  *    globally (useHotkeys), so without this, typing a name starts submitting
  *    scripts and toggling playback.
  *  - The draft is not overwritten while the field has focus. A name can
