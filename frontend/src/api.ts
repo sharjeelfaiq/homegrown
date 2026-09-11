@@ -12,10 +12,6 @@ export interface HealthResponse {
   gpu_fault?: string | null
 }
 
-export interface LanguagesResponse {
-  languages: string[]
-}
-
 export interface Preset {
   id: string
   name: string
@@ -139,10 +135,6 @@ async function authFetch(url: string, opts: RequestInit = {}): Promise<Response>
 
 export function getHealth(): Promise<HealthResponse> {
   return fetch(apiUrl('/api/health')).then(parseOrThrow<HealthResponse>)
-}
-
-export function getLanguages(): Promise<LanguagesResponse> {
-  return fetch(apiUrl('/api/languages')).then(parseOrThrow<LanguagesResponse>)
 }
 
 export function listPresets(): Promise<{ presets: Preset[] }> {

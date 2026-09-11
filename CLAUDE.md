@@ -316,6 +316,25 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   way (`boot-spin` and `sheen` already were). The element stays when reduced; only the motion goes,
   so the voice is still marked busy.
 
+- **`VoiceoverPlayer` must pause and release its audio on unmount, and nothing else will do it.**
+  `releaseAudio` is wired only to the element's `onPause`/`onEnded` handlers, and neither fires when
+  React removes the element — a detached media element keeps playing in Chrome. So a playing
+  voiceover whose row disappeared went on playing with no transport anywhere to stop it, while
+  `AudioActivityContext` still held it as the active element and `AudioEngine` stayed attached to a
+  node no longer in the document. Two ways to reach it, both added late: **deleting** a voiceover
+  (the undo-delete hides the row at once) and **typing a search** that filters the playing row out.
+  Pause BEFORE release, and let the release be a no-op when another row has already claimed the slot
+  — `releaseAudio` ignores a non-current element on purpose, which is how a superseded element's
+  late `pause` event is discarded, and the cleanup must not fight that.
+
+- **One preview length, one ellipsis.** The backend cuts `text_preview` at 80 chars + `"..."`; the
+  client's `truncate` now uses the same 80 and `previewOf` **swaps** the terminator rather than
+  stripping it. Stripping leaves exactly `PREVIEW_CHARS`, `truncate` needs `>` not `>=` so it does
+  not re-fire, and the running row would render with no terminator while the finished one had `…`.
+  It was 96 before, which meant the same voiceover visibly gained characters and changed punctuation
+  at the moment it completed — the running row can only ever show the backend's 80. Reconciled on the
+  client because that 80 exists to keep `/api/queue` small at a 1s poll cadence.
+
 - **`modal-body` is a JS hook with no CSS rule, and deleting it silently breaks focus.**
   `Modal.tsx`'s open effect queries `.modal-body` to land focus on the dialog body's first
   control. The class was absent for a long time, so the query always missed and focus fell

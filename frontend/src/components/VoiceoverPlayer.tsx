@@ -48,6 +48,36 @@ export default function VoiceoverPlayer({
     }
   }, [src])
 
+  // Stop the audio when this row goes away. Nothing else does.
+  //
+  // releaseAudio is wired only to the element's onPause/onEnded handlers, and
+  // neither fires when React removes the element -- a detached media element
+  // keeps playing in Chrome. So a playing voiceover whose row disappeared went
+  // on playing with no transport anywhere to stop it, while
+  // AudioActivityContext still held it as the active element and AudioEngine
+  // stayed attached to a node no longer in the document.
+  //
+  // Two ways to reach that, both recent: deleting a voiceover (the undo-delete
+  // hides the row at once) and typing a search that filters the playing row
+  // out of the list.
+  //
+  // Pause BEFORE release. releaseAudio deliberately ignores an element that is
+  // not the current one -- that is how a superseded element's late pause event
+  // is discarded -- so if another row has already claimed the slot, the
+  // release here is correctly a no-op and must not be forced.
+  useEffect(() => {
+    const audio = audioRef.current
+    return () => {
+      if (!audio) return
+      audio.pause()
+      releaseAudio(audio)
+    }
+    // Mount/unmount only: audioRef is stable for this row's lifetime, and
+    // re-running on every releaseAudio identity change would tear down a live
+    // element mid-playback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function toggle() {
     const audio = audioRef.current
     if (!audio) return

@@ -80,8 +80,34 @@ const UNDO_MS = 7000
 
 const TWO_COLUMN_QUERY = '(min-width: 1025px)'
 
-function truncate(text: string, max = 96): string {
+/** 80, matching the backend's own `text_preview` cut (main.py: `text[:80]`).
+ *
+ * It used to be 96, which meant the SAME voiceover showed two different
+ * previews either side of finishing: while running the row rendered the
+ * backend's already-shortened 80 chars ending in three ASCII dots -- a 96-char
+ * cut can never fire on an 83-char string -- and the moment it landed the row
+ * re-rendered from the full text at 96 chars ending in a real ellipsis. The
+ * preview visibly grew and changed punctuation at the completion boundary.
+ *
+ * Reconciled on the CLIENT rather than by raising the backend's cut: that 80
+ * exists to keep /api/queue small at a 1s poll cadence, and every entry
+ * carries one. */
+const PREVIEW_CHARS = 80
+
+function truncate(text: string, max = PREVIEW_CHARS): string {
   return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+/** The backend ends its cut with "...", this file with "…". Normalise to one.
+ *
+ *  The trailing "..." is also the only signal that anything was cut, so it is
+ *  swapped rather than stripped: strip it and the remainder is exactly
+ *  PREVIEW_CHARS, `truncate` does not re-fire (it needs `>`, not `>=`), and a
+ *  shortened preview would render with no terminator at all while the finished
+ *  row showed one. */
+function previewOf(backendPreview: string): string {
+  if (backendPreview.endsWith('...')) return `${backendPreview.slice(0, -3)}…`
+  return truncate(backendPreview)
 }
 
 /** The rename field plus the voice name -- line one of every row, finished or
@@ -391,7 +417,7 @@ function PendingRow({
 
       <div className="flex min-w-0 items-center gap-2.5">
         <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-muted" title={failed ? reason : job.text_preview}>
-          {truncate(failed ? reason : job.text_preview)}
+          {failed ? truncate(reason) : previewOf(job.text_preview)}
         </p>
       </div>
     </li>
