@@ -13,7 +13,9 @@ import { usePageVisible } from './hooks/usePageVisible'
 interface GenerationActivityValue {
   queue: QueueEntry[]
   anyRunning: boolean
-  runningPresetNames: Set<string>
+  /** Ids of voices with a job in flight. Ids, not names: two voices can share
+   *  a name, and the old name-keyed set marked both of them busy. */
+  runningPresetIds: Set<string>
   /** Force an immediate re-poll (after cancel/reorder/submit). */
   refresh: () => void
 }
@@ -56,13 +58,13 @@ export function GenerationActivityProvider({ children }: { children: ReactNode }
   }, [visible, nonce])
 
   const value = useMemo<GenerationActivityValue>(() => {
-    const runningPresetNames = new Set(
-      queue.filter((e) => e.status === 'running').map((e) => e.preset_name),
+    const runningPresetIds = new Set(
+      queue.filter((e) => e.status === 'running').map((e) => e.preset_id),
     )
     return {
       queue,
-      anyRunning: runningPresetNames.size > 0,
-      runningPresetNames,
+      anyRunning: runningPresetIds.size > 0,
+      runningPresetIds,
       refresh: () => setNonce((n) => n + 1),
     }
   }, [queue])

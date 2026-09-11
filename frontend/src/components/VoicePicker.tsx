@@ -43,10 +43,10 @@ export default function VoicePicker({
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const { setActiveAudio, releaseAudio } = useAudioActivity()
-  const { runningPresetNames } = useGenerationActivity()
+  const { runningPresetIds } = useGenerationActivity()
 
   const selected = presets.find((p) => p.id === selectedPresetId) ?? null
-  const generating = selected != null && runningPresetNames.has(selected.name)
+  const generating = selected != null && runningPresetIds.has(selected.id)
 
   const stopPreview = useCallback(() => {
     const audio = audioRef.current
@@ -179,7 +179,7 @@ export default function VoicePicker({
                 }}
               >
                 <span className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</span>
-                {runningPresetNames.has(p.name) && (
+                {runningPresetIds.has(p.id) && (
                   <span
                     className="size-1.5 rounded-full bg-progress animate-pulse-soft"
                     title={`${p.name} is generating`}

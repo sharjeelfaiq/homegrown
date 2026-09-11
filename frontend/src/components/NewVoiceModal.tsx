@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { mediaUrl, presetDownloadUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
+import { useGenerationActivity } from '../GenerationActivityContext'
 import InlineName from './InlineName'
 import Modal from './Modal'
 import ReferenceUpload from './ReferenceUpload'
@@ -52,6 +53,7 @@ export default function NewVoiceModal({
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const { setActiveAudio, releaseAudio } = useAudioActivity()
+  const { runningPresetIds } = useGenerationActivity()
 
   // Closing the dialog has to stop the clip too, or it keeps playing behind a
   // dismissed modal with no visible control to stop it.
@@ -105,7 +107,18 @@ export default function NewVoiceModal({
                 />
 
                 {confirmingId === preset.id ? (
-                  <span className="flex flex-none gap-1.5">
+                  <span className="flex flex-none items-center gap-1.5">
+                    {/* Only on a voice that is mid-generation. The dropdown has
+                        marked these for a while; this dialog, which is the only
+                        place a voice can be DELETED, said nothing -- and the
+                        queued voiceovers behind it then fail with a 404 on
+                        retry. The delete is still allowed: wanting a voice gone
+                        is a legitimate reason to accept that. */}
+                    {runningPresetIds.has(preset.id) && (
+                      <span className="text-[11px] text-danger">
+                        In use — queued voiceovers will fail.
+                      </span>
+                    )}
                     <button
                       type="button"
                       className="ghost-btn ghost-btn-danger"
@@ -155,6 +168,14 @@ export default function NewVoiceModal({
                     >
                       <DownloadIcon size={13} />
                     </a>
+                    {runningPresetIds.has(preset.id) && (
+                      <span
+                        className="mono mr-1 text-[10px] text-progress"
+                        title="This voice is generating a voiceover right now"
+                      >
+                        busy
+                      </span>
+                    )}
                     <button
                       type="button"
                       className="icon-btn icon-btn-danger"

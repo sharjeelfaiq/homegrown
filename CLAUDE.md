@@ -219,6 +219,40 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   download. Names are de-duplicated inside the archive (`name (2).mp3`), or two voiceovers called the
   same thing silently overwrite each other and the user gets fewer files than they selected.
 
+- **`navigator.clipboard` DOES NOT EXIST in the deployment this ships in.** It needs a secure
+  context; LAN mode serves the app from `http://<lan-ip>:8000`, which is not one, so it is
+  `undefined` for every device that is not this machine. `useCopyToClipboard` feature-detects and
+  falls back to an off-screen `<textarea>` + `document.execCommand('copy')` — off-screen rather than
+  `display: none`, because an unrendered element cannot be selected and the selection *is* the
+  mechanism. It returns a boolean so the caller never claims a success that did not happen.
+
+- **Selecting rows: `shown`-indexed ranges, `shown`-scoped select-all.** Shift-click fills the range
+  between two positions in `shown` (what is on screen after the filter), not in `history` — the same
+  indices in the unfiltered array are different voiceovers, verified against the real store. A
+  shift-range only ever ADDS, or a stray shift-click wipes a carefully built selection. The header
+  checkbox acts on the shown rows only (13 of 23 under a filter, measured), and rows selected earlier
+  but now filtered out stay selected rather than being silently dropped. `indeterminate` is a DOM
+  property with no HTML attribute, so it is set through a ref.
+
+- **Expanding a row to read its script does not resize the window.** `.result-list` is a `max-height`
+  scroller, so an expansion grows its CONTENT. Measured: list height, list top and `.results` height
+  all move **0.0px** while `scrollHeight` grows 138px. The expanded block is `max-h-[180px]` with its
+  own scroller, or a 60,000-character script would push every other row out. One row open at a time.
+  Rows below it do move — unlike the bulk-bar shift, that is caused by the click that requested it,
+  which is the distinction that makes it acceptable.
+
+- **Cancel confirms; delete undoes. The asymmetry is deliberate.** A deleted voiceover can be put
+  back, so it is an undo toast. A cancelled generation cannot — the run stops and the partial audio is
+  discarded, so "undo" could only mean paying the whole render again. Hence an inline two-step, and
+  **only on a running job**: cancelling a queued one has spent no GPU time, so requiring two clicks
+  there would tax the cheap case to protect the expensive one.
+
+- **`QueueEntry` carries `preset_id`, and the busy-voice check uses it.** It was matched on
+  `preset_name`, which marks the wrong voice as busy the moment two share a name — and renaming is
+  free in this app. The voices dialog now shows the same busy badge the dropdown always had, and its
+  delete confirmation says queued voiceovers will fail. The delete is still allowed: wanting a voice
+  gone is a legitimate reason to accept that.
+
 - **`modal-body` is a JS hook with no CSS rule, and deleting it silently breaks focus.**
   `Modal.tsx`'s open effect queries `.modal-body` to land focus on the dialog body's first
   control. The class was absent for a long time, so the query always missed and focus fell

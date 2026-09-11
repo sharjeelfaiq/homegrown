@@ -1,4 +1,23 @@
-type IconProps = { size?: number }
+type IconProps = { size?: number; className?: string }
+
+/** Chevron for the script expander. Takes a className so the caller can
+ *  rotate it -- the transition lives on the utility, not in here. */
+export function ChevronIcon({ size = 12, className = '' }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      className={`flex-none transition-transform duration-(--fast) ease-(--ease) ${className}`}
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 export function TrashIcon({ size = 16 }: IconProps) {
   return (

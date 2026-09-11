@@ -1647,6 +1647,10 @@ class JobStatusResponse(BaseModel):
 
 class QueueEntry(BaseModel):
     job_id: str
+    # The id as well as the name. The UI marks a voice that is mid-generation,
+    # and matching on NAME alone mismarks the wrong voice as soon as two share
+    # one -- renaming is free in this app, so that is not a hypothetical.
+    preset_id: str
     preset_name: str
     text_preview: str
     status: str
@@ -1689,6 +1693,7 @@ def _queue_entry_locked(job_id: str) -> QueueEntry:
     text = job["text"]
     return QueueEntry(
         job_id=job_id,
+        preset_id=job["preset_id"],
         preset_name=job["preset_name"],
         text_preview=(text[:80] + "...") if len(text) > 80 else text,
         status=job["status"],

@@ -16,11 +16,12 @@ import { useGenerationActivity } from '../GenerationActivityContext'
 import { useElapsed } from '../hooks/useElapsed'
 import { useOptimisticProgress } from '../hooks/useOptimisticProgress'
 import { toast } from 'sonner'
+import { useCopyToClipboard } from '../hooks/useCopyToClipboard'
 import { usePersistedRecord } from '../hooks/usePersistedRecord'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import { DownloadIcon, TrashIcon, WandIcon } from './Icons'
+import { ChevronIcon, DownloadIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
 
@@ -225,6 +226,15 @@ function PendingRow({
 }) {
   const running = job.status === 'running'
   const canceling = job.status === 'canceling'
+  // Armed only for a RUNNING job. Cancelling a queued one costs nothing --
+  // no GPU time has been spent on it yet -- so making every cancel two clicks
+  // would tax the cheap case to protect the expensive one.
+  //
+  // A confirm rather than the undo-toast used for deleting a voiceover,
+  // because cancel is not undoable in the same sense: the generation stops and
+  // the partial audio is discarded, so "undo" could only mean re-queueing from
+  // scratch and paying the whole render again.
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
   const progress = useOptimisticProgress(running ? job : undefined)
   const elapsed = useElapsed(job)
   const reduced = usePrefersReducedMotion()
@@ -336,14 +346,39 @@ function PendingRow({
               Retry
             </button>
           )}
-          <button
-            type="button"
-            className="ghost-btn ghost-btn-danger h-6 px-2.5 text-[11px]"
-            onClick={onCancel}
-            disabled={canceling}
-          >
-            {failed ? 'Dismiss' : 'Cancel'}
-          </button>
+          {confirmingCancel ? (
+            // Inline two-step, matching the voices dialog. window.confirm
+            // blocks the page and looks nothing like the rest of the app.
+            <>
+              <span className="mono text-[11px] whitespace-nowrap text-muted">Stop it?</span>
+              <button
+                type="button"
+                className="ghost-btn ghost-btn-danger h-6 px-2.5 text-[11px]"
+                onClick={() => {
+                  setConfirmingCancel(false)
+                  onCancel()
+                }}
+              >
+                Stop
+              </button>
+              <button
+                type="button"
+                className="ghost-btn h-6 px-2.5 text-[11px]"
+                onClick={() => setConfirmingCancel(false)}
+              >
+                Keep going
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="ghost-btn ghost-btn-danger h-6 px-2.5 text-[11px]"
+              onClick={() => (running ? setConfirmingCancel(true) : onCancel())}
+              disabled={canceling}
+            >
+              {failed ? 'Dismiss' : 'Cancel'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -370,6 +405,9 @@ function VoiceoverRow({
   onDelete,
   selected,
   onToggleSelect,
+  expanded,
+  onToggleExpand,
+  onCopy,
 }: {
   entry: HistoryEntry
   nameControl: NameControl
@@ -378,7 +416,10 @@ function VoiceoverRow({
   onRequeue: () => void
   onDelete: () => void
   selected: boolean
-  onToggleSelect: () => void
+  onToggleSelect: (shiftKey: boolean) => void
+  expanded: boolean
+  onToggleExpand: () => void
+  onCopy: () => void
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const created = timeAgo(entry.created_at)
@@ -408,7 +449,12 @@ function VoiceoverRow({
             selected ? 'opacity-100' : 'opacity-0'
           }`}
           checked={selected}
-          onChange={onToggleSelect}
+          // onChange, not onClick, so the keyboard (space) works. shiftKey is
+          // read off the native event: a click-driven change carries it, a
+          // keyboard one does not, which is the correct behaviour either way.
+          onChange={(e) =>
+            onToggleSelect('shiftKey' in e.nativeEvent && (e.nativeEvent as MouseEvent).shiftKey)
+          }
           aria-label={`Select ${name}`}
         />
         <VoiceoverPlayer
@@ -453,12 +499,44 @@ function VoiceoverRow({
       </div>
 
       {/* The script preview now has this line to itself, so it gets the full
-          column width before ellipsising. */}
+          column width before ellipsising.
+
+          A BUTTON, because the whole script was otherwise unreachable. The
+          row showed 96 characters and the rest lived only in `title`, which
+          the OS truncates and which cannot be scrolled, selected or copied --
+          for text that runs to MAX_SCRIPT_CHARS (60,000). The only way to read
+          one was the re-queue wand, which replaces whatever is in the compose
+          box.
+
+          `title` is dropped with the change: a native tooltip duplicating an
+          expander that works properly is just a second, worse copy. */}
       <div className="flex min-w-0 items-center gap-2.5">
-        <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-muted" title={entry.text}>
-          {truncate(entry.text)}
-        </p>
+        <button
+          type="button"
+          className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-muted hover:text-ink"
+          aria-expanded={expanded}
+          onClick={onToggleExpand}
+        >
+          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+            {truncate(entry.text)}
+          </span>
+          <ChevronIcon size={12} className={expanded ? 'rotate-180' : undefined} />
+        </button>
       </div>
+
+      {expanded && (
+        // max-h + overflow so a 60,000-character script cannot push every
+        // other row out of the window. The list is a max-height scroller, so
+        // this makes its CONTENT taller, never the window itself.
+        <div className="mt-1 flex flex-col gap-1.5 rounded-sm border border-hairline bg-surface-raised px-2.5 py-2">
+          <p className="m-0 max-h-[180px] overflow-y-auto text-[12px]/[1.55] whitespace-pre-wrap text-ink">
+            {entry.text}
+          </p>
+          <button type="button" className="ghost-btn self-end" onClick={onCopy}>
+            Copy script
+          </button>
+        </div>
+      )}
     </li>
   )
 }
@@ -549,6 +627,14 @@ export default function HistoryList({
   // silently do less than the count says.
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [zipping, setZipping] = useState(false)
+  // One row expanded at a time. Several open at once turns an eight-row window
+  // into a wall of text with no rows visible.
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // Anchor for shift-click ranges. An index into `shown`, NOT into `history`:
+  // a range drawn across a filtered list has to select what lies between the
+  // two rows the user can see.
+  const lastClickedIndex = useRef<number | null>(null)
+  const copy = useCopyToClipboard()
 
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(() => new Set())
   const deleteTimers = useRef(new Map<string, number>())
@@ -795,13 +881,58 @@ export default function HistoryList({
     onDelete(id)
   }
 
-  function toggleSelected(id: string) {
+  /** Toggle one row, or shift-click to fill the range from the last one.
+   *
+   * `index` is the row's position in `shown` -- what is on screen after the
+   * search filter -- so a range drawn across a filtered list selects the span
+   * the user actually drew, not whatever sits between those two rows in the
+   * unfiltered history. */
+  function toggleSelected(id: string, index: number, shiftKey: boolean) {
+    const anchor = lastClickedIndex.current
     setSelected((prev) => {
       const next = new Set(prev)
+      if (shiftKey && anchor !== null && anchor !== index) {
+        // A shift-range ADDS; it never deselects. Range-clearing needs its own
+        // gesture or a stray shift-click wipes a carefully built selection.
+        const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
+        for (let i = from; i <= to; i++) {
+          const row = shown[i]
+          if (row) next.add(row.entry.id)
+        }
+        return next
+      }
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
+    lastClickedIndex.current = index
+  }
+
+  /** The header checkbox. Acts on what is ON SCREEN, so the box can never
+   *  claim to have selected rows a search is hiding. Rows already selected but
+   *  filtered out stay selected -- clearing them would silently undo work the
+   *  user did before they typed a query. */
+  const shownIds = shown.map(({ entry }) => entry.id)
+  const shownSelectedCount = shownIds.filter((id) => selected.has(id)).length
+  const allShownSelected = shownIds.length > 0 && shownSelectedCount === shownIds.length
+
+  function toggleSelectAllShown() {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allShownSelected) for (const id of shownIds) next.delete(id)
+      else for (const id of shownIds) next.add(id)
+      return next
+    })
+    lastClickedIndex.current = null
+  }
+
+  async function handleCopyScript(text: string) {
+    const ok = await copy(text)
+    // Never claim a success that did not happen. Over LAN the page is not a
+    // secure context, so navigator.clipboard is absent and the execCommand
+    // fallback is what runs -- and it can still be refused.
+    if (ok) toast.success('Script copied')
+    else onError('Could not copy the script. Select the text and copy it manually.')
   }
 
   async function handleZipSelected() {
@@ -939,6 +1070,25 @@ export default function HistoryList({
     <section className="results mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
       <h2 className="section-rule">
         <span>Voiceovers</span>
+        {/* Select-all, in the heading rather than as a new row -- the heading
+            already occupies this space, so nothing shifts. It acts on what is
+            ON SCREEN: with a search running it selects the matches, and rows
+            selected earlier but now filtered out stay selected rather than
+            being silently dropped. `indeterminate` is a DOM property with no
+            HTML attribute, so it can only be set through a ref. */}
+        {shown.length > 0 && (
+          <input
+            type="checkbox"
+            className="order-2 size-3.5 flex-none accent-audio"
+            checked={allShownSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = shownSelectedCount > 0 && !allShownSelected
+            }}
+            onChange={toggleSelectAllShown}
+            aria-label={allShownSelected ? 'Deselect all shown voiceovers' : 'Select all shown voiceovers'}
+            title={allShownSelected ? 'Deselect all' : 'Select all'}
+          />
+        )}
         {total > 0 && <span className="mono order-3 text-[11px]">{total}</span>}
       </h2>
 
@@ -1105,7 +1255,7 @@ export default function HistoryList({
               )
             })}
 
-            {shown.map(({ entry, number, name }) => {
+            {shown.map(({ entry, number, name }, i) => {
               return (
                 <VoiceoverRow
                   key={entry.id}
@@ -1119,7 +1269,10 @@ export default function HistoryList({
                   onRequeue={() => onRequeue(entry)}
                   onDelete={() => handleDelete(entry.id, name)}
                   selected={selected.has(entry.id)}
-                  onToggleSelect={() => toggleSelected(entry.id)}
+                  onToggleSelect={(shiftKey) => toggleSelected(entry.id, i, shiftKey)}
+                  expanded={expandedId === entry.id}
+                  onToggleExpand={() => setExpandedId((cur) => (cur === entry.id ? null : entry.id))}
+                  onCopy={() => handleCopyScript(entry.text)}
                 />
               )
             })}

@@ -74,6 +74,9 @@ export interface JobStatus {
 
 export interface QueueEntry {
   job_id: string
+  /** Matched against a voice's id. The name is NOT a safe key -- two voices
+   *  can share one, and renaming is free here. */
+  preset_id: string
   preset_name: string
   text_preview: string
   status: JobStatusValue
