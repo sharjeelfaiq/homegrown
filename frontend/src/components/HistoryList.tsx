@@ -759,7 +759,7 @@ export default function HistoryList({
           type="search"
           aria-keyshortcuts={`${MOD_ARIA}+F`}
           title={`Search voiceovers (${MOD_KEY}+F)`}
-          className="mb-2 h-9 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+          className="mb-2 h-10 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
           placeholder="Search scripts and voices…"
           aria-label="Search voiceovers by script text or voice name"
           value={draft}
