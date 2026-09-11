@@ -717,13 +717,25 @@ export default function HistoryList({
     }
   }
 
-  // mb-6 so the column stops short of the page edge rather than running into
-  // it. It reads as separation in BOTH layout modes, for different reasons:
-  // below 1025px the page scrolls and this is the last thing above main's
-  // pb-[72px]; above it the page is pinned to one viewport and this is slack
-  // inside the aside, on top of main's wide:pb-8.
+  // Two things here, and they are separate.
+  //
+  // mb-6 wide:mb-0 -- the bottom margin is for the SCROLLING layout only.
+  // Below 1025px the page scrolls and this is the last thing above main's
+  // pb-[72px]. Above it the page is pinned to one viewport and a bottom
+  // margin would just be 24px this column cannot afford; the separation there
+  // comes from main's wide:pb-8.
+  //
+  // wide:h-full wide:min-h-0 -- this is the link the documented min-h-0 chain
+  // was missing. .result-list is `flex: 1 1 auto; min-height: 0` so it can
+  // shrink below eight rows on a short viewport, but a flex child can only
+  // shrink against a parent with a constrained height, and this section was
+  // height:auto. So the list took its full max-height at every viewport and
+  // the overflow was CLIPPED by the shell's wide:overflow-hidden rather than
+  // scrolling. Measured before this: 716px list and 8.00 visible rows at
+  // 1100/900/768/700, with the root overflowing by 101/233/301px at the last
+  // three.
   return (
-    <section className="results mb-6 flex flex-col gap-1">
+    <section className="results mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
       <h2 className="section-rule">
         <span>Voiceovers</span>
         {total > 0 && <span className="mono order-3 text-[11px]">{total}</span>}

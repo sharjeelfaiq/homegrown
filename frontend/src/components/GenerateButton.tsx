@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
-import { MOD_ARIA, MOD_KEY } from './Kbd'
+import { MOD_ARIA, MOD_KEY } from '../keys'
 
 interface Props {
   disabled: boolean

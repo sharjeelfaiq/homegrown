@@ -168,6 +168,20 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   plays silent while the transport still advances. This bit twice; there are three such elements
   (`VoiceoverPlayer`, `VoicePicker`, `NewVoiceModal`).
 
+- **Every transient error is a toast; every persistent one is still a banner.** The distinction is
+  not stylistic. `useErrorToast` mirrors the `error` and `voiceError` STATES into sonner (state
+  stays the source of truth, so `setError(null)` dismisses the toast and the existing Escape and
+  clear-before-submit behaviours keep working untouched; the previous toast is dismissed before a
+  new one is raised, or a changing message stacks two). What stays inline is the three things that
+  describe a *condition* rather than an event, and would be wrong to auto-dismiss while still true:
+  `modelStatus === 'down'` (which also carries Retry, the app's only recovery control),
+  the CPU-fallback notice, and the long-reference-clip estimate warning.
+  The voices dialog no longer takes an `error` prop at all. That banner used to be justified by
+  "the composer is behind this dialog, so an error reported there is invisible" — a toast is above
+  everything (sonner is `z-index: 999999999`, over the modal's 200 and BootOverlay's 300), which
+  satisfies the same requirement *and* stops a failed upload growing the panel, which had been the
+  one remaining thing that could shift the fixed-height voices dialog.
+
 - **`modal-body` is a JS hook with no CSS rule, and deleting it silently breaks focus.**
   `Modal.tsx`'s open effect queries `.modal-body` to land focus on the dialog body's first
   control. The class was absent for a long time, so the query always missed and focus fell
@@ -276,9 +290,17 @@ it:
   reports intersecting immediately and chain-loads the whole history in one go; reading `list.scrollTop`
   there returns 0 forever, i.e. permanently "at the top". Below the breakpoint all of that is switched off
   and the page scrolls normally — a short inner scroller inside a locked page is two nested scroll regions
-  on a phone. A missing `min-h-0` anywhere in the `.studio → workspace → .aside → .results → .result-list`
-  chain puts the scrollbar back on the page; all five carry it, and `scripts/check_orphan_css.py` guards
-  the class hooks that chain depends on.
+  on a phone. A missing `min-h-0` anywhere in the shell → `main` → `.aside` → `.results` →
+  `.result-list` chain stops the list shrinking, and `scripts/check_orphan_css.py` guards the class
+  hooks that chain depends on. **`.results` was the missing link for a long time.** It is a flex
+  column but was `height: auto`, and a flex child can only shrink against a parent with a
+  constrained height — so `.result-list`'s `flex: 1 1 auto; min-height: 0` never engaged, the list
+  took its full `max-height` at every viewport, and the overflow was **clipped** by the shell's
+  `wide:overflow-hidden` rather than scrolling. Measured before the fix, at widths ≥1025px: a 716px
+  list and 8.00 visible rows at viewport heights 1100/900/768/700, with the root overflowing by
+  101/233/301px at the last three. After adding `wide:h-full wide:min-h-0` to `.results`: 8.00 rows
+  at 1100, 6.64 at 900, 5.14 at 768, 4.36 at 700, and no overflow anywhere. Note the shell root
+  itself carries no `min-h-0` and no `.studio` class — it is the flex *container*, not an item.
 
 ### Styling: Tailwind v4, five themes, no App.css
 

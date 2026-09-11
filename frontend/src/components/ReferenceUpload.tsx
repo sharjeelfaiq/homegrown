@@ -9,10 +9,6 @@ interface Props {
   onFileSelected: (file: File) => void
   /** True while the caller's upload is in flight. */
   uploading: boolean
-  /** Why the last upload failed. Belongs here rather than in the composer:
-   *  the composer is behind this dialog, so an error reported there is an
-   *  error the user cannot see. */
-  error: string | null
 }
 
 const AUDIO_EXT = /\.(wav|mp3|m4a|flac|ogg|opus|webm|aac)$/i
@@ -39,7 +35,7 @@ const AUDIO_EXT = /\.(wav|mp3|m4a|flac|ogg|opus|webm|aac)$/i
  * the dialog is open that handler is behind an overlay -- so dropping onto
  * the zone itself has to work on its own terms.
  */
-export default function ReferenceUpload({ onFileSelected, uploading, error }: Props) {
+export default function ReferenceUpload({ onFileSelected, uploading }: Props) {
   const [over, setOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const reduced = usePrefersReducedMotion()
@@ -158,14 +154,6 @@ export default function ReferenceUpload({ onFileSelected, uploading, error }: Pr
         {REF_TRIM_SECS}.
       </p>
 
-      {error && (
-        <p
-          className="m-0 rounded-sm border border-danger bg-danger-soft px-3 py-2.5 text-[13px] text-danger"
-          role="alert"
-        >
-          {error}
-        </p>
-      )}
     </div>
   )
 }

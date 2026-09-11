@@ -11,6 +11,7 @@ import { PlusIcon } from './Icons'
 import { Toaster } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useJobToasts } from '../hooks/useJobToasts'
+import { useErrorToast } from '../hooks/useErrorToast'
 import Kbd from './Kbd'
 import { useTheme } from '../ThemeContext'
 import { themeMode } from '../theme'
@@ -102,6 +103,13 @@ export default function StudioShell() {
 
   const { queue, refresh: refreshQueue } = useGenerationActivity()
   useJobToasts(queue)
+  // Both error STATES are mirrored to toasts rather than rendered inline.
+  // voiceError used to draw a banner inside the voices dialog, which grew
+  // the panel and undid the fixed-height window; sonner sits at z-index
+  // 999999999, well above the modal's z-200, so it is visible over the
+  // dialog without being laid out inside it.
+  useErrorToast(error, 'Something went wrong')
+  useErrorToast(voiceError, 'Could not add that voice')
   const { theme } = useTheme()
   // Only while we are actually waiting. Null whenever there is no dev-server
   // status source, which is every non-`vite dev` build -- the row below then
@@ -545,12 +553,6 @@ export default function StudioShell() {
               act on it. */}
           {estimate?.warning && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">{estimate.warning}</p>}
 
-          {error && (
-            <p className="m-0 rounded-sm border border-danger bg-danger-soft px-3 py-2.5 text-[13px] text-danger" role="alert">
-              {error}
-            </p>
-          )}
-
           {/* One action row under the script: add-voice, voice, generate.
               The voice picker sits here rather than inside the card, so the
               script box stays the script box.
@@ -661,7 +663,6 @@ export default function StudioShell() {
         presets={presets}
         onFileSelected={handleAddVoice}
         uploading={creatingPreset}
-        error={voiceError}
         onRename={handleRenamePreset}
         onDelete={handleDeletePreset}
       />

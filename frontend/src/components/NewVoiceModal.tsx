@@ -12,8 +12,6 @@ interface Props {
   presets: Preset[]
   onFileSelected: (file: File) => void
   uploading: boolean
-  /** Why the last upload or rename failed, rendered inside the dialog. */
-  error: string | null
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
 }
@@ -47,7 +45,6 @@ export default function NewVoiceModal({
   presets,
   onFileSelected,
   uploading,
-  error,
   onRename,
   onDelete,
 }: Props) {
@@ -82,7 +79,7 @@ export default function NewVoiceModal({
 
   return (
     <Modal open={open} title="Voices" onClose={onClose}>
-      <ReferenceUpload onFileSelected={onFileSelected} uploading={uploading} error={error} />
+      <ReferenceUpload onFileSelected={onFileSelected} uploading={uploading} />
 
       {/* Rendered unconditionally, and that is the point rather than an
           oversight. It used to be behind `presets.length > 0`, which meant
