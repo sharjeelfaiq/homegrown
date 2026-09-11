@@ -23,6 +23,11 @@ import { DownloadIcon, TrashIcon, WandIcon } from './Icons'
 interface Props {
   history: HistoryEntry[]
   total: number
+  /** The APPLIED search. The draft being typed lives here; this is what the
+   *  caller has already fetched against. */
+  query: string
+  /** Called with a debounced query. The caller refetches from offset 0. */
+  onQueryChange: (q: string) => void
   /** True while more entries exist past what `history` already holds. */
   hasMore: boolean
   /** Fetch the next slice. Safe to call repeatedly -- the caller de-dupes. */
@@ -461,6 +466,8 @@ function VoiceoverRow({
 export default function HistoryList({
   history,
   total,
+  query,
+  onQueryChange,
   hasMore,
   onLoadMore,
   pendingNew,
@@ -488,6 +495,30 @@ export default function HistoryList({
   const listRef = useRef<HTMLUListElement>(null)
   const sentinelRef = useRef<HTMLLIElement>(null)
 
+  // The search box is uncontrolled by the parent on purpose: `draft` is what
+  // is being typed and `query` is what has been fetched. Lifting the draft up
+  // would make every keystroke a request, and threading it back down would
+  // make every keystroke re-render the whole voiceovers column.
+  const [draft, setDraft] = useState(query)
+  // Follow the parent when it clears or changes the query from outside (there
+  // is no such caller today, but a stale draft after an external reset is the
+  // kind of thing that only shows up much later).
+  useEffect(() => {
+    setDraft(query)
+    // Intentionally NOT depending on `draft`: this syncs down, never up.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query])
+
+  // 250ms: below ~150 the request fires mid-word on a fast typist, above ~350
+  // the list feels detached from the keyboard. The guard matters as much as
+  // the delay -- without it, blurring or re-rendering would re-issue the same
+  // query and reset the user's scroll depth for no new information.
+  useEffect(() => {
+    if (draft === query) return
+    const id = window.setTimeout(() => onQueryChange(draft), 250)
+    return () => window.clearTimeout(id)
+  }, [draft, query, onQueryChange])
+
   // Failures are included, and sorted to the bottom. That ordering does not
   // come for free: /api/queue sorts by `queue_position if not None else -1`,
   // and a terminal job has no position -- so a job that failed BEFORE the
@@ -497,15 +528,25 @@ export default function HistoryList({
   // need telling. (Those entries do sit in the backend's in-memory _jobs
   // unclaimed; dismissing them would mean firing a side-effectful request from
   // a poll loop, which is the worse trade.)
-  const active = queue
-    .filter(
-      (e) =>
-        e.status === 'running' ||
-        e.status === 'queued' ||
-        e.status === 'canceling' ||
-        e.status === 'error',
-    )
-    .sort((a, b) => Number(a.status === 'error') - Number(b.status === 'error'))
+  //
+  // A RUNNING SEARCH HIDES THEM. An in-flight job has no finished script to
+  // match -- its text_preview is truncated to 80 chars server-side and the
+  // filter runs on the backend's full history, which it is not in yet -- so
+  // leaving these visible would put rows in a filtered list that the filter
+  // never considered, and make the heading's count disagree with what is on
+  // screen. Clearing the box brings them straight back.
+  const active =
+    query !== ''
+      ? []
+      : queue
+          .filter(
+            (e) =>
+              e.status === 'running' ||
+              e.status === 'queued' ||
+              e.status === 'canceling' ||
+              e.status === 'error',
+          )
+          .sort((a, b) => Number(a.status === 'error') - Number(b.status === 'error'))
 
   // Load the next slice when the end of the list scrolls into view.
   // IntersectionObserver rather than a scroll handler: it fires once per
@@ -673,6 +714,32 @@ export default function HistoryList({
         {total > 0 && <span className="mono order-3 text-[11px]">{total}</span>}
       </h2>
 
+      {/* Rendered whenever there is anything to search OR a search is already
+          running -- the second half matters, or the box vanishes the moment a
+          query matches nothing and there is no way to clear it.
+
+          type="search", not "text": it gets the native clear affordance and
+          the right on-screen keyboard, and Escape clears it for free. The
+          onKeyDown stops propagation for the same reason InlineName does --
+          the app binds "/" and Space globally (useHotkeys), so without it
+          typing a search would fire shortcuts. isTyping() already covers
+          INPUT, but Escape is NOT gated by it and would clear the composer's
+          error banner behind the column. */}
+      {(total > 0 || query !== '' || history.length > 0) && (
+        <input
+          type="search"
+          className="mb-2 h-8 w-full rounded-sm border border-control bg-surface-raised px-2.5 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+          placeholder="Search scripts and voices…"
+          aria-label="Search voiceovers by script text or voice name"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Escape') setDraft('')
+          }}
+        />
+      )}
+
       {/* Surfaced instead of scrolling the list out from under a reader. */}
       {pendingNew > 0 && (
         <button
@@ -691,7 +758,13 @@ export default function HistoryList({
         <p className="m-0 py-5 text-[13px] text-faint">
           {loading
             ? 'Loading your voiceovers…'
-            : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
+            : query !== ''
+              ? // Distinct from the never-generated-anything copy below. Telling
+                // someone with 40 voiceovers to "pick a voice and press
+                // Generate" because their search missed reads as the app having
+                // lost their work.
+                `No voiceovers match “${query}”. Searching looks at the script and the voice, not the name you gave a voiceover.`
+              : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
         </p>
       ) : (
         <>
