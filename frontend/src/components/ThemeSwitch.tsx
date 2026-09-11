@@ -122,10 +122,16 @@ export default function ThemeSwitch() {
       className="absolute top-1/2 right-(--gutter) -translate-y-1/2 font-body text-[13px]/[1.55] font-normal tracking-normal normal-case text-left"
       ref={rootRef}
     >
+      {/* Borderless, like every other icon button in the app. It briefly had
+          a border and a fill, borrowed from .compose-add -- but that one
+          earns its edge by sitting in a strip beside a bordered field. This
+          one stands alone in an otherwise empty header, where a box around a
+          single glyph reads as a stray element rather than as a control. The
+          hover state is what says it is interactive. */}
       <button
         type="button"
         ref={triggerRef}
-        className="icon-btn size-8 border border-control bg-control-fill text-faint hover:not-disabled:border-control-hover hover:not-disabled:bg-control-fill-hover hover:not-disabled:text-ink"
+        className="icon-btn size-8"
         aria-label={`Theme: ${activeLabel}`}
         aria-haspopup="menu"
         aria-expanded={open}
