@@ -21,7 +21,7 @@ import { usePersistedRecord } from '../hooks/usePersistedRecord'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import { ChevronIcon, DownloadIcon, TrashIcon, WandIcon } from './Icons'
+import { CopyIcon, DownloadIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
 
@@ -405,8 +405,6 @@ function VoiceoverRow({
   onDelete,
   selected,
   onToggleSelect,
-  expanded,
-  onToggleExpand,
   onCopy,
 }: {
   entry: HistoryEntry
@@ -417,8 +415,6 @@ function VoiceoverRow({
   onDelete: () => void
   selected: boolean
   onToggleSelect: (shiftKey: boolean) => void
-  expanded: boolean
-  onToggleExpand: () => void
   onCopy: () => void
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -498,45 +494,41 @@ function VoiceoverRow({
         </div>
       </div>
 
-      {/* The script preview now has this line to itself, so it gets the full
-          column width before ellipsising.
+      {/* Click to COPY. It used to unfold the full script in the row, with a
+          Copy button inside the expansion -- which made the common intent (get
+          the script out) two clicks and a layout change to reach a button that
+          was always the point. Nothing opens now.
 
-          A BUTTON, because the whole script was otherwise unreachable. The
-          row showed 96 characters and the rest lived only in `title`, which
-          the OS truncates and which cannot be scrolled, selected or copied --
-          for text that runs to MAX_SCRIPT_CHARS (60,000). The only way to read
-          one was the re-queue wand, which replaces whatever is in the compose
-          box.
+          The copy glyph appears on hover/focus using the row's existing
+          group/row hooks, the same idiom .result-actions already uses, rather
+          than a second hover convention.
 
-          `title` is dropped with the change: a native tooltip duplicating an
-          expander that works properly is just a second, worse copy. */}
+          `title` carries the full script again. It was dropped while the
+          expander existed -- a native tooltip duplicating a proper reader is a
+          worse second copy -- but with the expander gone it is the only way to
+          read past 96 characters in place, and it costs nothing.
+
+          Writing the clipboard works in EVERY deployment mode, unlike reading
+          it: useCopyToClipboard falls back to an off-screen textarea plus
+          execCommand when navigator.clipboard is absent, which is the case on
+          LAN over plain http. */}
       <div className="flex min-w-0 items-center gap-2.5">
         <button
           type="button"
           className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-muted hover:text-ink"
-          aria-expanded={expanded}
-          onClick={onToggleExpand}
+          title={entry.text}
+          aria-label={`Copy the script of ${name}`}
+          onClick={onCopy}
         >
           <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
             {truncate(entry.text)}
           </span>
-          <ChevronIcon size={12} className={expanded ? 'rotate-180' : undefined} />
+          <CopyIcon
+            size={12}
+            className="flex-none opacity-0 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+          />
         </button>
       </div>
-
-      {expanded && (
-        // max-h + overflow so a 60,000-character script cannot push every
-        // other row out of the window. The list is a max-height scroller, so
-        // this makes its CONTENT taller, never the window itself.
-        <div className="mt-1 flex flex-col gap-1.5 rounded-sm border border-hairline bg-surface-raised px-2.5 py-2">
-          <p className="m-0 max-h-[180px] overflow-y-auto text-[12px]/[1.55] whitespace-pre-wrap text-ink">
-            {entry.text}
-          </p>
-          <button type="button" className="ghost-btn self-end" onClick={onCopy}>
-            Copy script
-          </button>
-        </div>
-      )}
     </li>
   )
 }
@@ -627,9 +619,6 @@ export default function HistoryList({
   // silently do less than the count says.
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [zipping, setZipping] = useState(false)
-  // One row expanded at a time. Several open at once turns an eight-row window
-  // into a wall of text with no rows visible.
-  const [expandedId, setExpandedId] = useState<string | null>(null)
   // Anchor for shift-click ranges. An index into `shown`, NOT into `history`:
   // a range drawn across a filtered list has to select what lies between the
   // two rows the user can see.
@@ -1270,8 +1259,6 @@ export default function HistoryList({
                   onDelete={() => handleDelete(entry.id, name)}
                   selected={selected.has(entry.id)}
                   onToggleSelect={(shiftKey) => toggleSelected(entry.id, i, shiftKey)}
-                  expanded={expandedId === entry.id}
-                  onToggleExpand={() => setExpandedId((cur) => (cur === entry.id ? null : entry.id))}
                   onCopy={() => handleCopyScript(entry.text)}
                 />
               )

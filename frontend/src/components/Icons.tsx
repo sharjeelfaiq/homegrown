@@ -1,8 +1,8 @@
 type IconProps = { size?: number; className?: string }
 
-/** Chevron for the script expander. Takes a className so the caller can
- *  rotate it -- the transition lives on the utility, not in here. */
-export function ChevronIcon({ size = 12, className = '' }: IconProps) {
+/** Copy. On the voiceover row's script preview, which copies rather than
+ *  expanding -- so the glyph has to read as "take this away", not "open". */
+export function CopyIcon({ size = 12, className = '' }: IconProps) {
   return (
     <svg
       width={size}
@@ -10,11 +10,12 @@ export function ChevronIcon({ size = 12, className = '' }: IconProps) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2.5}
-      className={`flex-none transition-transform duration-(--fast) ease-(--ease) ${className}`}
+      strokeWidth={2}
+      className={className}
       aria-hidden="true"
     >
-      <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h10" strokeLinecap="round" />
     </svg>
   )
 }

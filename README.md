@@ -425,9 +425,10 @@ Each row is three lines:
    occupies a fixed 14ch so nothing beside it shifts as it ticks.
 3. The first words of the script.
 
-**Click the script preview** to unfold the whole script inside the row — selectable, scrollable, with
-a **Copy script** button. One row opens at a time. This is the only way to read a script in full: the
-row shows 96 characters and re-queue would replace whatever is in the compose box.
+**Click the script preview to copy the whole script**, with a toast to confirm. Nothing opens. The
+row shows the first 96 characters and hovering it reveals a copy glyph; the full text is also in the
+native tooltip. To *edit* an old script rather than copy it, the re-queue wand pulls it back into the
+compose box (and offers an Undo if that replaced something).
 
 **Deleting a voiceover is undoable.** The row disappears at once and a toast offers **Undo** for
 seven seconds; the request is only sent when that expires. One consequence worth knowing: if you

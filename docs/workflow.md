@@ -199,9 +199,10 @@ Each row is three lines:
    nothing beside it shifts.
 3. The first words of the script.
 
-**Click the preview** to unfold the full script in the row, with a **Copy script** button. One row at
-a time. Worth knowing because the row only shows 96 characters and the re-queue wand would otherwise
-be the only way to see the rest — and that replaces whatever is in your script box.
+**Click the preview to copy that script** — a toast confirms it. Nothing expands. A copy glyph
+appears on the row as you hover it, and the full text sits in the tooltip. If you want to *edit* an
+old script instead, the re-queue wand pulls it into the compose box and offers an Undo if that
+replaced something you had written.
 
 **Deleting is undoable.** The row goes immediately and a toast offers **Undo** for seven seconds; the
 delete is only sent when it expires. Close the tab inside that window and the row returns on reload.

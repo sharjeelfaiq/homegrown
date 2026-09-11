@@ -234,12 +234,18 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   but now filtered out stay selected rather than being silently dropped. `indeterminate` is a DOM
   property with no HTML attribute, so it is set through a ref.
 
-- **Expanding a row to read its script does not resize the window.** `.result-list` is a `max-height`
-  scroller, so an expansion grows its CONTENT. Measured: list height, list top and `.results` height
-  all move **0.0px** while `scrollHeight` grows 138px. The expanded block is `max-h-[180px]` with its
-  own scroller, or a 60,000-character script would push every other row out. One row open at a time.
-  Rows below it do move — unlike the bulk-bar shift, that is caused by the click that requested it,
-  which is the distinction that makes it acceptable.
+- **The script preview COPIES; it does not expand.** It was an accordion for one round — clicking
+  unfolded the full script with a `Copy script` button inside a `max-h-[180px]` scroller. That made
+  the common intent, getting the script out, two clicks and a layout change to reach a button that
+  was always the point. Clicking now copies and raises a toast, and `ChevronIcon` went with the
+  expander rather than being left as an unused export.
+  Two things this restored: **rows are uniform height again** (measured 86.8px for a one-word and a
+  170-character script alike), which the eight-row window
+  (`max-height: calc(8 * var(--result-row-h) + 12px)`) assumes; and `title={entry.text}` is back,
+  since with no in-place reader the native tooltip is the only way to see past 96 characters.
+  **Copy works in every deployment mode**, unlike *reading* the clipboard: `useCopyToClipboard` falls
+  back to an off-screen `<textarea>` + `execCommand('copy')` where `navigator.clipboard` is absent,
+  which is the case on LAN over plain http.
 
 - **Cancel confirms; delete undoes. The asymmetry is deliberate.** A deleted voiceover can be put
   back, so it is an undo toast. A cancelled generation cannot — the run stops and the partial audio is
