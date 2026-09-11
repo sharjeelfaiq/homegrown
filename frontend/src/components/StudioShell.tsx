@@ -532,23 +532,6 @@ export default function StudioShell() {
               the Voiceovers column, as the first row, where the finished
               voiceover will land. */}
           <section className="compose-bar flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="icon-btn size-8 flex-none border border-control bg-control-fill text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
-              aria-label="Add a voice"
-              title="Add a voice"
-              onClick={() => setVoicesOpen(true)}
-            >
-              <PlusIcon size={15} />
-            </button>
-
-            <VoicePicker
-              presets={presets}
-              selectedPresetId={voiceId}
-              onSelect={setVoiceId}
-              loading={modelStatus === 'checking'}
-            />
-
             <GenerateButton
               disabled={!canGenerate}
               blockedReason={blockedReason}
@@ -557,6 +540,30 @@ export default function StudioShell() {
               count={scriptReady ? 1 : 0}
               onClick={handleGenerate}
             />
+
+            {/* The voice controls are the row's right-hand anchor now, so
+                ml-auto lives here rather than on Generate. Grouped in one
+                wrapper so the dropdown and the [+] beside it move together --
+                they are one control with an affordance attached, not two
+                things that happen to be adjacent. */}
+            <div className="ml-auto flex min-w-0 items-center gap-2">
+              <VoicePicker
+                presets={presets}
+                selectedPresetId={voiceId}
+                onSelect={setVoiceId}
+                loading={modelStatus === 'checking'}
+              />
+
+              <button
+                type="button"
+                className="icon-btn size-8 flex-none border border-control bg-control-fill text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
+                aria-label="Add a voice"
+                title="Add a voice"
+                onClick={() => setVoicesOpen(true)}
+              >
+                <PlusIcon size={15} />
+              </button>
+            </div>
           </section>
 
         </div>

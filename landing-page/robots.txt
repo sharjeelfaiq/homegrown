@@ -1,0 +1,11 @@
+# Homegrown — landing page.
+#
+# One page, everything crawlable. The Studio app is a separate surface and is
+# deliberately NOT here: it has no sign-in, so it carries noindex in its own
+# <head> rather than being listed as a Disallow. A Disallow line would name
+# the path publicly while doing nothing to stop anyone who reads this file.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://homegrown-x.vercel.app/sitemap.xml

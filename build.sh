@@ -95,6 +95,8 @@ python scripts/check_contrast.py
 python scripts/check_orphan_css.py
 python scripts/check_desktop_port.py
 ( cd frontend && npm install --no-fund --no-audit --loglevel=error && npm run lint )
+# After npm install, because it needs the Tailwind CLI from frontend/node_modules.
+python scripts/build_splash.py --check
 
 # ---- 4. stash the dev env file --------------------------------------------
 step "Stashing $ENV_LOCAL"
@@ -116,6 +118,15 @@ step "Building the frontend"
 # temp and will exhaust a small system drive.
 step "Freezing backend.exe (this is the long one, ~15-20 min)"
 ( cd backend && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "../$PY" -m PyInstaller backend.spec --clean --noconfirm )
+
+# The splash is Tailwind, compiled ahead of time and inlined into
+# launcher/_splash.py, which launcher.py imports. It cannot use the Play CDN
+# the landing page uses: this screen has to paint with no backend and often no
+# network, which is exactly when a CDN is unavailable. Regenerated here rather
+# than trusted, so the exe can never ship stale CSS -- the --check above only
+# catches a stale commit, not a source edited since.
+step "Compiling the launcher splash"
+python scripts/build_splash.py
 
 step "Freezing Homegrown.exe (launcher)"
 ( cd launcher && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "../$PY" -m PyInstaller launcher.spec --clean --noconfirm )

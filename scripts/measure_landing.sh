@@ -22,18 +22,24 @@ probe = """
 <script>
 (function () {
   var R = Math.round;
+  // 1200ms, not 250. The page compiles its Tailwind in the browser via the
+  // Play CDN, so measuring too early measures an unstyled page -- the tell is
+  // sheetH coming back identical at every viewport width, because the
+  // multi-column layout has not been applied yet.
   setTimeout(function () {
+    // #more is a <dialog> now, opened with showModal(). It was a checkbox
+    // toggled by <label for>, which keyboards could focus but not activate.
     var t = document.getElementById('more'), doc = document.documentElement;
     var page = R(doc.scrollHeight);
-    t.checked = true;
+    t.showModal();
     var sheet = document.querySelector('.sheet'), sb = document.querySelector('.sheet-body');
     void sheet.offsetHeight;
     var over = R(sheet.scrollHeight) - R(sheet.clientHeight);
     var body = R(sb.getBoundingClientRect().height);
-    t.checked = false;
+    t.close();
     document.title = 'M:' + JSON.stringify({ vp: innerWidth + 'x' + innerHeight,
       pageOver: page - innerHeight, sheetOver: over, sheetH: body });
-  }, 250);
+  }, 1200);
 })();
 </script>
 </body>"""
@@ -45,7 +51,7 @@ URL="file:///$(cygpath -m "$OUT" 2>/dev/null || echo "$OUT")/measured.html"
 for size in 1920,1080 1536,864 1440,900 1366,768 1280,720 1024,768 412,915; do
   printf '%-11s ' "$size"
   "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
-    --virtual-time-budget=1500 --window-size="$size" --dump-dom "$URL" 2>/dev/null \
+    --virtual-time-budget=3000 --window-size="$size" --dump-dom "$URL" 2>/dev/null \
     | grep -o '<title>M:[^<]*' | sed 's|<title>M:||'
 done
 rm -rf "$OUT"

@@ -260,11 +260,12 @@
 @utility generate-btn {
   width: auto;
   /* min-width only stops it collapsing on the short "Generate" label -- it is
-     not a target size. The blocked reasons ("Waiting for the voice model")
-     set the real width when they appear. */
-  min-width: 120px;
+     not a target size, and it is not what sizes the button most of the time:
+     the blocked reasons ("Waiting for the voice model") are far longer and
+     set the real width whenever they appear. So this can be tight. */
+  min-width: 92px;
   height: 40px;
-  padding: 0 18px;
+  padding: 0 14px;
   font-size: 14px;
   font-weight: 500;
   color: var(--btn-invert-fg);
@@ -297,10 +298,6 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
-}
-
 /* html's background, which shows through before #root has any height and
    behind overscroll. The real page background is body's, further down.
 
@@ -320,10 +317,6 @@ body {
 
 #root {
   min-height: 100svh;
-}
-
-p {
-  margin: 0;
 }
 
 /* Scrollbars — neutral on purpose. The accents mean "in progress" (amber) and

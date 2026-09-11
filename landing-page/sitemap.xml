@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One page, one entry.
+
+  No lastmod. A date here is a promise, and a stale one is worse than none:
+  crawlers that trust it will skip a page that has actually changed. Add it
+  only if something keeps it accurate.
+
+  Note for editors: XML comments cannot contain a double hyphen. It is not a
+  style rule, it ends the comment and the file stops parsing.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://homegrown-x.vercel.app/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

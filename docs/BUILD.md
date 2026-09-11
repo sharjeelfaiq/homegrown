@@ -118,9 +118,24 @@ precede the freeze.
 
 ```bash
 mkdir -p .tmp
+python scripts/build_splash.py
 cd backend  && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe backend.spec  --clean --noconfirm && cd ..
 cd launcher && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe launcher.spec --clean --noconfirm && cd ..
 ```
+
+`build_splash.py` compiles the launcher's loading screen — `launcher/splash.html`
+and `splash.css` — with the Tailwind CLI and writes `launcher/_splash.py`, which
+`launcher.py` imports. It must run **before** the launcher freeze, or the exe
+ships whatever `_splash.py` last held.
+
+That splash is the one surface that cannot use the Tailwind Play CDN the landing
+page uses: it has to paint with no backend and frequently no network, which is
+exactly when a CDN is unavailable. `_splash.py` is committed, so a build on a
+machine without npm still produces a working exe; `python scripts/build_splash.py
+--check` fails if it is stale relative to its sources.
+
+It is a generated **module**, not a data file. `launcher.spec` declares
+`datas=[]` and PyInstaller follows imports, so the spec needs no change.
 
 `TMP`/`TEMP` are redirected off `C:` on purpose — PyInstaller unpacks several GB
 through the temp directory and will exhaust a small system drive.

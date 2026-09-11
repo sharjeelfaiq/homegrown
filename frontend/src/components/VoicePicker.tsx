@@ -124,15 +124,19 @@ export default function VoicePicker({
     )
   }
 
-  // Fixed at 220px on desktop so the field does not read as a search bar --
-  // absorbing the compose row's slack made it as wide as the composer, which
-  // looked like search rather than a choice between a handful of voices.
-  // Below the breakpoint it gives way instead: at 320px the row is [+] 32 +
-  // gap 8 + 220px, which fits by 12px and stops fitting the moment a
-  // scrollbar appears, so it shrinks to a 150px floor.
+  // Fixed on desktop so the field does not read as a search bar -- absorbing
+  // the compose row's slack made it as wide as the composer, which looked
+  // like search rather than a choice between a handful of voices. 168px is
+  // enough for a typical voice name; longer ones truncate with an ellipsis,
+  // which they always did.
+  //
+  // Below the breakpoint it gives way instead, down to a 124px floor. At
+  // 320px the row is now [+] 32 + gap 8 + 168, which leaves real slack rather
+  // than the 12px the old 220px left -- that margin vanished the moment a
+  // scrollbar appeared.
   return (
     <div
-      className="relative min-w-[150px] flex-[0_1_220px] wide:min-w-0 wide:flex-[0_0_220px]"
+      className="relative min-w-[124px] flex-[0_1_168px] wide:min-w-0 wide:flex-[0_0_168px]"
       ref={rootRef}
     >
       <button

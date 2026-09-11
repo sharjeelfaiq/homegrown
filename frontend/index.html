@@ -10,7 +10,50 @@
          therefore Studio-coloured for the ~100ms before React mounts; that
          is a fair trade against a sixth hand-mirror. -->
     <meta name="theme-color" content="#16171f" />
-    <title>Homegrown</title>
+    <title>Homegrown — Voice Studio</title>
+    <meta
+      name="description"
+      content="Clone a voice from a short reference clip and generate voiceovers from any script. Runs entirely on this machine."
+    />
+
+    <!--
+      NOINDEX IS DELIBERATE. Do not remove it thinking it was an oversight.
+
+      This app has no sign-in. backend/auth.py's get_current_user returns the
+      constant "local-user" for every request -- no password, no token, no
+      session -- so anyone who reaches this page has full access to every
+      voice and every voiceover, including deleting them.
+
+      Three of the four deployment modes are private by construction
+      (localhost dev, LAN, and the desktop exe on loopback). The fourth puts
+      this same bundle on a public Vercel URL, and while frontend/vercel.json
+      still exists that remains possible. A robots tag costs nothing against
+      that.
+
+      It is not a security control. It asks well-behaved crawlers not to
+      index; it stops nobody who has the URL. If this app is ever genuinely
+      exposed, the fix is auth, not this line.
+
+      The marketing page is the surface that is meant to rank --
+      landing-page/index.html, https://homegrown-x.vercel.app.
+    -->
+    <meta name="robots" content="noindex, nofollow" />
+
+    <!--
+      og tags are for the one case where a link to this app can actually be
+      unfurled: the public Vercel deployment. A localhost or LAN address
+      cannot be fetched by Slack, Teams or anything else, so these do nothing
+      in the three normal modes -- which is why there are four of them and not
+      a full card. The image is the landing page's, since that is the only
+      publicly reachable asset in this project.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Homegrown — Voice Studio" />
+    <meta
+      property="og:description"
+      content="Clone a voice from a short reference clip and generate voiceovers from any script."
+    />
+    <meta property="og:image" content="https://homegrown-x.vercel.app/og.png" />
 
     <!-- ==== Pre-paint theme ================================================
          All of this has to happen before the first frame, which rules out
