@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type KeyboardEvent, type PointerEvent, type RefObject } from 'react'
+import { useWavePalette } from '../ThemeContext'
 
 interface Props {
   peaks: Float32Array
@@ -18,6 +19,11 @@ const H = 36
 export default function WaveRibbon({ peaks, audioRef, playing, durationS, label }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const draggingRef = useRef(false)
+
+  // Destructured to three strings rather than held as an object, so draw's
+  // identity moves only when a colour actually changes -- and so the dep list
+  // below says what it means.
+  const { base: BASE, played: ACCENT, playhead: PLAYHEAD } = useWavePalette()
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -41,16 +47,16 @@ export default function WaveRibbon({ peaks, audioRef, playing, durationS, label 
     const step = W / n
     const barW = Math.max(1.5, step - 1.2)
 
-    // Canvas can't read CSS custom properties, so the three colours the
-    // waveform needs are mirrored from tokens.css here. Keep them in step.
+    // BASE / ACCENT / PLAYHEAD arrive already resolved from ThemeContext --
+    // see resolveWavePalette() in theme.ts for why they cannot simply be read
+    // off the custom properties. They used to be three hardcoded literals
+    // mirrored from tokens.css by hand.
+    //
     // The waveform is coloured AT REST, not only once played. An earlier pass
     // painted unplayed audio neutral white and reserved cyan for the played
     // portion -- which meant a voiceover you had not played was grey, and
     // since that is most of them most of the time, the page had no colour in it
-    // at all. Unplayed is now dim cyan; playing brightens it.
-    const BASE = 'rgba(77, 212, 232, 0.34)' // --accent-2, unplayed
-    const ACCENT = '#7ee4f3' // brightened --accent-2, played
-    const PLAYHEAD = 'rgba(255, 255, 255, 0.9)'
+    // at all. Unplayed is now the dim audio accent; playing brightens it.
 
     const drawEnvelope = (from: number, to: number, style: 'base' | 'played') => {
       const x0 = from * W
@@ -83,7 +89,12 @@ export default function WaveRibbon({ peaks, audioRef, playing, durationS, label 
       ctx.fillStyle = PLAYHEAD
       ctx.fillRect(progress * W - 1, 0, 1, H)
     }
-  }, [peaks, audioRef, durationS])
+    // The three colours are dependencies on purpose: that is the entire
+    // mechanism that repaints a PAUSED ribbon when the theme changes. The
+    // effect below re-runs whenever draw's identity moves, and nothing else
+    // in this component would ever ask for a repaint at rest -- the rAF loop
+    // only runs while playing, and there is no resize or matchMedia listener.
+  }, [peaks, audioRef, durationS, BASE, ACCENT, PLAYHEAD])
 
   // Static redraws: new peaks, or progress changes while paused (seek/ended).
   useEffect(() => {
@@ -157,7 +168,7 @@ export default function WaveRibbon({ peaks, audioRef, playing, durationS, label 
 
   return (
     <div
-      className="wave-ribbon"
+      className="block h-6 w-full min-w-0 flex-1 cursor-pointer rounded-sm"
       role="slider"
       tabIndex={0}
       aria-label={`Seek within ${label}`}

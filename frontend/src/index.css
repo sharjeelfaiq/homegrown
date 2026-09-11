@@ -1,19 +1,312 @@
+/* Tailwind, imported in pieces so the layer each part lands in is explicit.
+   Equivalent to `@import 'tailwindcss'`, written out.
+
+   PREFLIGHT IS NOT OPTIONAL HERE, and that is worth stating because it was
+   left out for most of the migration and the consequence was not obvious.
+   Tailwind's `border` utility compiles to
+
+       .border { border-style: var(--tw-border-style); border-width: 1px }
+
+   and the thing that establishes --tw-border-style for every element is
+   Preflight's `*, ::before, ::after { border: 0 solid }`. Drop Preflight and
+   the width still applies but the style resolves to the UA default `none`, so
+   every bordered surface in the app -- cards, the script box, row hairlines,
+   the menus -- silently draws nothing. The build stays green and the guards
+   stay green; the page just loses its outlines.
+
+   The same reset is also what gives `ring`, `divide` and `outline` utilities
+   a predictable starting point, so this is a general dependency and not a
+   quirk of one utility.
+
+   It was correct to omit during the migration -- unlayered App.css beat
+   @layer base everywhere it had an opinion, and Preflight would have restyled
+   h1-h3, ul/ol and svg/canvas where App.css said nothing. That trade ended
+   when App.css did.
+
+   The app's own base rules further down this file (body, button/form
+   elements, h1-h3) sit in @layer base alongside it, later in source order,
+   so they beat Preflight and lose to utilities. They must NOT be unlayered:
+   unlayered CSS outranks every layer, and `button { background: none;
+   border: none }` at that rank strips the fill and border off every
+   @utility-defined control in the app. See the note on that block. */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* Explicit, because automatic content detection did not pick up src/*.tsx
+   here -- a class used in a component silently produced no CSS, which is a
+   miserable thing to debug mid-migration. Relative to this file, so it means
+   frontend/src. index.html is deliberately NOT scanned: the only classes it
+   carries are on the pre-paint theme script's own markup, and letting the
+   scanner into it would also mean scanning the inlined theme CSS. */
+@source './**/*.{ts,tsx}';
+
+/* ==== The Tailwind bridge ==============================================
+   Maps Tailwind's --color-* / --breakpoint-* namespaces onto the design
+   tokens in styles/tokens.css, which is where the actual palettes live.
+
+   `inline` is the entire reason runtime theme switching works. A plain
+   @theme block copies the token's VALUE into each utility at build time, so
+   .bg-surface-card would compile to `background-color: #1d1f28` and freeze
+   on Studio forever. `@theme inline` emits `var(--bg-card)` instead, so
+   flipping data-theme on <html> re-resolves every utility on the page. If
+   themes ever stop switching, check that this word is still here.
+
+   It does not matter that the tokens are defined in another file: an inline
+   mapping only forwards the var() reference, it never needs the value.
+
+   Names are semantic, not physical. `--color-accent-audio` rather than
+   `--color-accent-2`: a token called "accent-2" means nothing once it is
+   rust on Tape and red on Booth. The underlying tokens in tokens.css keep
+   their historical names, so a rename here never has to touch the palette.
+
+   Adding a token to tokens.css does nothing until it is mapped here. */
+@theme inline {
+  /* Surfaces */
+  --color-surface-deepest: var(--bg-deepest);
+  --color-surface-base: var(--bg-base);
+  --color-surface-nav: var(--bg-nav);
+  --color-surface-card: var(--bg-card);
+  --color-surface-raised: var(--bg-raised);
+  --color-surface-hover: var(--bg-hover);
+
+  /* Text */
+  --color-ink: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+
+  /* Hairlines -- the app's only separator. */
+  --color-hairline: var(--line);
+  --color-hairline-strong: var(--line-strong);
+  --color-hairline-focus: var(--line-focus);
+  /* Interactive edges. Heavier than --line on purpose -- see tokens.css. */
+  --color-control: var(--control-edge);
+  --color-control-hover: var(--control-edge-hover);
+  --color-control-fill: var(--control-fill);
+  --color-control-fill-hover: var(--control-fill-hover);
+
+  /* The two accents, each with exactly one job. */
+  --color-progress: var(--accent);
+  --color-progress-dim: var(--accent-dim);
+  --color-progress-soft: var(--accent-soft);
+  --color-progress-line: var(--accent-line);
+  --color-audio: var(--accent-2);
+  --color-audio-bright: var(--accent-2-bright);
+  --color-audio-soft: var(--accent-2-soft);
+  --color-audio-line: var(--accent-2-line);
+
+  /* Status */
+  --color-queued: var(--queued);
+  --color-queued-soft: var(--queued-soft);
+  --color-queued-line: var(--queued-line);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-soft: var(--danger-soft);
+  --color-ok: var(--green);
+
+  /* Scrims, and the inverted primary button. */
+  --color-scrim-boot: var(--scrim-boot);
+  --color-scrim-modal: var(--scrim-modal);
+  --color-scrim-drop: var(--scrim-drop);
+  --color-sheen: var(--sheen);
+  --color-invert-bg: var(--btn-invert-bg);
+  --color-invert-fg: var(--btn-invert-fg);
+  --color-invert-bg-hover: var(--btn-invert-bg-hover);
+
+  /* Geometry and type, so utilities and hand-written CSS agree. */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  /* 1025px, NOT Tailwind's lg (1024px). The app's two-column layout and
+     HistoryList's TWO_COLUMN_QUERY both switch at 1025, and the off-by-one
+     matters: it decides whether the list or the page is the scroll root, and
+     rooting the IntersectionObserver at the wrong one chain-loads the entire
+     history in a single pass. Use `wide:` here, never `lg:`. */
+  --breakpoint-wide: 1025px;
+
+  /* The keyframes themselves sit below, outside @theme -- only the
+     shorthand belongs in the theme namespace. */
+  --animate-boot-spin: boot-spin 0.9s linear infinite;
+  --animate-sheen: sheen 2.1s var(--ease) infinite;
+  /* 1.4s, matching the .generating-dot it replaces -- not Tailwind's own
+     animate-pulse, which is 2s and uses a different opacity curve. */
+  --animate-pulse-soft: pulse-soft 1.4s var(--ease) infinite;
+}
+
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse-soft {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* ==== Shared control primitives ========================================
+   These four are used at roughly a dozen call sites between them. Written
+   as @utility rather than pasted inline at each one: repeating eight
+   utilities ten times is not a migration, it is ten places to forget when
+   the control changes. @utility is Tailwind's own mechanism for this -- the
+   definitions live in the utilities layer, they compose with variants the
+   normal way, and the call sites keep reading `className="icon-btn"`.
+
+   Element-specific layout (where a button sits, what it is next to) stays
+   inline at the call site. Only what makes it THAT KIND OF CONTROL is here. */
+
+@utility ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  background: var(--control-fill);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease),
+    background var(--fast) var(--ease);
+
+  &:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--control-edge-hover);
+    background: var(--control-fill-hover);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+  }
+}
+
+@utility ghost-btn-danger {
+  &:hover:not(:disabled) {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: var(--danger-soft);
+  }
+}
+
+@utility icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+
+  /* Coarse pointers get a bigger hit area without changing the visual
+     weight: the target grows, the glyph does not. 28px squares are well
+     under the ~44px a finger actually needs. */
+  @media (pointer: coarse) {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  color: var(--text-faint);
+  border-radius: var(--radius-sm);
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+
+  &:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  &:disabled {
+    opacity: 0.3;
+  }
+}
+
+@utility icon-btn-danger {
+  &:hover:not(:disabled) {
+    color: var(--danger);
+  }
+}
+
+@utility primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--btn-invert-fg);
+  background: var(--btn-invert-bg);
+  border-radius: var(--radius-sm);
+
+  &:disabled {
+    color: var(--text-faint);
+    background: var(--bg-raised);
+  }
+}
+
+/* The app's single call to action. Kept as a utility beside the other button
+   primitives rather than inlined at its one call site: it is the same family
+   of control, and splitting the family across two mechanisms is how the
+   inverted-button colours drifted apart in the first place. */
+@utility generate-btn {
+  width: auto;
+  /* min-width only stops it collapsing on the short "Generate" label -- it is
+     not a target size, and it is not what sizes the button most of the time:
+     the blocked reasons ("Waiting for the voice model") are far longer and
+     set the real width whenever they appear. So this can be tight. */
+  min-width: 92px;
+  height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--btn-invert-fg);
+  background: var(--btn-invert-bg);
+  border-radius: var(--radius-md);
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+
+  /* Hover pushes the fill FURTHER from the page, not toward white. A literal
+     white hover was not merely un-themable, it was wrong: on a light theme
+     --text-primary is near-black, so the button is black and hovering it to
+     white made it disappear under the cursor. */
+  &:hover:not(:disabled) {
+    background: var(--btn-invert-bg-hover);
+  }
+
+  &:disabled {
+    color: var(--text-faint);
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+  }
+}
+
 :root {
-  color-scheme: dark;
+  /* color-scheme lived here as a second static `dark`. It is per-theme now
+     (tokens.css) plus an inline style set pre-paint (index.html); a third
+     copy here could only ever be the one that is wrong. */
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
-}
+/* html's background, which shows through before #root has any height and
+   behind overscroll. The real page background is body's, further down.
 
-/* Painted before any stylesheet-driven background resolves — kills the
-   white flash on load. */
+   This used to be the literal #14151a, as the last defence against a white
+   flash on load. That job has moved to the inline <style> in index.html,
+   which lands before the first paint in `vite dev` too -- this rule cannot,
+   because in dev it arrives through the JS module graph, i.e. after. All
+   this has to do now is agree with whatever theme is live. */
 html {
-  background: #14151a;
+  background: var(--bg-base);
 }
 
 body {
@@ -23,10 +316,6 @@ body {
 
 #root {
   min-height: 100svh;
-}
-
-p {
-  margin: 0;
 }
 
 /* Scrollbars — neutral on purpose. The accents mean "in progress" (amber) and
@@ -53,4 +342,469 @@ p {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--line-focus);
+}
+
+/* The trigger of the hand-rolled voice dropdown. Named .select and shaped
+   like a native one, but it is a <button> -- VoicePicker deliberately is not
+   a <select>, because an <option> cannot hold per-row play and delete
+   buttons. There is no native <select> anywhere in this app, which is what
+   makes the ::after caret below possible at all. */
+@utility select {
+  /* Only so ::after can be placed. Safe for the dropdown: .voice-menu is a
+     SIBLING of this button, absolutely positioned against .voice-field, so
+     its containing block does not move. */
+  position: relative;
+  height: 32px;
+  padding: 0 30px 0 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  /* A field is raised even at rest -- unlike a button, which is a ghost
+     until hovered. This is the surface inputs sit on elsewhere. */
+  background-color: var(--bg-raised);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-sm);
+  appearance: none;
+  cursor: pointer;
+  transition: border-color var(--fast) var(--ease);
+
+  &:hover {
+    border-color: var(--control-edge-hover);
+    background-color: var(--control-fill-hover);
+  }
+
+  /* The caret is a MASK, not a background image, so it carries no colour of
+     its own and follows the theme.
+
+     A colour inside a data: URI cannot be a token -- an SVG background is a
+     separate document, and currentColor there resolves against the SVG's own
+     context, not this element's. So the old %23a9adba was a hand-mirror of
+     --text-muted that no theme could reach. Worse, it sat on the same line as
+     the xmlns, which scripts/check_design_tokens.py skips, so nothing would
+     have caught it drifting either. Masking moves the colour out into
+     `background`, where a var() works.
+
+     Absolutely positioned so it does not become a flex item of
+     .voice-trigger. Still a data: URI, still no network request: this app
+     has to render with the machine offline. */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    width: 10px;
+    height: 6px;
+    transform: translateY(-50%);
+    background: var(--text-muted);
+    --caret: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='black' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    -webkit-mask: var(--caret) no-repeat center / 10px 6px;
+    mask: var(--caret) no-repeat center / 10px 6px;
+    pointer-events: none;
+  }
+}
+
+/* A heading whose trailing hairline fills the rest of the line -- the
+   "SCRIPT ────" / "VOICEOVERS ────" rule. Used by three headings, and the
+   ::after is the whole point of it, so it stays a utility rather than being
+   inlined three times with a pseudo-element each. */
+@utility section-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+}
+
+/* ==== Voiceover rows ===================================================
+   These four stay as utilities rather than being inlined at their call
+   sites, because each one carries an invariant that has to live in one
+   place. Inlining them would scatter the reasoning across HistoryList and
+   invite the next person to "tidy" a value that is load-bearing. */
+
+/* A fixed window, not the whole history. About eight rows are shown, the
+   first twenty are fetched up front, and the next ten arrive when the
+   sentinel at the bottom scrolls into view -- so the column has one height
+   whether the user has made three voiceovers or three hundred, and the page
+   never grows a scrollbar.
+
+   flex + min-height: 0 AS WELL AS the cap, and the two are not redundant:
+   the cap is the ceiling, the flex clamp is the floor. On a short viewport
+   (a 768px laptop, say) the block has to shrink BELOW eight rows rather than
+   push the layout past the fold, and there the max-height never applies at
+   all. Raising the multiplier alone does nothing there. */
+/* Touch devices. Used to hide things that describe a physical keyboard --
+   a "Ctrl+F" key cap on a phone advertises a key that is not there, and at
+   phone widths it was eating 12-14% of the search field to do it.
+   `pointer: coarse` rather than a width query on purpose: a narrow window on a
+   desktop still has a Ctrl key, and a large tablet still does not. */
+@custom-variant coarse (@media (pointer: coarse));
+
+@utility result-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* The padding is ADDED to the cap, not taken out of it. Preflight sets
+     box-sizing: border-box, so a bare `8 * --result-row-h` would spend 12px of
+     the eight-row window on its own padding and show seven rows and a sliver.
+     The window is specified in rows; keep the arithmetic saying so. */
+  max-height: calc(8 * var(--result-row-h) + 12px);
+  margin: 0;
+  padding: 6px 8px;
+  overflow-y: auto;
+  list-style: none;
+  /* Keeps the scrollbar off the row content rather than over it. */
+  scrollbar-gutter: stable;
+
+  /* Below the breakpoint the PAGE is the scroller, so the cap and the inner
+     scroller both come off -- a short inner scroller inside a locked page is
+     two nested scroll regions on a phone. 1025px, matching --breakpoint-wide;
+     HistoryList's TWO_COLUMN_QUERY has to agree with this, and so does the
+     wide: variant on the workspace grid. */
+  @media (width < 1025px) {
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+/* The voices dialog's list. Sits next to result-list because the two look
+   alike and are the OPPOSITE of each other in the one property that matters.
+
+   `height`, not `max-height`. result-list caps a list that is allowed to be
+   shorter; this one RESERVES six rows whether there are six voices or one.
+   That difference is the entire feature: the modal panel sizes to its content
+   and the backdrop centres it (Modal.tsx), so a list that grows by a row
+   grows the dialog by a row in both directions -- and the dialog deliberately
+   stays open after a voice is cloned, so the user is looking straight at the
+   jump at the moment their voice appears. A max-height cap does not fix that;
+   it only stops it after the sixth voice.
+
+   `flex: none` for the same reason, and this is the other inversion:
+   result-list is `flex: 1 1 auto; min-height: 0` so the Voiceovers column can
+   shrink BELOW eight rows on a short laptop rather than push the layout past
+   the fold. Here the reserve is the point, so the default flex-shrink: 1 of a
+   flex child would quietly undo it. The two are inconsistent on purpose --
+   different containers, opposite requirements. Do not unify them.
+
+   scrollbar-gutter keeps the scrollbar arriving at row seven from shifting
+   the row content sideways.
+
+   No `@media (width < 1025px)` release, unlike result-list: this is inside a
+   modal that is already a fixed-size box on every viewport, not a column of
+   the page, so there is no page-scroller to hand back to. */
+@utility voice-list {
+  flex: none;
+  height: calc(6 * var(--voice-row-h));
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
+/* The row title IS the rename field -- one <input>, always present, dressed
+   as plain text until focused. Every box-affecting property (height,
+   padding, border width, font) is identical focused and unfocused, so
+   clicking it moves nothing. font-family is explicit because there is no
+   `input { font: inherit }` reset reaching this, and without it the field
+   drops to the UA font.
+
+   Only `background` and `border-color` change on focus -- neither takes part
+   in layout. NEVER add a border-width or padding change here. */
+@utility result-name {
+  /* Width comes from the `size` attribute, which React sets from the value.
+     flex: 0 1 auto lets it shrink under pressure but never stretch;
+     max-width is what stops a very long name shoving the voice off the row. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  height: 26px;
+  padding: 0 6px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  text-overflow: ellipsis;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+
+  /* No hover border and no focus fill. The field reads as the row's title
+     rather than as a control, which is what it is 99% of the time -- a name
+     you read, not a box you fill in.
+
+     The transparent 1px border STAYS. It is not decoration: every
+     box-affecting property has to be identical focused and unfocused or
+     clicking the name shifts the row, and removing the border would collapse
+     the box by 2px at the moment of the click.
+
+     The focus ring is suppressed too, by request: clicking the name to rename
+     it should not light the field up. That has to be `outline: none` rather
+     than leaving it to :focus-visible, because a TEXT input matches
+     :focus-visible even on a mouse click -- browsers assume anything you
+     click into to type deserves an indicator -- so the app-wide ring in
+     tokens.css would still fire on exactly the interaction being removed.
+
+     What remains as the focus affordance is the caret. For a text field that
+     is the conventional one and it is genuinely visible, but it is weaker
+     than a ring: see the note in CLAUDE.md before adding another control to
+     this utility. */
+  &:focus {
+    outline: none;
+  }
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+}
+
+/* The time slot -- position/total on a finished row, elapsed on one still
+   generating. It holds two separate width invariants, solved two ways.
+
+   WITHIN one row, the played/remaining toggle must not resize: that is the
+   1ch sign span reserving the minus, the single character that differs
+   between the two states, with .mono's tabular-nums making the digits equal.
+
+   ACROSS the two row kinds, the slot must be the same size regardless of
+   content, or the preview beside it (flex: 1 1 auto) starts at a different x
+   on a generating row than on a finished one -- and moves again as the
+   generating row goes "Queued" (6 chars) to "0:07" (4) to "Cancelling…" (11).
+   Hence the fixed width.
+
+   14ch, not a pixel guess: 1ch sign + "12:07 / 45:33" is 14 characters, and
+   --font-mono (IBM Plex Mono) is a true monospace, so every glyph -- letters
+   and the ellipsis included, not just the tabular digits -- shares one
+   advance and ch measures it exactly in this element's own font. The earlier
+   attempt here was 84px, which the content outgrew; a character count cannot
+   be outgrown by content that is by construction 14 characters.
+
+   Fixed in BOTH directions, so it neither shrinks for "0:07" nor grows for a
+   two-hour voiceover -- formatClock's minutes are unbounded ("125:03 /
+   130:00"), and that case ellipsises inside the slot rather than shoving the
+   preview. */
+@utility result-time {
+  flex: none;
+  width: 14ch;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: transparent;
+  transition: color var(--fast) var(--ease);
+
+  &:hover {
+    color: var(--text-muted);
+  }
+}
+
+/* One bar at every chunk count. The ticks are a repeating gradient rather
+   than one element per chunk, so the cost is identical at 3 chunks and at
+   750. The stop positions derive from --chunks, set inline by the component,
+   which keeps the arithmetic in one place instead of splitting it between JS
+   and CSS. This replaced a cell grid whose repeat(auto-fill, minmax(14px,
+   1fr)) laid out roughly 40 tracks whatever the chunk count -- so a typical
+   3-7 chunk job drew a few ticks at the far left of a wide empty strip. */
+@utility result-bar {
+  /* Sits where the waveform sits on a finished row, so the two row kinds
+     line up down the column: flexible, with the actions beside it staying
+     put. */
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  height: 10px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+@utility has-ticks {
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(100% / var(--chunks) - 1px),
+      var(--bg-base) calc(100% / var(--chunks) - 1px),
+      var(--bg-base) calc(100% / var(--chunks))
+    );
+  }
+}
+
+/* A queued row is the same row in a different colour -- amber means the GPU
+   is working on it, purple means it is waiting its turn.
+
+   The colour goes on the TRACK and the label, not on the bar fill: a queued
+   job is at 0%, so the fill has no width to carry it. The inset box-shadow is
+   a border that costs no layout, which matters because --result-row-h and the
+   8-row window cap assume every row is exactly the same height.
+
+   Colour is not the only signal, and deliberately so -- roughly 1 in 12 men
+   would not read hue alone. In greyscale a queued row still has an empty,
+   sheen-less bar and reads "Queued" where a running row has a ticking clock. */
+@utility is-queued {
+  & .result-bar {
+    background: var(--queued-soft);
+    box-shadow: inset 0 0 0 1px var(--queued-line);
+  }
+
+  & .result-time {
+    color: var(--queued);
+  }
+}
+
+/* Terminal and unrecoverable, so it is coloured like every other failure in
+   the app rather than getting a state colour of its own -- --danger already
+   means "this went wrong" on the error row and the delete button.
+
+   Same construction as is-queued: the track and the label carry it, because a
+   failed job has no progress and so its bar fill has no width to colour, and
+   the outline is an inset box-shadow so the box does not grow. The row must
+   stay exactly --result-row-h tall; the eight-row window cap assumes it. */
+@utility is-failed {
+  & .result-bar {
+    background: var(--danger-soft);
+    box-shadow: inset 0 0 0 1px var(--danger);
+  }
+
+  & .result-time,
+  & .result-text {
+    color: var(--danger-text);
+  }
+}
+
+/* Collapsed by default. The driver's message is worth keeping -- it is the
+   only record of what actually happened -- but it is several lines of CUDA
+   text, and putting that in front of someone who just wants to know whether
+   their work survived is how a dialog stops being read at all.
+
+   Stays a utility because a <summary> marker cannot be reset with utilities:
+   it needs list-style, the -webkit pseudo-element, and ::before content that
+   flips on [open]. */
+@utility fault-more {
+  & > summary {
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--text-faint);
+    list-style: none;
+  }
+
+  & > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  & > summary::before {
+    content: '▸ ';
+  }
+
+  &[open] > summary::before {
+    content: '▾ ';
+  }
+
+  & > summary:hover {
+    color: var(--text-muted);
+  }
+}
+
+/* The row's action strip. Always visible, just dimmed at rest -- these used
+   to be opacity: 0 until hover, which hid the only way to download a
+   voiceover behind a gesture you had to already know about. Still
+   opacity-only, so nothing here changes the box and the row cannot reflow as
+   its state changes; the dimming itself is a group-hover utility at the call
+   site. Only the two input-conditional rules live here. */
+@utility result-actions {
+  /* A touch screen has neither :hover nor :focus-within until you have
+     already tapped something, which left download and delete looking
+     permanently disabled on a phone. Keyed to the input, not to a width: a
+     small window on a desktop still has a mouse. */
+  @media (hover: none) {
+    opacity: 1;
+  }
+
+  @media (pointer: coarse) {
+    gap: 4px;
+  }
+}
+
+/* ==== Base elements ====================================================
+   IN @layer base, and that is not cosmetic -- it is the whole reason these
+   work.
+
+   Unlayered CSS beats EVERY cascade layer, utilities included. When these
+   rules came out of App.css they were written unlayered, which read as
+   harmless (they had been unlayered in App.css too) and quietly broke every
+   bordered control in the app: `button { background: none; border: none }`
+   outranked @utility ghost-btn, select, generate-btn and icon-btn, all of
+   which live in @layer utilities. Generate lost its fill, the voice
+   dropdown lost its border and its fill, and no amount of raising
+   --control-edge could bring them back, because the border was not being
+   drawn at all. In App.css the same rules were also unlayered but came
+   EARLIER in source order, so the component rules won; moving them here
+   inverted that without changing a single declaration.
+
+   Inside `base` these still beat Preflight -- same layer, later in source
+   order -- and lose to utilities, which is the relationship that was
+   intended all along. Do not lift them out of this block. */
+@layer base {
+  body {
+    margin: 0;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-weight: 600;
+  }
+}
+
+/* Phone portrait. 24px each side is 15% of a 320px viewport spent on
+   nothing -- the content is already narrow here, so the margin is what has
+   to give. --gutter is consumed by utilities as p-(--gutter), so changing
+   the token is enough; no utility needs a variant. */
+@media (max-width: 380px) {
+  :root {
+    --gutter: 14px;
+  }
 }

@@ -128,24 +128,31 @@ they're cross-origin, `ALLOWED_ORIGINS` is load-bearing: any origin not
 listed there gets its API responses blocked by the browser. This is why
 filling in the real Vercel domain (step 3 above) is required, not optional.
 
-## Part 6: reference-audio duration limit, 15s -> 60s
+## Part 6: reference-audio duration limit, 15s -> 60s (completed; historical)
 
-Every place the old 15-second limit lived, and its current (already-applied,
-uncommitted) state:
+> **Done, and the numbers below are historical.** This records a change that
+> shipped, and the limit has moved twice since. `MAX_REF_AUDIO_SECS` is
+> **`1800.0`** in `backend/main.py` today — thirty minutes, and it guards
+> buffering the upload in memory rather than quality. What actually bounds the
+> clip is `REF_TRIM_SECS = 40.0`: anything longer is trimmed to the first 40
+> seconds of speech rather than rejected. The
+> `frontend/src/components/LandingPage.tsx` rows refer to a component that **no
+> longer exists** — there is no in-app landing page; `App.tsx` renders
+> `StudioShell` at both `/` and `/studio`, and the marketing copy moved to the
+> standalone `landing-page/index.html`. Nothing here is outstanding work.
 
 | Location | Before | After |
 |---|---|---|
-| `backend/main.py:112` — `MAX_REF_AUDIO_SECS` | `15.0` | `60.0` |
-| `backend/main.py:693-707` — `create_preset` validation error message | interpolates `MAX_REF_AUDIO_SECS`, so it read "maximum 15.0s" | now reads "maximum 60.0s" automatically (no separate hardcoded string) |
-| `frontend/src/components/LandingPage.tsx:31` | "2-15 second reference clip" | "2-60 second reference clip" |
-| `frontend/src/components/LandingPage.tsx:55` | "2-15 second reference clip" | "2-60 second reference clip" |
-| `frontend/src/components/LandingPage.tsx:121` | "(2-15 sec)" | "(2-60 sec)" |
-| `frontend/src/components/LandingPage.tsx:166` | "2-15s" spec value | "2-60s" spec value |
+| `backend/main.py` — `MAX_REF_AUDIO_SECS` | `15.0` | `60.0` *(since raised to `1800.0`)* |
+| `backend/main.py` — `create_preset` validation error | interpolated, read "maximum 15.0s" | interpolates, reads "maximum 60.0s" |
+| `frontend/src/components/LandingPage.tsx` (4 strings) | "2-15 second reference clip" etc. | component since deleted |
 
-No frontend-side JS duration check exists (`ReferenceUpload.tsx` just wires a
-raw file input) — the 15s/60s limit was always backend-enforced only, so
-there was no separate client-side number to find and change. Confirmed no
-other "15 second" references remain anywhere in `backend/` or `frontend/src/`.
+There is still no client-side duration check — the limit is backend-enforced
+only, and `create_preset` is what rejects an over-long clip.
+
+Current guidance, for the avoidance of doubt: **2s–30min accepted, trimmed to
+the first 40 seconds of speech, 10–20s recommended.** Past ~23s, quality degrades on this card regardless of the
+limit, and `_seq_budget()` shrinks the per-chunk budget as the clip grows.
 
 ## Remaining manual steps (not something code can do for you)
 

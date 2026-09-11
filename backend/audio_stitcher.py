@@ -43,6 +43,57 @@ def trim_edge_silence(chunk: np.ndarray, sample_rate: int) -> np.ndarray:
     return chunk[start:end]
 
 
+def pack_speech(audio: np.ndarray, sample_rate: int, max_gap_seconds: float = 0.3) -> np.ndarray:
+    """Collapse long internal pauses, keeping short ones.
+
+    A reference clip is charged to the model by DURATION, not by how much of it
+    is speech: every second costs CODEC_FRAME_HZ positions of a 1024-position
+    window whether someone is talking or not. A recording that opens with
+    hesitation therefore spends the budget on silence and hands the clone very
+    little voice to learn from -- observed as a WhatsApp voice note whose first
+    40s transcribed to 96 characters, 2.4 chars/sec against a 3.0 floor, which
+    the upload check then rejected as an implausible transcript. It was not
+    implausible; the audio really was that empty.
+
+    Long pauses are collapsed to max_gap_seconds rather than removed outright.
+    Speech with every gap deleted sounds hurried and unnatural, and the clone
+    copies the reference's rhythm -- so the point is to remove dead air, not
+    to remove pacing.
+
+    Returns the input unchanged when it is entirely quiet: an all-silent clip
+    is a problem to surface, not to silently turn into a zero-length array.
+    """
+    if audio.size == 0:
+        return audio
+
+    window = max(1, int(_TRIM_WINDOW_SECONDS * sample_rate))
+    count = audio.size // window
+    if count == 0:
+        return audio
+
+    rms = np.sqrt((audio[: count * window].reshape(count, window) ** 2).mean(axis=1))
+    loud = rms > _TRIM_THRESHOLD
+    if not loud.any():
+        return audio
+
+    max_gap_windows = max(1, int(max_gap_seconds / _TRIM_WINDOW_SECONDS))
+    keep = np.zeros(count, dtype=bool)
+    run = 0
+    for i in range(count):
+        if loud[i]:
+            keep[i] = True
+            run = 0
+        else:
+            run += 1
+            # Keep the first max_gap_windows of any quiet run; drop the rest.
+            keep[i] = run <= max_gap_windows
+
+    packed = audio[: count * window].reshape(count, window)[keep].reshape(-1)
+    # Anything past the last whole window is a partial frame; keep it so the
+    # tail is not clipped mid-syllable.
+    return np.concatenate([packed, audio[count * window :]])
+
+
 def stitch_audio(chunks: list[np.ndarray], sample_rate: int, gap_seconds: float = 0.2) -> np.ndarray:
     if not chunks:
         return np.zeros(0, dtype=np.float32)

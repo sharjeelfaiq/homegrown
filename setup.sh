@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot setup for Voice Clone Studio. Safe to re-run -- every step is skipped
+# One-shot setup for Homegrown. Safe to re-run -- every step is skipped
 # if it's already done, so a failed/interrupted run just needs re-invoking.
 #
 #   bash setup.sh

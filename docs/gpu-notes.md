@@ -1,9 +1,12 @@
-GPU / CLOUD RECOMMENDATION — Voice Clone Studio (Qwen3-TTS-12Hz-0.6B)
+GPU / CLOUD RECOMMENDATION — Homegrown (Qwen3-TTS-12Hz-0.6B)
 ======================================================================
 
 CURRENT SETUP (baseline for comparison)
 ----------------------------------------
 - GTX 960, 4GB VRAM, bfloat16, sdpa attention (no flash-attn installed)
+  NB: these measurements were taken on a GTX 960. The machine running
+  the app now reports a GTX 970 (sm_52) via /api/health. Both are 4GB
+  sm_52 Maxwell, so the constants below hold, but the numbers are 960 numbers.
 - Model itself is small: 0.6B params, ~1.2GB weights in bf16
 - But VRAM sits at ~3989-3991MB used out of 4096MB during generation --
   basically maxed out just from CUDA-graph static buffers + KV cache
@@ -90,7 +93,7 @@ this app isn't a 24/7 always-on service.
 
 WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
 ----------------------------------------
-- Raise max_seq_len in webapp/backend/main.py (currently 1024) --
+- Raise max_seq_len in backend/main.py (currently 1024) --
   8-12GB+ cards can go to 2048-4096 safely, 16GB+ to 4096-8192.
 - Raise CHUNK_MAX_CHARS accordingly (currently 800, tuned specifically
   for the 4GB/1024 config) -- fewer, larger chunks means fewer seams
@@ -99,10 +102,14 @@ WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
   slower "manual PyTorch version" fallback per its own startup warning).
   This alone is a meaningful speedup on any modern datacenter GPU
   (T4/L4/A10G/A100 all support it; RTX 4090 does too).
-- MAX_REF_AUDIO_SECS (currently 15s, in webapp/backend/main.py) can
-  likely be raised somewhat too, since the instability observed this
-  session was tied to the tight max_seq_len budget on the 4GB card --
-  worth re-validating empirically on the new GPU rather than assuming.
+- MAX_REF_AUDIO_SECS (currently 60.0, in backend/main.py) is no longer
+  the binding limit -- _seq_budget() derives the real per-preset budget
+  from what the reference clip leaves of max_seq_len, so raising the
+  guard alone just starves generation. Raise max_seq_len first. Note
+  also that the practical ceiling is quality, not capacity: clips over
+  ~23s have produced garbled output on this card regardless of budget,
+  and 10-20s remains the recommended range.
+  (This line previously read "currently 15s", which was wrong by 4x.)
 - If you want real concurrent multi-user throughput (not just bigger/
   faster single requests), the global _gen_lock serialization needs to
   become a small worker pool (one model instance per GPU, or multiple
@@ -116,6 +123,110 @@ instance or jumping straight to A100/H100. Re-run the same empirical
 calibration approach used this session (test real chunk sizes/durations
 against the new max_seq_len before trusting a bigger number) once
 you're on the new hardware.
+
+
+STABILITY SWEEP (2026-09-09, GTX 970 sm_52)
+----------------------------------------
+Question: does /api/generate's `stability` setting reduce the chunk
+degeneration recorded in CLAUDE.md ("roughly a third of samples babble
+or stop short")? The `stable` preset (temperature 0.5, top_p 0.85,
+top_k 30) is implemented and validated in the backend but the frontend
+has never sent the field, so every voiceover ever made ran `balanced`
+(temperature 0.9, top_p 1.0, top_k 50).
+
+Method: one 618-char script, 4 chunks, on a preset with a 16.1s
+reference clip (`chunk_chars: 200`, i.e. capped by
+ELISION_SAFE_CHUNK_CHARS rather than by the sequence window). 4 runs at
+`balanced`, 4 at `stable`. Each result transcribed with faster-whisper
+`small` (not the `base` the app uses for reference clips -- the judge
+should outrank the thing it judges) and scored word-level against the
+source with difflib. Duration ratios deliberately NOT used: they cannot
+separate padding from a legitimately slow read.
+
+Result:
+
+  balanced  n=4  similarity mean=0.987 worst=0.983 best=0.991
+                 missing=6 invented=6   mean_wall=85s
+  stable    n=4  similarity mean=0.987 worst=0.983 best=0.991
+                 missing=6 invented=6   mean_wall=85s
+
+Identical. Wall time is equal once `balanced` run 1 (123.5s) is
+excluded as the cold CUDA-graph capture; the other seven runs were
+81-87s.
+
+The similarity figures UNDERSTATE the output. Every difference across
+all 8 runs was a transcription artefact, not a generation error:
+
+  balanced_1  in -> and ;  thirty -> 30
+  balanced_2  a  -> the ;  thirty -> 30
+  balanced_3  thirty -> 30
+  balanced_4  thirty -> 30
+  stable_1    in -> and ;  thirty -> 30
+  stable_2    thirty -> 30
+  stable_3    seven -> 7 ;  thirty -> 30
+  stable_4    thirty -> 30
+
+"thirty -> 30" is Whisper writing a numeral; "in -> and", "a -> the"
+are mishearings of unstressed function words. Zero dropped clauses,
+zero invented sentences.
+
+More significant than the comparison: `grep -c resampl` over the
+backend log for the whole sweep returned 0. All 32 chunks passed
+_chunk_duration_is_sane() first time. The retry loop was not masking
+failures -- there were none.
+
+Conclusions:
+- Do not expose a stability control, and do not change the default.
+  There is nothing here for temperature to fix.
+- The degeneration recorded earlier in CLAUDE.md did not reproduce on
+  current code. Most likely already fixed by _seq_budget() sizing
+  chunks from the actual reference clip, chunk_text's balanced
+  partition removing the runt chunk, and the per-chunk max_new_tokens
+  cap.
+- Limits, stated plainly: ONE voice, ONE script, one machine. This is
+  not proof of absence. Keep the resampling; a longer reference clip
+  may still land outside the sweet spot.
+- `creative` (temperature 1.2) was not tested.
+
+
+TDR STRIKES (2026-09-10, GTX 970 sm_52, display-attached)
+----------------------------------------
+Observation only -- the cause is not diagnosed.
+
+Across one working session, eight jobs failed with
+
+    CUDA error: the launch timed out and was terminated
+    (cudaErrorLaunchTimeout)
+
+DECODE_CHUNK_FRAMES=100 was in effect throughout. That constant exists
+specifically to keep each vocoder launch under Windows' ~2s WDDM
+watchdog on a display-attached card, so it is either not sufficient on
+this machine, or something other than the vocoder decode is running long
+enough to trip the watchdog.
+
+What was seen:
+- The strikes did NOT correlate with unusually long scripts. Several
+  were single-chunk jobs of ~20-200 characters.
+- Once struck, the process's CUDA context is dead: every subsequent job
+  fails identically until the backend is restarted. _process_job
+  already short-circuits its chunk retries on "CUDA error" for this
+  reason.
+- One strike took out a running job and two queued behind it in a single
+  event.
+- A backend restart recovered fully each time; no driver-level reset or
+  reboot was needed.
+
+Not established: whether another process was contending for the GPU
+during the session (a browser compositing, the frozen desktop build on
+:8731 also holding a model, or a second dev backend). CLAUDE.md's
+troubleshooting note already warns against running two model processes
+at once, and at least one point in this session had both a dev backend
+on :8000 and backend.exe on :8731 loaded.
+
+Next step if this recurs: check whether the strikes stop with only one
+model process running, before touching DECODE_CHUNK_FRAMES. Raising
+Windows' TdrDelay is the other lever, but it is a machine-wide registry
+change and should be a last resort.
 
 SOURCES (pricing, verified July 2026)
 ----------------------------------------

@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import os
@@ -6,6 +7,7 @@ import sys
 import threading
 import time
 import uuid
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import NamedTuple, Optional
@@ -25,7 +27,7 @@ import soundfile as sf
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from filelock import FileLock
 from pydantic import BaseModel
@@ -37,14 +39,14 @@ from auth import get_current_user, get_last_activity
 from qwen import FasterQwen3TTS
 from qwen.utils import resolve_device
 from audio_convert import wav_to_mp3, write_mp3
-from audio_stitcher import stitch_audio, trim_edge_silence
+from audio_stitcher import pack_speech, stitch_audio, trim_edge_silence
 from text_chunker import chunk_text
 
 _whisper_model = None
 _whisper_lock = threading.Lock()
 
 
-def _transcribe_audio(path: str) -> str:
+def _transcribe_audio(path: str) -> tuple[str, str]:
     """Auto-transcribe a reference clip with faster-whisper (CPU, so it doesn't
     contend with the TTS model for this machine's 4GB of VRAM)."""
     global _whisper_model
@@ -58,13 +60,71 @@ def _transcribe_audio(path: str) -> str:
         # duplicated, giving 361 chars for 15s (~24 chars/sec, about double a
         # real speaking rate). That matters beyond tidiness -- ref_text is spent
         # from the same max_seq_len budget generation needs (see _seq_budget).
-        segments, _ = _whisper_model.transcribe(
+        segments, info = _whisper_model.transcribe(
             path, condition_on_previous_text=False, vad_filter=True,
         )
-        return " ".join(seg.text.strip() for seg in segments).strip()
+        text = " ".join(seg.text.strip() for seg in segments).strip()
+        # Whisper detects the language as a side effect of transcribing, so the
+        # voice can carry the language of its own recording instead of asking
+        # the user to declare it.
+        return text, (info.language or "")
+
+def _trim_reference_clip(path: str, keep_secs: float) -> Optional[tuple[Path, float]]:
+    """Cut a long upload down to the first `keep_secs` of speech, in place.
+
+    Returns (new_path, new_duration). The path changes because write_mp3 goes
+    through PyAV, which picks its container from the FILE EXTENSION -- handed a
+    .wav path it happily writes a RIFF/WAVE container wrapping an MP3 stream,
+    which soundfile then reports as `format=WAV subtype=MPEG_LAYER_III`. Odd
+    rather than broken, but the file would be lying about itself, so the
+    trimmed clip is always written as .mp3 and the caller re-points at it.
+
+    Leading silence goes first (via trim_edge_silence, the same helper the
+    generated chunks use), so a recording that opens with two seconds of room
+    tone does not spend them here.
+
+    Deliberately the FIRST N seconds rather than the loudest window: the user
+    can predict what was used and re-cut the file by hand if they disagree,
+    which a similarity-scored scan would not allow.
+
+    Must run BEFORE transcription. ref_text has to describe the audio the model
+    will actually be conditioned on -- _ref_profile derives the speaker's
+    chars/sec from len(ref_text)/duration, and that rate sizes every chunk. A
+    transcript of the original two minutes against a 25s clip would report a
+    speaking rate roughly 5x too high.
+    """
+    # Bounded: read the opening, never the whole file. Verified that
+    # soundfile's `frames=` works on MP3 and returns the exact prefix, so an
+    # upload of any length costs the same here as a short one. This is what
+    # lets MAX_REF_AUDIO_SECS be a formality rather than a gate.
+    sample_rate = sf.info(path).samplerate
+    want = int(keep_secs * REF_READ_MULTIPLE * sample_rate)
+    audio, sample_rate = sf.read(path, dtype="float32", always_2d=False, frames=want)
+    if audio.ndim > 1:
+        # write_mp3 wants mono; a stereo upload arrives as (n, channels).
+        audio = audio.mean(axis=1)
+
+    audio = trim_edge_silence(audio, sample_rate)
+    # Then the pauses INSIDE it. The window is charged by duration, so silence
+    # in the middle costs exactly as much sequence budget as speech and teaches
+    # the clone nothing.
+    audio = pack_speech(audio, sample_rate)
+    if audio.size == 0:
+        return None
+    keep = int(keep_secs * sample_rate)
+    # Trimming the silence alone may already have brought it under the cap.
+    audio = audio[:keep] if audio.size > keep else audio
+
+    source = Path(path)
+    dest = source.with_suffix(".mp3")
+    write_mp3(audio, sample_rate, str(dest))
+    if dest != source:
+        source.unlink(missing_ok=True)
+    return dest, audio.size / sample_rate
+
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("voice_clone_studio")
+logger = logging.getLogger("homegrown")
 
 # Overridable via MODEL_PATH in backend/.env -- the default below only holds
 # on the original dev machine's local model cache. Any other host (including
@@ -78,9 +138,13 @@ if getattr(sys, "frozen", False):
     # Frozen: __file__ points inside the PyInstaller bundle, not a writable
     # location -- use the folder next to the installed exe instead (backend.exe
     # lives in <install>/backend/, so storage/ is its sibling at <install>/storage).
-    # Overridable via VOICECLONE_STORAGE_DIR (set in the installer's .env).
+    # Overridable via HOMEGROWN_STORAGE_DIR (set in the installer's .env).
     STORAGE_DIR = Path(
-        os.environ.get("VOICECLONE_STORAGE_DIR", str(Path(sys.executable).parent.parent / "storage"))
+        os.environ.get("HOMEGROWN_STORAGE_DIR")
+        # Pre-rebrand installs have the old key in their .env; honour it so an
+        # in-place upgrade does not lose its storage directory.
+        or os.environ.get("VOICECLONE_STORAGE_DIR")
+        or str(Path(sys.executable).parent.parent / "storage")
     )
 else:
     STORAGE_DIR = Path(__file__).parent / "storage"
@@ -205,7 +269,37 @@ IDLE_STOP_THRESHOLD_MIN = float(os.environ.get("IDLE_STOP_THRESHOLD_MIN", "10"))
 # so watch for garbled/looping output on long reference clips and lower this
 # again if it reproduces.
 MIN_REF_AUDIO_SECS = 2.0
-MAX_REF_AUDIO_SECS = 60.0
+# A guard on the UPLOAD, nothing more. Length stopped mattering once clips are
+# trimmed -- _trim_reference_clip reads only the opening, so a ten-minute file
+# costs the same as a forty-second one. What still scales with the whole file
+# is create_preset's `dest.write_bytes(await audio.read())`, which buffers the
+# upload in memory, so some ceiling is wanted. Set well clear of any real
+# recording: a cap that a genuine clip can hit defeats the trimming it sits in
+# front of, which is exactly what a 120s limit did to a 123.5s file.
+MAX_REF_AUDIO_SECS = 1800.0
+# What actually becomes the reference clip, and the number that matters.
+#
+# The clip and the script share ONE MAX_SEQ_LEN window: a clip costs
+# duration x CODEC_FRAME_HZ frames plus its transcript's tokens, and whatever
+# is left is all the room the generated speech has. Solved against the real
+# constants (_GEN_SLACK, _FALLBACK_SPEECH_CHARS_PER_SEC, SEQ_SAFETY_MARGIN):
+#
+#     25s -> refcost 393, avail 567, chunk_chars 200, max_new_tokens 517  OK
+#     40s -> refcost 630, avail 330, chunk_chars 200, max_new_tokens 280  OK
+#     44s -> refcost 693, avail 267, chunk_chars 196, max_new_tokens 218  OK
+#     50s -> refcost 787, avail 173, chunk_chars 127, max_new_tokens 141  BAD
+#
+# 40 is the LAST comfortable value, not an arbitrary one: it still holds the
+# full ELISION_SAFE_CHUNK_CHARS ceiling, 44 starts dropping below it, and 50 is
+# into the PADDING_SAFE_MIN_CHARS regime this file documents as murmuring and
+# dragging. Do not raise it without re-solving that table.
+REF_TRIM_SECS = 40.0
+# How much source to read to fill REF_TRIM_SECS of SPEECH. Internal pauses are
+# packed out (see pack_speech), so a recording that is half silence needs twice
+# the source to yield a full window. 4x covers a clip that is 75% dead air,
+# which is about as sparse as a real voice note gets; 160s of stereo float32 at
+# 48k is ~61MB, read once at upload.
+REF_READ_MULTIPLE = 4.0
 # Loose sanity check that ref_text is plausibly a transcript of ref audio,
 # not a placeholder (e.g. "ZAZA" for a 23s clip). Real speech is roughly
 # 12-15 chars/sec; anything under ~3 chars/sec is almost certainly wrong.
@@ -238,6 +332,13 @@ STABILITY_PARAMS = {
 }
 
 _tts: Optional[FasterQwen3TTS] = None
+# Set once a CUDA-level fault (e.g. Windows TDR killing a kernel) has taken out
+# this process's CUDA context. Nothing can recover it in-process: every job from
+# then on fails identically, which is exactly what makes it worth reporting --
+# a client that keeps offering "retry" is offering something that cannot work.
+# Never cleared: the only cure is a restart, and a restart clears it by
+# definition.
+_gpu_fault: Optional[str] = None
 _gen_lock = threading.Lock()
 _store_lock = threading.Lock()
 
@@ -591,7 +692,7 @@ def _restore_queue_on_startup() -> None:
             _jobs[job_id] = {
                 # .get(), not [] -- queue.json written before the multiuser
                 # migration won't have this key. Such orphaned jobs just won't
-                # surface in any user's queue until migrate_to_multiuser.py runs.
+                # surface in any user's queue. The legacy migration path is gone.
                 "user_id": record.get("user_id"),
                 "status": "queued",
                 "preset_id": preset["id"],
@@ -752,9 +853,11 @@ def _process_job(job_id: str) -> None:
             return
 
         if last_error is not None:
+            global _gpu_fault
             error_msg = f"Chunk {i + 1}/{len(chunks)} failed: {last_error}"
             if "CUDA error" in str(last_error):
                 error_msg += " -- GPU driver reset; restart the backend process before retrying."
+                _gpu_fault = str(last_error)
             with _jobs_lock:
                 job.update(status="error", error=error_msg, finished_at=time.time())
                 _current_running_job_id = None
@@ -927,7 +1030,7 @@ async def lifespan(app: FastAPI):
         # the launcher checks for a specific, actionable error message.
         logger.exception("Model failed to load")
         STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-        message = "Voice Clone Studio could not load the TTS model." + os.linesep * 2 + str(e)
+        message = "Homegrown could not load the TTS model." + os.linesep * 2 + str(e)
         (STORAGE_DIR / "cuda_error.flag").write_text(message, encoding="utf-8")
         boot_status.write(STORAGE_DIR, boot_status.PHASE_ERROR, detail=message)
         yield
@@ -963,11 +1066,11 @@ app.mount("/refs", StaticFiles(directory=str(REF_DIR)), name="refs")
 
 def _safe_filename(name: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_")
-    return cleaned or "voice_clone"
+    return cleaned or "homegrown"
 
 
 @app.get("/api/download/{filename}")
-def download_audio(filename: str, name: str = "voice_clone"):
+def download_audio(filename: str, name: str = "homegrown"):
     """Serve a generated clip as a renamed .mp3 download. New generations are
     written as .mp3 directly (see write_mp3 in _process_job) and are served
     as-is here. History entries from before that change still point at an
@@ -1004,6 +1107,11 @@ def health():
         "sample_rate": _tts.sample_rate if _tts else None,
         "device": _device,
         "device_reason": _device_reason,
+        # Truthy once the CUDA context is dead. model_loaded stays True in that
+        # state -- the weights are still in memory, it is the context that is
+        # gone -- so this is the only way a client can tell that every further
+        # job is doomed.
+        "gpu_fault": _gpu_fault,
     }
 
 
@@ -1080,6 +1188,30 @@ def estimate(req: EstimateRequest, user_id: str = Depends(get_current_user)) -> 
     return result
 
 
+# faster-whisper reports ISO 639-1; the model names its languages in full.
+# Only the ones this model actually speaks are worth mapping -- anything else
+# falls back to the request's value.
+_WHISPER_TO_MODEL_LANGUAGE = {
+    "en": "English", "zh": "Chinese", "de": "German", "es": "Spanish",
+    "ru": "Russian", "ko": "Korean", "fr": "French", "ja": "Japanese",
+    "pt": "Portuguese", "tr": "Turkish", "pl": "Polish", "ca": "Catalan",
+    "nl": "Dutch", "ar": "Arabic", "sv": "Swedish", "it": "Italian",
+    "id": "Indonesian", "hi": "Hindi", "fi": "Finnish", "vi": "Vietnamese",
+    "he": "Hebrew", "uk": "Ukrainian", "el": "Greek", "ms": "Malay",
+    "cs": "Czech", "ro": "Romanian", "da": "Danish", "hu": "Hungarian",
+    "ta": "Tamil", "no": "Norwegian", "th": "Thai", "ur": "Urdu",
+}
+
+
+def _model_language_name(whisper_code: str) -> Optional[str]:
+    """Whisper's language code as a name this model recognises, or None."""
+    name = _WHISPER_TO_MODEL_LANGUAGE.get(whisper_code.lower())
+    if name is None or _tts is None:
+        return name
+    supported = _tts.model.model.config.talker_config.codec_language_id
+    return name if name.lower() in supported else None
+
+
 def _preset_response(preset: dict) -> dict:
     """Add fields derivable/servable at read time without persisting them
     redundantly (preview_url is just the reference file exposed over HTTP)."""
@@ -1129,15 +1261,38 @@ async def create_preset(
         dest.unlink(missing_ok=True)
         raise HTTPException(
             400,
-            f"Reference audio is {duration_s:.1f}s, too long (maximum {MAX_REF_AUDIO_SECS}s) -- "
-            "longer reference clips have been observed to produce unstable/garbled generation "
-            "on this model. Trim to a shorter, clean clip.",
+            f"That file is {duration_s / 60:.0f} minutes long, past the "
+            f"{MAX_REF_AUDIO_SECS / 60:.0f}-minute upload limit. Length is not the problem -- "
+            f"only the first {REF_TRIM_SECS:.0f} seconds are used either way -- but a file "
+            "this big has to be uploaded before it can be shortened.",
         )
 
+    # Longer than the model can hold alongside a script: keep the opening and
+    # discard the rest. Before transcription on purpose -- see the docstring.
+    original_duration_s = duration_s
+    if duration_s > REF_TRIM_SECS:
+        try:
+            result = _trim_reference_clip(str(dest), REF_TRIM_SECS)
+        except Exception as e:
+            dest.unlink(missing_ok=True)
+            logger.exception("Failed to trim reference clip for preset %r", name)
+            raise HTTPException(400, f"Could not process that audio file: {e}")
+        if result is None:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(400, "That clip appears to be silent.")
+        dest, trimmed = result
+        logger.info(
+            "Preset %r: reference clip trimmed %.1fs -> %.1fs (cap %.0fs)",
+            name, duration_s, trimmed, REF_TRIM_SECS,
+        )
+        duration_s = trimmed
+
+    supplied_ref_text = bool(ref_text)
+    detected_language = ""
     if not ref_text:
         try:
             logger.info("Auto-transcribing reference audio for preset %r with faster-whisper", name)
-            ref_text = _transcribe_audio(str(dest))
+            ref_text, detected_language = _transcribe_audio(str(dest))
         except Exception as e:
             dest.unlink(missing_ok=True)
             logger.exception("Auto-transcription failed for preset %r", name)
@@ -1150,14 +1305,47 @@ async def create_preset(
                 "Provide ref_text manually.",
             )
 
+    # Only ever reject a transcript the CALLER supplied. This guard was written
+    # to catch a placeholder ("ZAZA" for a 23s clip), which is a mistake a
+    # human makes and can correct. Applied to our own auto-transcription it is
+    # a dead end: the UI sends an empty ref_text every time, so the only thing
+    # this could reject was faster-whisper's own output, and the message then
+    # told the user to supply a transcript the app gives them no way to supply.
+    # Reported from a WhatsApp voice note -- 105 chars for 40s, unusable, with
+    # no way forward.
+    #
+    # A sparse auto-transcript is worth knowing about but is not fatal: the
+    # clone is conditioned on the audio, ref_text mainly sets the speaking rate,
+    # and _ref_profile already clamps that to a sane range.
     if len(ref_text) / duration_s < MIN_REF_TEXT_CHARS_PER_SEC:
-        dest.unlink(missing_ok=True)
-        raise HTTPException(
-            400,
-            f"ref_text ({len(ref_text)} chars) looks too short to be an accurate transcript of "
-            f"{duration_s:.1f}s of audio. ref_text must be the exact transcript of what's spoken "
-            "in the reference clip -- a mismatched transcript causes unstable voice cloning.",
+        if supplied_ref_text:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(
+                400,
+                f"ref_text ({len(ref_text)} chars) looks too short to be an accurate transcript "
+                f"of {duration_s:.1f}s of audio. ref_text must be the exact transcript of what's "
+                "spoken in the reference clip -- a mismatched transcript causes unstable voice "
+                "cloning.",
+            )
+        logger.warning(
+            "Preset %r: auto-transcript is sparse (%d chars for %.1fs = %.1f chars/sec). "
+            "Accepting it -- the clip may be quiet, heavily paused, or in a language "
+            "faster-whisper handles poorly.",
+            name, len(ref_text), duration_s, len(ref_text) / duration_s,
         )
+
+    # Same reasoning as above, but this one still bites for generated text:
+    # an inflated transcript (whisper's repetition loop duplicating a passage)
+    # eats sequence budget that generation needs. Truncating our own output is
+    # better than refusing the upload over it.
+    if len(ref_text) / duration_s > MAX_REF_TEXT_CHARS_PER_SEC and not supplied_ref_text:
+        keep = int(duration_s * MAX_REF_TEXT_CHARS_PER_SEC)
+        logger.warning(
+            "Preset %r: auto-transcript implausibly long (%d chars for %.1fs) -- "
+            "likely a whisper repetition loop. Truncating to %d chars.",
+            name, len(ref_text), duration_s, keep,
+        )
+        ref_text = ref_text[:keep].rstrip()
 
     if len(ref_text) / duration_s > MAX_REF_TEXT_CHARS_PER_SEC:
         dest.unlink(missing_ok=True)
@@ -1174,6 +1362,24 @@ async def create_preset(
         name, duration_s, len(ref_text), language,
     )
 
+    # The recording knows its own language; asking the user to declare it was
+    # a question they could get wrong about their own audio. Whisper detects it
+    # while transcribing, so prefer that and keep the request field only as a
+    # fallback for a language this model cannot speak.
+    if detected_language:
+        mapped = _model_language_name(detected_language)
+        if mapped:
+            if mapped != language:
+                logger.info(
+                    "Preset %r: language detected as %s (request said %s)", name, mapped, language,
+                )
+            language = mapped
+        else:
+            logger.info(
+                "Preset %r: detected language %r is not one this model speaks; keeping %s",
+                name, detected_language, language,
+            )
+
     preset = {
         "id": preset_id,
         "user_id": user_id,
@@ -1188,7 +1394,80 @@ async def create_preset(
     with _store_lock:
         _presets.insert(0, preset)
         _save_json(PRESETS_FILE, _presets)
+    response = _preset_response(preset)
+    # So the UI can confirm what was actually kept rather than what was sent.
+    response["ref_seconds"] = round(duration_s, 1)
+    response["trimmed_from_seconds"] = (
+        round(original_duration_s, 1) if original_duration_s > duration_s + 0.05 else None
+    )
+    return response
+
+
+class RenamePresetRequest(BaseModel):
+    name: str
+
+
+@app.patch("/api/presets/{preset_id}")
+def rename_preset(
+    preset_id: str,
+    req: RenamePresetRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """Rename a voice.
+
+    Deliberately does NOT touch `preset_name` on existing history entries.
+    That field is a snapshot of what the voice was called when the voiceover
+    was generated (see _process_job), and back-filling it would rewrite the
+    past -- a voiceover made by "Narrator" did not stop having been made by
+    "Narrator" because the voice is called something else now.
+
+    The name has to live here rather than in the browser. The Voiceovers list
+    renames its rows in localStorage, which works because nothing server-side
+    reads those names; a voice's name is read here on every generate and
+    stamped into history, so a client-only rename would show one name in the
+    voices dialog and a different one on every voiceover it had produced.
+    """
+    preset = _find_preset(preset_id)
+    if preset is None or preset.get("user_id") != user_id:
+        raise HTTPException(404, "Unknown preset_id")
+
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    with _store_lock:
+        preset["name"] = name
+        _save_json(PRESETS_FILE, _presets)
     return _preset_response(preset)
+
+
+@app.get("/api/presets/{preset_id}/download")
+def download_reference(preset_id: str, user_id: str = Depends(get_current_user)):
+    """Serve a voice's reference clip as a named download.
+
+    A route rather than linking straight at the /refs mount, for three
+    reasons: the on-disk name is a uuid hex, so a bare link downloads
+    "a3f9c2...mp3"; the name has to follow the voice's CURRENT name, which
+    only the server knows after a rename; and /refs is an unauthenticated
+    StaticFiles mount, while this checks ownership like the rest of /api.
+
+    No conversion, unlike /api/download -- a reference clip is whatever the
+    user uploaded (.mp3, .wav, .ogg, .m4a...) and re-encoding it to hand it
+    back would return something other than what they put in. FileResponse
+    infers the media type from the suffix.
+    """
+    preset = _find_preset(preset_id)
+    if preset is None or preset.get("user_id") != user_id:
+        raise HTTPException(404, "Unknown preset_id")
+
+    src = Path(preset["audio_path"])
+    if not src.exists():
+        raise HTTPException(404, "Reference clip is missing")
+
+    return FileResponse(
+        str(src),
+        filename=f"{_safe_filename(preset['name'])}{src.suffix.lower()}",
+    )
 
 
 @app.delete("/api/presets/{preset_id}")
@@ -1222,11 +1501,102 @@ def list_history(
     and silently returning a sane page beats a 422 the frontend would have to
     render. HISTORY_PAGE_MAX caps how much a single request can pull, since
     every entry carries its full script text.
+
+    THERE IS NO `q` PARAMETER, and one was tried and removed rather than never
+    considered. Search is client-side, because two of the three things worth
+    searching are invisible here: a voiceover's display name is a localStorage
+    override per browser (CLAUDE.md is explicit the two name stores must not be
+    unified), and the default "Voiceover 27" is derived from the row's position
+    in the list rather than stored anywhere. A server filter could only ever
+    match the script and the voice name, which would look like a search that
+    randomly ignores what the user typed.
     """
     limit = max(1, min(limit, HISTORY_PAGE_MAX))
     offset = max(0, offset)
     mine = [h for h in _history if h.get("user_id") == user_id]
     return {"history": mine[offset : offset + limit], "total": len(mine)}
+
+
+class HistoryZipRequest(BaseModel):
+    ids: list[str]
+    # Display names, by entry id. They live in the browser's localStorage and
+    # the server has never seen them (see the two-name-stores note in
+    # CLAUDE.md), so the client has to send the ones it wants used. Anything
+    # missing falls back to the voice name and the entry's position.
+    names: dict[str, str] = {}
+
+
+@app.post("/api/history/zip")
+def zip_history(req: HistoryZipRequest, user_id: str = Depends(get_current_user)):
+    """Several voiceovers as one .zip.
+
+    POST, not GET: the id list plus the display-name map is request-body
+    shaped, and a GET would put an arbitrary number of uuids and user-chosen
+    filenames in a query string.
+
+    Built in memory rather than streamed from disk. The payload is mp3s of
+    finished voiceovers -- tens of MB at the sizes this tool produces -- and an
+    in-memory buffer avoids a temp file that would need cleaning up on every
+    error path. ZIP_STORED, not DEFLATE: mp3 is already compressed, so
+    deflating it costs CPU for approximately nothing.
+
+    Unknown ids are skipped rather than 404-ing the whole request: a client
+    holding a stale list should still get the files that do exist. An id that
+    is not this user's is skipped the same way. An empty result IS an error,
+    though -- a zip with nothing in it looks like a successful download of
+    nothing.
+    """
+    if not req.ids:
+        raise HTTPException(400, "No voiceovers selected")
+
+    wanted = set(req.ids)
+    mine = [h for h in _history if h.get("user_id") == user_id and h["id"] in wanted]
+    if not mine:
+        raise HTTPException(404, "None of those voiceovers exist")
+
+    buf = io.BytesIO()
+    used: set[str] = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for entry in mine:
+            audio_url = entry.get("audio_url", "")
+            if not audio_url.startswith("/audio/"):
+                continue
+            src = (GEN_DIR / audio_url.removeprefix("/audio/")).resolve()
+            if GEN_DIR.resolve() not in src.parents or not src.exists():
+                continue
+            # Same .wav -> .mp3 conversion-and-cache as /api/download, so old
+            # entries written before write_mp3 are not silently skipped.
+            if src.suffix.lower() == ".wav":
+                mp3 = src.with_suffix(".mp3")
+                if not mp3.exists():
+                    try:
+                        wav_to_mp3(str(src), str(mp3))
+                    except Exception:
+                        logger.exception("Zip: could not convert %s", src)
+                        continue
+                src = mp3
+
+            stem = _safe_filename(req.names.get(entry["id"], "") or entry.get("preset_name", "voiceover"))
+            # Zip entries are keyed by name: two voiceovers called the same
+            # thing would otherwise silently overwrite each other inside the
+            # archive, and the user would get fewer files than they selected.
+            arcname = f"{stem}.mp3"
+            n = 2
+            while arcname in used:
+                arcname = f"{stem} ({n}).mp3"
+                n += 1
+            used.add(arcname)
+            zf.write(src, arcname)
+
+    if not used:
+        raise HTTPException(404, "No audio files found for those voiceovers")
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="voiceovers.zip"'},
+    )
 
 
 @app.delete("/api/history/{entry_id}")
@@ -1251,6 +1621,8 @@ class GenerateRequest(BaseModel):
     language: str = "English"
     style: str = "natural"
     stability: str = "balanced"
+    # Set only by /api/queue/{id}/retry. A first submission is attempt 1.
+    attempt: int = 1
 
 
 class GenerateJobStart(BaseModel):
@@ -1275,6 +1647,10 @@ class JobStatusResponse(BaseModel):
 
 class QueueEntry(BaseModel):
     job_id: str
+    # The id as well as the name. The UI marks a voice that is mid-generation,
+    # and matching on NAME alone mismarks the wrong voice as soon as two share
+    # one -- renaming is free in this app, so that is not a hypothetical.
+    preset_id: str
     preset_name: str
     text_preview: str
     status: str
@@ -1287,6 +1663,9 @@ class QueueEntry(BaseModel):
     submitted_at: float
     audio_url: Optional[str] = None
     error: Optional[str] = None
+    # 1 for a first submission, incremented by each retry. Lets a row that
+    # keeps failing say so, instead of silently replacing itself.
+    attempt: int = 1
 
 
 class ReorderRequest(BaseModel):
@@ -1314,6 +1693,7 @@ def _queue_entry_locked(job_id: str) -> QueueEntry:
     text = job["text"]
     return QueueEntry(
         job_id=job_id,
+        preset_id=job["preset_id"],
         preset_name=job["preset_name"],
         text_preview=(text[:80] + "...") if len(text) > 80 else text,
         status=job["status"],
@@ -1326,6 +1706,7 @@ def _queue_entry_locked(job_id: str) -> QueueEntry:
         submitted_at=job["submitted_at"],
         audio_url=job.get("audio_url"),
         error=job.get("error"),
+        attempt=job.get("attempt", 1),
     )
 
 
@@ -1378,6 +1759,7 @@ def generate(req: GenerateRequest, user_id: str = Depends(get_current_user)) -> 
         "audio_url": None,
         "sample_rate": None,
         "error": None,
+        "attempt": req.attempt,
         "submitted_at": time.time(),
         "started_at": None,
         "finished_at": None,
@@ -1437,6 +1819,49 @@ def cancel_queued_job(job_id: str, user_id: str = Depends(get_current_user)):
     return {"ok": True}
 
 
+@app.post("/api/queue/{job_id}/retry", status_code=202)
+def retry_job(job_id: str, user_id: str = Depends(get_current_user)) -> GenerateJobStart:
+    """Resubmit a dead job's own script.
+
+    Server-side rather than "send the script back and let the client repost it":
+    the queue entry carries `text_preview`, which is truncated at 80 chars, and
+    putting the full script on every queue entry would repost up to
+    MAX_TOTAL_CHARS on every poll of a 1s loop for as long as the failed row
+    sits there. The text never left this process; there is no reason to move it.
+
+    Goes through generate() rather than around it, so a retry is validated like
+    any other submission -- the preset may have been deleted since the job
+    failed, or replaced with one whose reference clip no longer leaves room to
+    generate. Bypassing that would turn a clear 404 into a second failure.
+    """
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None or job.get("user_id") != user_id:
+            raise HTTPException(404, "Unknown job_id")
+        if job["status"] not in ("error", "canceled"):
+            raise HTTPException(400, "Only a failed or canceled job can be retried.")
+        req = GenerateRequest(
+            preset_id=job["preset_id"],
+            text=job["text"],
+            language=job["language"],
+            style=job["style"],
+            stability=job["stability"],
+            # Carried forward so a row that keeps failing says so. A retry mints
+            # a new job id and replaces the row, so without this a job failing
+            # instantly on every attempt looks like a button that does nothing.
+            attempt=job.get("attempt", 1) + 1,
+        )
+
+    # Outside the lock: generate() takes _jobs_lock itself.
+    started = generate(req, user_id=user_id)
+
+    # Only now. If generate() raised, the failed job stays on the list with its
+    # original error rather than vanishing into a retry that never happened.
+    with _jobs_lock:
+        _jobs.pop(job_id, None)
+    return started
+
+
 @app.delete("/api/queue/{job_id}")
 def delete_job(job_id: str, user_id: str = Depends(get_current_user)):
     """Removes a dead job (canceled/error) from the in-memory queue list --
@@ -1490,7 +1915,12 @@ if getattr(sys, "frozen", False):
 else:
     FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
-if FRONTEND_DIST.is_dir():
+# Gated on index.html, not on the directory: a half-written frontend/dist (Vite
+# emits assets/ before index.html) passes is_dir() and would register a route
+# that 404s every page load. And this is evaluated once, at import -- a backend
+# started before `npm run build` finishes never serves the SPA at all, however
+# complete the directory becomes later. The warning is the only trace of that.
+if (FRONTEND_DIST / "index.html").is_file():
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
@@ -1507,3 +1937,11 @@ if FRONTEND_DIST.is_dir():
         # /sign-in, /sign-up -- falls through to index.html; React Router
         # takes over from there.
         return FileResponse(FRONTEND_DIST / "index.html")
+
+else:
+    logger.warning(
+        "SPA route not registered: %s does not exist. "
+        "The API is served, but every page load returns 404. "
+        "Build the frontend, then restart this process.",
+        FRONTEND_DIST / "index.html",
+    )

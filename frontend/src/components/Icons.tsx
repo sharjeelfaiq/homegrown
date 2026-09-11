@@ -1,4 +1,24 @@
-type IconProps = { size?: number }
+type IconProps = { size?: number; className?: string }
+
+/** Copy. On the voiceover row's script preview, which copies rather than
+ *  expanding -- so the glyph has to read as "take this away", not "open". */
+export function CopyIcon({ size = 12, className = '' }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h10" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 export function TrashIcon({ size = 16 }: IconProps) {
   return (
@@ -43,6 +63,23 @@ export function CheckIcon({ size = 14 }: IconProps) {
   )
 }
 
+export function PlusIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function DownloadIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M12 4v12M12 16l-5-5M12 16l5-5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 20h16" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function PlayIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none">
@@ -55,6 +92,19 @@ export function PauseIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none">
       <path d="M7 5h4v14H7Zm6 0h4v14h-4Z" />
+    </svg>
+  )
+}
+
+/** Theme control. A circle with the right half filled -- the standard
+ *  light/dark contrast glyph, and it stays legible at 16px where a sun or a
+ *  moon turns to mush. Half-fill is drawn as an arc rather than a clipped
+ *  rect so it survives the stroke on the outer circle. */
+export function ThemeIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none" />
     </svg>
   )
 }

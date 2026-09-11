@@ -100,7 +100,7 @@ export default function Modal({ open, title, onClose, children }: Props) {
     <AnimatePresence>
       {open && (
         <motion.div
-          className="modal-backdrop"
+          className="fixed inset-0 z-200 grid place-items-center p-(--gutter) bg-scrim-modal"
           initial={reduced ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={reduced ? undefined : { opacity: 0 }}
@@ -113,7 +113,7 @@ export default function Modal({ open, title, onClose, children }: Props) {
         >
           <motion.div
             ref={panelRef}
-            className="modal-panel"
+            className="flex max-h-[min(85svh,720px)] w-[min(460px,100%)] flex-col overflow-hidden rounded-lg border border-hairline-strong bg-surface-card outline-none"
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
@@ -123,13 +123,28 @@ export default function Modal({ open, title, onClose, children }: Props) {
             exit={reduced ? undefined : { opacity: 0, y: 4, scale: 0.99 }}
             transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
           >
-            <header className="modal-head">
-              <h2 id={titleId}>{title}</h2>
+            <header className="flex items-center justify-between gap-3 border-b border-hairline py-3.5 pr-3 pl-[18px]">
+              <h2
+                id={titleId}
+                className="font-mono text-[11px] font-normal tracking-[0.1em] uppercase text-muted"
+              >
+                {title}
+              </h2>
               <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
                 ✕
               </button>
             </header>
-            <div className="modal-body">{children}</div>
+            {/* `modal-body` is a JS hook, not a style hook -- it has no CSS
+                rule and check_orphan_css.py will list it under "missing
+                rule", which is informational and does not fail. The focus
+                effect above queries for it by name. It was absent for a long
+                time, which meant the querySelector always missed and focus
+                fell through to the panel's first focusable -- the header's
+                close button, i.e. exactly what the comment up there says it
+                is avoiding. Do not remove it to quieten the guard. */}
+            <div className="modal-body flex flex-col gap-[22px] overflow-y-auto p-[18px]">
+              {children}
+            </div>
           </motion.div>
         </motion.div>
       )}

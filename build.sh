@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Source -> VoiceCloneStudio-1.0.0.exe, in one command.
+# Source -> Homegrown-1.0.0.exe, in one command.
 #
 #   bash build.sh
 #
-# Runs everything documented in BUILD.md. Expect ~45 minutes and ~10 GB free on
-# this drive. Git Bash, not PowerShell: setup.sh needs bash, and the final SFX
-# step concatenates two binaries, which PowerShell's `>` corrupts by rewriting
-# them as text.
+# Runs everything documented in docs/BUILD.md. Expect ~45 minutes and ~10 GB
+# free on this drive. Git Bash, not PowerShell: setup.sh needs bash, and the
+# final SFX step concatenates two binaries, which PowerShell's `>` corrupts by
+# rewriting them as text.
 #
 # frontend/.env.local is stashed before the frontend build and restored from an
 # EXIT trap, so it survives a failure or a Ctrl-C as well as a clean run. That
@@ -19,17 +19,23 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$PWD"
 
 VERSION="${VERSION:-1.0.0}"
-STAGE_DIR="dist/VoiceCloneStudio"
-OUTPUT="dist/VoiceCloneStudio-${VERSION}.exe"
+STAGE_DIR="dist/Homegrown"
+OUTPUT="dist/Homegrown-${VERSION}.exe"
 ENV_LOCAL="frontend/.env.local"
 ENV_STASH=".tmp/env.local.stash"
 SEVENZIP="/c/Program Files/7-Zip/7z.exe"
 SFX="/c/Program Files/7-Zip/7z.sfx"
 
-# The one line the app actually needs for local development. Only two Vite
-# variables are read anywhere in frontend/src -- VITE_BACKEND_URL and
-# VITE_USE_RUNPOD_WAKE -- and the latter is unset outside the Vercel project.
-ENV_LOCAL_DEFAULT='VITE_BACKEND_URL=http://127.0.0.1:8000'
+# What to write if .env.local has gone missing entirely. Deliberately an empty
+# setting: dev needs NOTHING here now that vite.config.ts proxies /api, /audio
+# and /refs, and an active VITE_BACKEND_URL would break dev on the LAN exactly
+# the way it breaks a LAN build -- every visiting device calling its own
+# loopback. Only two Vite variables are read anywhere in frontend/src, and the
+# other (VITE_USE_RUNPOD_WAKE) is unset outside the Vercel project.
+ENV_LOCAL_DEFAULT='# Intentionally empty. Vite proxies /api, /audio and /refs, so relative paths
+# work in dev -- including from other devices on your network, which an
+# absolute VITE_BACKEND_URL here would break. Set it only for the dormant
+# Vercel + RunPod split. See .env.local.example.'
 
 START_TS=$SECONDS
 step() { printf '\n\033[1m==> %s\033[0m  (+%dm%02ds)\n' "$1" $(( (SECONDS-START_TS)/60 )) $(( (SECONDS-START_TS)%60 )); }
@@ -85,7 +91,12 @@ fi
 # Cheap, and they run before the 20-minute freeze rather than after it.
 step "Pre-build checks"
 python scripts/check_design_tokens.py
+python scripts/check_contrast.py
+python scripts/check_orphan_css.py
+python scripts/check_desktop_port.py
 ( cd frontend && npm install --no-fund --no-audit --loglevel=error && npm run lint )
+# After npm install, because it needs the Tailwind CLI from frontend/node_modules.
+python scripts/build_splash.py --check
 
 # ---- 4. stash the dev env file --------------------------------------------
 step "Stashing $ENV_LOCAL"
@@ -108,14 +119,23 @@ step "Building the frontend"
 step "Freezing backend.exe (this is the long one, ~15-20 min)"
 ( cd backend && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "../$PY" -m PyInstaller backend.spec --clean --noconfirm )
 
-step "Freezing VoiceCloneStudio.exe (launcher)"
+# The splash is Tailwind, compiled ahead of time and inlined into
+# launcher/_splash.py, which launcher.py imports. It cannot use the Play CDN
+# the landing page uses: this screen has to paint with no backend and often no
+# network, which is exactly when a CDN is unavailable. Regenerated here rather
+# than trusted, so the exe can never ship stale CSS -- the --check above only
+# catches a stale commit, not a source edited since.
+step "Compiling the launcher splash"
+python scripts/build_splash.py
+
+step "Freezing Homegrown.exe (launcher)"
 ( cd launcher && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "../$PY" -m PyInstaller launcher.spec --clean --noconfirm )
 
 # ---- 7. stage --------------------------------------------------------------
 step "Staging the install layout"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
-cp launcher/dist/VoiceCloneStudio.exe "$STAGE_DIR/"
+cp launcher/dist/Homegrown.exe "$STAGE_DIR/"
 cp -r backend/dist/backend "$STAGE_DIR/backend"
 mkdir -p "$STAGE_DIR/storage/references" "$STAGE_DIR/storage/generated" "$STAGE_DIR/models"
 echo "  staged at $STAGE_DIR"
@@ -133,7 +153,7 @@ fi
 if [ -n "$(ls -A "$STAGE_DIR/models" 2>/dev/null)" ]; then
   die "$STAGE_DIR/models is not empty. It must ship empty -- the app downloads the model on first run."
 fi
-[ -f "$STAGE_DIR/VoiceCloneStudio.exe" ] || die "launcher exe missing from the staged tree."
+[ -f "$STAGE_DIR/Homegrown.exe" ] || die "launcher exe missing from the staged tree."
 [ -f "$STAGE_DIR/backend/backend.exe" ]  || die "backend.exe missing from the staged tree."
 echo "  no .env shipped, models/ empty, both executables present."
 
@@ -142,9 +162,9 @@ echo "  no .env shipped, models/ empty, both executables present."
 # compression costs far more time for a couple of percent.
 step "Packing the self-extractor (~10 min)"
 ( cd dist \
-  && rm -f app.7z "VoiceCloneStudio-${VERSION}.exe" \
-  && "$SEVENZIP" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z VoiceCloneStudio >/dev/null \
-  && cat "$SFX" app.7z > "VoiceCloneStudio-${VERSION}.exe" \
+  && rm -f app.7z "Homegrown-${VERSION}.exe" \
+  && "$SEVENZIP" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z Homegrown >/dev/null \
+  && cat "$SFX" app.7z > "Homegrown-${VERSION}.exe" \
   && rm -f app.7z )
 [ -f "$OUTPUT" ] || die "packing produced no $OUTPUT"
 
@@ -160,13 +180,13 @@ cat <<'NEXT'
 
   Not verified by this script -- it needs a human:
 
-    ./dist/VoiceCloneStudio/VoiceCloneStudio.exe
+    ./dist/Homegrown/Homegrown.exe
 
   Expect a browser loader within ~2s, storage/boot_status.json and
   storage/backend.log appearing, NO Windows firewall prompt, and a redirect to
   the app once the model loads. Confirm the listener is loopback-only:
 
-    netstat -ano | findstr :8000     # 127.0.0.1:8000, never 0.0.0.0:8000
+    netstat -ano | findstr :8731     # 127.0.0.1:8731, never 0.0.0.0:8731
 
   If you publish this build, update the landing page's download link, size text
   and SHA-256 together. A stale checksum is worse than none.

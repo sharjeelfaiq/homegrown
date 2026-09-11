@@ -10,7 +10,7 @@ verify directly are marked **TODO: verify**.
 
 ## 1. Project Summary
 
-**Voice Clone Studio** is a local/LAN voice-cloning dashboard built around a vendored `FasterQwen3TTS`
+**Homegrown** is a local/LAN voice-cloning dashboard built around a vendored `FasterQwen3TTS`
 (Qwen3-TTS-12Hz-0.6B) model: users create named voice presets from a short reference clip, write scripts,
 and generate cloned-voice audio with style/stability controls, a processing queue, and generation history.
 Modeled after clonevoiceprompt.online's dashboard flow, but intentionally without real multi-user
@@ -49,14 +49,14 @@ Browser (any LAN device) --> FastAPI (backend/main.py, one process, port 8000)
 Vite/React frontend (Vercel) --> frontend/api/wake.ts (Vercel serverless fn, wakes/polls RunPod pod)
                                --> FastAPI backend (RunPod pod, proxy domain, separate origin, CORS live)
 ```
-Env vars for that path: see `DEPLOYMENT.md`. **TODO: verify** whether this path is still wanted or should
+Env vars for that path: see `docs/DEPLOYMENT.md`. **TODO: verify** whether this path is still wanted or should
 be removed — the project has since pivoted to a local GPU + LAN model.
 
 **Ports**: backend 8000 (FastAPI/uvicorn), frontend dev server 5173 (Vite, dev-only — production/LAN mode
 serves everything from 8000). No database — flat JSON files in `backend/storage/` (gitignored).
 
 **Deployment specifics**: no RunPod pod ID / Vercel project name found hardcoded in tracked files (only
-referenced generically via env vars in `DEPLOYMENT.md`). **TODO: verify** current RunPod pod ID / Vercel
+referenced generically via env vars in `docs/DEPLOYMENT.md`). **TODO: verify** current RunPod pod ID / Vercel
 project if that path is still in use — not present in this repo's tracked files.
 
 ## 3. Current State
@@ -71,7 +71,7 @@ project if that path is still in use — not present in this repo's tracked file
 - Single local user, no login friction (Clerk fully removed)
 
 **Partially built / in progress**:
-- **RunPod+Vercel split-deployment path** (`DEPLOYMENT.md`, `frontend/api/wake.ts`, idle-auto-stop loop in
+- **RunPod+Vercel split-deployment path** (`docs/DEPLOYMENT.md`, `frontend/api/wake.ts`, idle-auto-stop loop in
   `main.py`) — built and documented, but not the currently-active deployment target.
 - **Streaming to the client** — chunk generation now uses the streaming API internally (added this session,
   for fast cancellation), but the frontend still only receives audio once a whole chunk finishes, not
@@ -145,9 +145,9 @@ confirm `git status` before assuming README matches what's on GitHub.
 - `VITE_BACKEND_URL` — must be an absolute URL for the split cloud deployment; **must be unset** for LAN
   single-port mode (see bug #1 in §3)
 
-**Vercel project env** (only relevant if the cloud path is used — see `DEPLOYMENT.md` for the full table):
+**Vercel project env** (only relevant if the cloud path is used — see `docs/DEPLOYMENT.md` for the full table):
 `VITE_CLERK_PUBLISHABLE_KEY` is listed there but **stale** — Clerk was fully removed this session
-(`247deda`), so that var no longer does anything; `DEPLOYMENT.md` itself wasn't updated to reflect that.
+(`247deda`), so that var no longer does anything; `docs/DEPLOYMENT.md` itself wasn't updated to reflect that.
 
 **Secrets check**: searched git history for committed `.env` files and Clerk-looking secret strings
 (`sk_`/`pk_`/`secret`) in `backend/auth.py`'s history — found none. No evidence of leaked keys, but this
@@ -172,11 +172,11 @@ Prioritized:
    second device is unconfirmed. **TODO: verify.**
 3. Decide the open architecture question below (RunPod/Vercel path) so dead code either gets removed or
    properly maintained.
-4. Clean up `planm.md` (stale, untracked) and `DEPLOYMENT.md`'s stale Clerk reference.
+4. Clean up `planm.md` (stale, untracked) and `docs/DEPLOYMENT.md`'s stale Clerk reference.
 
 **Open decisions**:
 - Is the RunPod+Vercel cloud deployment still wanted, or has the project fully pivoted to local/LAN-only?
-  Affects whether `DEPLOYMENT.md`, `frontend/api/wake.ts`, and the idle-auto-stop loop in `main.py` should
+  Affects whether `docs/DEPLOYMENT.md`, `frontend/api/wake.ts`, and the idle-auto-stop loop in `main.py` should
   be kept, simplified, or deleted.
 - Whether to pursue the Electron desktop-app direction (discussed this session, no code exists for it in
   this repo — an earlier attempt existed only in `voice_over_tool_localhost` and was discarded).
@@ -189,7 +189,7 @@ Prioritized:
 - **4GB-VRAM tuning baked into constants.** *(Partly superseded: `CHUNK_MAX_CHARS` is now only a
   ceiling — `_seq_budget()` derives the real per-chunk size from each preset's reference clip.)*
   `CHUNK_MAX_CHARS=800` and `max_seq_len=1024`
-  (`backend/main.py`) were tuned for a razor-thin-margin GTX 960 4GB card (`gpu.txt`) to avoid Windows TDR
+  (`backend/main.py`) were tuned for a razor-thin-margin GTX 960 4GB card (`docs/gpu-notes.md`) to avoid Windows TDR
   kernel kills and rope-position quality collapse on long generations. The office GPU machine has 12GB —
   these caps are conservative for that hardware and could likely be raised for better throughput/quality,
   but nobody has done that yet. **TODO: verify/consider.**

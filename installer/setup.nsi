@@ -14,22 +14,22 @@
 ; back under 2 GB (a CPU-only build, or torch slimmed of unused CUDA libs).
 ; ============================================================================
 
-; Voice Clone Studio -- Windows Installer
+; Homegrown -- Windows Installer
 ; Compile with: makensis setup.nsi   (run from the installer/ folder)
 
-!define APP_NAME "Voice Clone Studio"
+!define APP_NAME "Homegrown"
 !define APP_VERSION "1.0.0"
 !define APP_PUBLISHER "Runtime Gurus"
-!define INSTALL_DIR "$LOCALAPPDATA\Programs\VoiceCloneStudio"
-; Deliberately distinct from a plain "VoiceCloneStudio" key: a separate,
+!define INSTALL_DIR "$LOCALAPPDATA\Programs\Homegrown"
+; Deliberately distinct from a plain "Homegrown" key: a separate,
 ; Electron-based build of this same app (different repo) previously used that
 ; exact key name, and InstallDirRegKey below reusing it silently redirected
 ; this installer to that build's leftover InstallLocation instead of
 ; ${INSTALL_DIR}. A unique key avoids ever colliding with it again.
-!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\VoiceCloneStudioPy"
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\HomegrownPy"
 
 Name "${APP_NAME} ${APP_VERSION}"
-OutFile "..\dist\VoiceCloneStudio-Setup-${APP_VERSION}.exe"
+OutFile "..\dist\Homegrown-Setup-${APP_VERSION}.exe"
 InstallDir "${INSTALL_DIR}"
 InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 ; Per-user, no admin/UAC required -- installs to %LOCALAPPDATA%, works on
@@ -47,10 +47,10 @@ SetCompressor lzma
 !define MUI_ABORTWARNING
 !define MUI_ICON "..\assets\icon.ico"
 !define MUI_UNICON "..\assets\icon.ico"
-!define MUI_WELCOMEPAGE_TITLE "Welcome to Voice Clone Studio Setup"
-!define MUI_WELCOMEPAGE_TEXT "This will install Voice Clone Studio on your computer.$\r$\n$\r$\nREQUIREMENT: An NVIDIA GPU with up-to-date CUDA drivers is required. The app will show an error message if no compatible GPU is found.$\r$\n$\r$\nClick Next to continue."
-!define MUI_FINISHPAGE_RUN "$INSTDIR\VoiceCloneStudio.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Launch Voice Clone Studio now"
+!define MUI_WELCOMEPAGE_TITLE "Welcome to Homegrown Setup"
+!define MUI_WELCOMEPAGE_TEXT "This will install Homegrown on your computer.$\r$\n$\r$\nREQUIREMENT: An NVIDIA GPU with up-to-date CUDA drivers is required. The app will show an error message if no compatible GPU is found.$\r$\n$\r$\nClick Next to continue."
+!define MUI_FINISHPAGE_RUN "$INSTDIR\Homegrown.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch Homegrown now"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -64,7 +64,7 @@ SetCompressor lzma
 
 Section "Main" SecMain
   SetOutPath "$INSTDIR"
-  File "..\launcher\dist\VoiceCloneStudio.exe"
+  File "..\launcher\dist\Homegrown.exe"
 
   ; Backend bundle (backend.exe + all its DLLs/data, incl. the built frontend
   ; under backend\frontend_dist -- see backend.spec's `datas`).
@@ -85,13 +85,13 @@ Section "Main" SecMain
   SetOutPath "$INSTDIR\backend"
   FileOpen $0 "$INSTDIR\backend\.env" w
   FileWrite $0 "MODEL_PATH=$INSTDIR\models$\r$\n"
-  FileWrite $0 "VOICECLONE_STORAGE_DIR=$INSTDIR\storage$\r$\n"
+  FileWrite $0 "HOMEGROWN_STORAGE_DIR=$INSTDIR\storage$\r$\n"
   FileClose $0
 
-  CreateShortcut "$DESKTOP\Voice Clone Studio.lnk" "$INSTDIR\VoiceCloneStudio.exe" "" "$INSTDIR\VoiceCloneStudio.exe" 0
-  CreateDirectory "$SMPROGRAMS\Voice Clone Studio"
-  CreateShortcut "$SMPROGRAMS\Voice Clone Studio\Voice Clone Studio.lnk" "$INSTDIR\VoiceCloneStudio.exe"
-  CreateShortcut "$SMPROGRAMS\Voice Clone Studio\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
+  CreateShortcut "$DESKTOP\Homegrown.lnk" "$INSTDIR\Homegrown.exe" "" "$INSTDIR\Homegrown.exe" 0
+  CreateDirectory "$SMPROGRAMS\Homegrown"
+  CreateShortcut "$SMPROGRAMS\Homegrown\Homegrown.lnk" "$INSTDIR\Homegrown.exe"
+  CreateShortcut "$SMPROGRAMS\Homegrown\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -115,15 +115,15 @@ Section "Uninstall"
     Goto DoneData
   DoneData:
 
-  Delete "$INSTDIR\VoiceCloneStudio.exe"
+  Delete "$INSTDIR\Homegrown.exe"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir /r "$INSTDIR\backend"
   RMDir "$INSTDIR"
 
-  Delete "$DESKTOP\Voice Clone Studio.lnk"
-  Delete "$SMPROGRAMS\Voice Clone Studio\Voice Clone Studio.lnk"
-  Delete "$SMPROGRAMS\Voice Clone Studio\Uninstall.lnk"
-  RMDir "$SMPROGRAMS\Voice Clone Studio"
+  Delete "$DESKTOP\Homegrown.lnk"
+  Delete "$SMPROGRAMS\Homegrown\Homegrown.lnk"
+  Delete "$SMPROGRAMS\Homegrown\Uninstall.lnk"
+  RMDir "$SMPROGRAMS\Homegrown"
 
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
 SectionEnd

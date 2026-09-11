@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homegrown</title>
+<!--
+  This file is the SOURCE for the launcher splash. It is not served.
+
+  scripts/build_splash.py compiles splash.css with the Tailwind CLI, inlines
+  the result into a <style> here, and writes launcher/_splash.py, which
+  launcher.py imports. Editing launcher/_splash.py by hand is pointless --
+  the next build overwrites it, and check_splash_fresh.py fails if it is
+  stale relative to this file.
+
+  Everything is inline on purpose. This page is served from a Python string
+  over a loopback socket by an exe that has to paint when nothing else in the
+  product is up, frequently with no network at all. No CDN, no stylesheet,
+  no font file, no image. That rules out Tailwind's Play CDN specifically,
+  which is why this surface compiles ahead of time and the landing page does
+  not.
+-->
+<style>__SPLASH_CSS__</style>
+</head>
+<body class="m-0 grid min-h-svh place-items-center bg-base p-8 font-body text-ink">
+  <!--
+    Progress sits on the top edge of the viewport rather than inside a card:
+    nothing else on the page competes with it, and it stays put while the text
+    under it changes phase.
+  -->
+  <div class="track indeterminate fixed inset-x-0 top-0 h-[3px] overflow-hidden bg-[color-mix(in_srgb,var(--color-ink)_10%,transparent)]" id="track">
+    <div class="fill h-full w-[2%] bg-progress transition-[width] duration-[400ms] ease-(--ease)" id="fill"></div>
+  </div>
+
+  <main role="status" aria-live="polite" class="w-[min(34rem,100%)] text-center">
+    <p class="m-0 text-[0.68rem] font-semibold tracking-[0.22em] uppercase text-progress">Homegrown</p>
+
+    <!--
+      The hero holds either a percentage or a phase word, and they need
+      different sizes: at the percentage size a word wraps to three lines on a
+      narrow window. tabular-nums so 9% -> 10% does not shift the layout under
+      it. Both states are `hero`; `is-word` is the smaller step.
+    -->
+    <p class="hero is-word mt-[0.35em] mb-0 font-bold leading-none tabular-nums text-progress" id="hero">Waking up</p>
+
+    <p class="tagline mx-auto mt-5 mb-0 max-w-[25rem] text-base/[1.55] text-muted" id="tagline">Homegrown is starting.</p>
+    <p class="metric mt-[0.85rem] mb-0 min-h-[1.2em] font-mono text-xs tabular-nums text-faint" id="metric"></p>
+
+    <pre class="error-text mt-[22px] mb-0 hidden max-h-[220px] overflow-auto rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_14%,transparent)] p-3.5 text-left font-body text-[0.8125rem]/[1.5] whitespace-pre-wrap text-danger-text" id="errorText"></pre>
+
+    <button id="retry" type="button" class="retry mx-auto mt-[18px] hidden cursor-pointer rounded-sm border-none bg-ink px-[22px] py-2.5 text-sm font-medium text-base hover:bg-white">Try again</button>
+  </main>
+<script>
+  var APP_URL = "__BASE_URL__";
+  /* Two separate slots, deliberately. The backend's `detail` used to replace
+     this copy, so the entire download screen read "0.0 GB of 2.5 GB" and the
+     one reassuring sentence vanished exactly when it was needed. Prose is
+     ours; `detail` goes in the mono line underneath. */
+  var WORDS = {
+    starting: "Waking up",
+    downloading: "Setting up",
+    importing: "Warming up",
+    probing_gpu: "Tuning",
+    loading_model: "Almost there",
+    ready: "Ready"
+  };
+  var TAGLINE = {
+    starting: "Homegrown is starting.",
+    downloading: "Setting up your voice. One time only — every launch after this is instant.",
+    importing: "Loading the engine. Nearly there.",
+    probing_gpu: "Matching the model to your graphics card.",
+    loading_model: "Your voice model is loading. This takes a minute or two.",
+    ready: "Opening Homegrown."
+  };
+  var hero = document.getElementById("hero");
+  var tagline = document.getElementById("tagline");
+  var metric = document.getElementById("metric");
+  var track = document.getElementById("track");
+  var fill = document.getElementById("fill");
+  var errorText = document.getElementById("errorText");
+  var retry = document.getElementById("retry");
+  var redirected = false;
+
+  /* The hero's size is the only thing that differs between the two states, so
+     the class list is rebuilt rather than toggled -- keep these two strings in
+     step with the markup above. */
+  var HERO_BASE = "hero mt-[0.35em] mb-0 font-bold leading-none tabular-nums text-progress";
+
+  retry.addEventListener("click", function () {
+    retry.disabled = true;
+    fetch("/restart", { method: "POST" }).then(function () {
+      document.body.classList.remove("is-error");
+      retry.disabled = false;
+    });
+  });
+
+  function word(phase) {
+    hero.className = HERO_BASE + " is-word";
+    hero.textContent = WORDS[phase] || WORDS.starting;
+  }
+
+  function render(s) {
+    if (s.phase === "ready") {
+      redirected = true;
+      location.replace(APP_URL);
+      return;
+    }
+    if (s.phase === "error") {
+      document.body.classList.add("is-error");
+      hero.className = HERO_BASE + " is-word";
+      hero.textContent = "Homegrown could not start";
+      tagline.textContent = "";
+      metric.textContent = "";
+      errorText.textContent = s.detail || "The backend stopped unexpectedly.";
+      return;
+    }
+    document.body.classList.remove("is-error");
+    var pct = typeof s.percent === "number" ? Math.max(0, Math.min(100, s.percent)) : null;
+    /* Under 1% is the "contacting Hugging Face" moment: a hero reading "0%"
+       over "0.0 GB of 2.5 GB" is the most discouraging frame in the whole
+       sequence, so it stays a word and an indeterminate bar until real
+       progress exists. */
+    if (pct === null || pct < 1) {
+      word(s.phase);
+      track.classList.add("indeterminate");
+      fill.style.width = "";
+    } else {
+      hero.className = HERO_BASE;
+      hero.textContent = pct + "%";
+      track.classList.remove("indeterminate");
+      fill.style.width = Math.max(2, pct) + "%";
+    }
+    tagline.textContent = TAGLINE[s.phase] || TAGLINE.starting;
+    metric.textContent = s.detail || "";
+  }
+
+  function poll() {
+    fetch("/status", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () { /* launcher gone; keep the last frame on screen */ })
+      .then(function () { if (!redirected) setTimeout(poll, 500); });
+  }
+  poll();
+</script>
+</body>
+</html>

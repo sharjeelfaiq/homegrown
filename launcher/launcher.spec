@@ -17,7 +17,7 @@ a = Analysis(
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 exe = EXE(
     pyz, a.scripts, a.binaries, a.zipfiles, a.datas, [],
-    name="VoiceCloneStudio",
+    name="Homegrown",
     debug=False,
     strip=False,
     upx=False,

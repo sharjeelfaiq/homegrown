@@ -1,8 +1,8 @@
-# Building a fresh `VoiceCloneStudio-1.0.0.exe`
+# Building a fresh `Homegrown-1.0.0.exe`
 
 Every step needed to turn the current source into a distributable executable, in
 the order they must run. Run everything in **Git Bash** from the repo root
-(`D:\dev-projects\websites\voice-clone-agent`).
+(`D:\dev-projects\websites\homegrown`).
 
 Git Bash, not PowerShell — `setup.sh` needs bash, and the final SFX step
 concatenates two binaries, which PowerShell's `>` corrupts by rewriting them as
@@ -52,7 +52,7 @@ need to re-run just that part.
 ## 1. Python environment and model
 
 ```bash
-cd /d/dev-projects/websites/voice-clone-agent
+cd /d/dev-projects/websites/homegrown
 bash setup.sh
 ```
 
@@ -79,6 +79,7 @@ Do these before spending 30 minutes freezing a broken build.
 ```bash
 # Design tokens: no colour may drift from frontend/src/styles/tokens.css
 python scripts/check_design_tokens.py
+python scripts/check_desktop_port.py
 
 # Frontend types + lint
 cd frontend && npm install && npm run lint && cd ..
@@ -117,9 +118,24 @@ precede the freeze.
 
 ```bash
 mkdir -p .tmp
+python scripts/build_splash.py
 cd backend  && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe backend.spec  --clean --noconfirm && cd ..
 cd launcher && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe launcher.spec --clean --noconfirm && cd ..
 ```
+
+`build_splash.py` compiles the launcher's loading screen — `launcher/splash.html`
+and `splash.css` — with the Tailwind CLI and writes `launcher/_splash.py`, which
+`launcher.py` imports. It must run **before** the launcher freeze, or the exe
+ships whatever `_splash.py` last held.
+
+That splash is the one surface that cannot use the Tailwind Play CDN the landing
+page uses: it has to paint with no backend and frequently no network, which is
+exactly when a CDN is unavailable. `_splash.py` is committed, so a build on a
+machine without npm still produces a working exe; `python scripts/build_splash.py
+--check` fails if it is stale relative to its sources.
+
+It is a generated **module**, not a data file. `launcher.spec` declares
+`datas=[]` and PyInstaller follows imports, so the spec needs no change.
 
 `TMP`/`TEMP` are redirected off `C:` on purpose — PyInstaller unpacks several GB
 through the temp directory and will exhaust a small system drive.
@@ -132,13 +148,13 @@ only the launcher leaves a stale `backend.exe` with the old API and bind address
 ## 6. Stage the install layout
 
 ```bash
-rm -rf dist/VoiceCloneStudio
-mkdir -p dist/VoiceCloneStudio
-cp launcher/dist/VoiceCloneStudio.exe dist/VoiceCloneStudio/
-cp -r backend/dist/backend dist/VoiceCloneStudio/backend
-mkdir -p dist/VoiceCloneStudio/storage/references \
-         dist/VoiceCloneStudio/storage/generated \
-         dist/VoiceCloneStudio/models
+rm -rf dist/Homegrown
+mkdir -p dist/Homegrown
+cp launcher/dist/Homegrown.exe dist/Homegrown/
+cp -r backend/dist/backend dist/Homegrown/backend
+mkdir -p dist/Homegrown/storage/references \
+         dist/Homegrown/storage/generated \
+         dist/Homegrown/models
 ```
 
 `launcher.py` looks for `backend/backend.exe` beside itself; this is that layout.
@@ -151,8 +167,8 @@ mkdir -p dist/VoiceCloneStudio/storage/references \
 ## 7. Portability gate
 
 ```bash
-ls dist/VoiceCloneStudio/backend/.env 2>/dev/null && echo "^^ DELETE THIS" || echo "OK: no .env shipped"
-ls -A dist/VoiceCloneStudio/models    # must print nothing
+ls dist/Homegrown/backend/.env 2>/dev/null && echo "^^ DELETE THIS" || echo "OK: no .env shipped"
+ls -A dist/Homegrown/models    # must print nothing
 ```
 
 If `.env` is present, delete it. It carries an absolute
@@ -165,21 +181,21 @@ If `.env` is present, delete it. It carries an absolute
 Cheaper to catch a bad build here than after compressing 1.8 GB.
 
 ```bash
-./dist/VoiceCloneStudio/VoiceCloneStudio.exe
+./dist/Homegrown/Homegrown.exe
 ```
 
 Expect, in order:
 
 1. A browser **loader within ~2 seconds** — not a blank desktop.
-2. `dist/VoiceCloneStudio/storage/boot_status.json` appears during startup.
-3. `dist/VoiceCloneStudio/storage/backend.log` gets written.
+2. `dist/Homegrown/storage/boot_status.json` appears during startup.
+3. `dist/Homegrown/storage/backend.log` gets written.
 4. **No Windows firewall prompt** — the backend binds `127.0.0.1` only.
 5. The loader redirects to the app once the model has loaded.
 
 Then confirm the listener really is loopback-only:
 
 ```bash
-netstat -ano | findstr :8000    # expect 127.0.0.1:8000, never 0.0.0.0:8000
+netstat -ano | findstr :8731    # expect 127.0.0.1:8731, never 0.0.0.0:8731
 ```
 
 If the loader never appears, the launcher exe is stale — step 5 did not rebuild.
@@ -192,9 +208,9 @@ Stop the app before continuing.
 
 ```bash
 cd dist
-rm -f app.7z VoiceCloneStudio-1.0.0.exe
-"/c/Program Files/7-Zip/7z.exe" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z VoiceCloneStudio
-cat "/c/Program Files/7-Zip/7z.sfx" app.7z > VoiceCloneStudio-1.0.0.exe
+rm -f app.7z Homegrown-1.0.0.exe
+"/c/Program Files/7-Zip/7z.exe" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z Homegrown
+cat "/c/Program Files/7-Zip/7z.sfx" app.7z > Homegrown-1.0.0.exe
 rm -f app.7z
 cd ..
 ```
@@ -202,15 +218,15 @@ cd ..
 `-mx5`, not `-mx9`: the payload is mostly incompressible CUDA DLLs, so maximum
 compression costs far more time for a couple of percent.
 
-**Output:** `dist/VoiceCloneStudio-1.0.0.exe` (~1.7 GB).
+**Output:** `dist/Homegrown-1.0.0.exe` (~1.7 GB).
 
 ---
 
 ## 10. Verify the artifact
 
 ```bash
-ls -lh dist/VoiceCloneStudio-1.0.0.exe
-sha256sum dist/VoiceCloneStudio-1.0.0.exe
+ls -lh dist/Homegrown-1.0.0.exe
+sha256sum dist/Homegrown-1.0.0.exe
 ```
 
 Record that checksum. If you publish this build on the landing page, update the
@@ -218,15 +234,15 @@ download link, the size text **and** the SHA-256 together — a stale checksum i
 worse than none.
 
 Final check: run the `.exe` on a machine that has never had this app, extract to
-a folder outside the repo, and run `VoiceCloneStudio.exe` from there.
+a folder outside the repo, and run `Homegrown.exe` from there.
 
 ---
 
 ## What the recipient experiences
 
 1. Runs the `.exe`; 7-Zip asks where to extract.
-2. `<chosen folder>/VoiceCloneStudio/` appears (~4.5 GB).
-3. Runs `VoiceCloneStudio.exe` inside it.
+2. `<chosen folder>/Homegrown/` appears (~4.5 GB).
+3. Runs `Homegrown.exe` inside it.
 4. **SmartScreen warns once** — "Windows protected your PC" → More info → Run
    anyway. The exe is unsigned; only an Authenticode certificate removes this.
 5. First launch downloads the ~2.5 GB model, with progress shown in the loader.
@@ -246,7 +262,7 @@ means deleting the folder.
 | `frontend/dist is missing` during step 5 | Step 4 was skipped |
 | Loader never appears | Stale launcher exe — re-run step 5 |
 | Firewall prompt on first run | Stale `backend.exe`; `run.py` must bind `127.0.0.1` |
-| App works locally, dead on LAN | `frontend/.env.local` survived step 3 |
+| App works locally, dead on LAN | `frontend/.env.local` survived step 3 and set `VITE_BACKEND_URL`. `start_server.bat` catches this before serving; the frozen build does not, so check the bundle |
 | Chunk count missing under the script box | Backend predates the `POST /api/estimate` change — rebuild |
 | PyInstaller runs out of disk | `TMP`/`TEMP` not redirected in step 5 |
 | `No matching distribution` for torch | `--extra-index-url` header in `requirements.txt` was bypassed |

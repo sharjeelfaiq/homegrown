@@ -12,15 +12,22 @@ import './index.css'
 import App from './App.tsx'
 import { AudioActivityProvider } from './AudioActivityContext.tsx'
 import { GenerationActivityProvider } from './GenerationActivityContext.tsx'
+import { ThemeProvider } from './ThemeContext.tsx'
 
+// ThemeProvider is outermost, and outside BrowserRouter: the theme is
+// route-independent, and it is consumed from the header (ThemeSwitch), from
+// deep inside the history list (WaveRibbon, never reachable by prop) and by
+// Modal, which portals to document.body outside #root entirely.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <AudioActivityProvider>
-        <GenerationActivityProvider>
-          <App />
-        </GenerationActivityProvider>
-      </AudioActivityProvider>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <AudioActivityProvider>
+          <GenerationActivityProvider>
+            <App />
+          </GenerationActivityProvider>
+        </AudioActivityProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   </StrictMode>,
 )

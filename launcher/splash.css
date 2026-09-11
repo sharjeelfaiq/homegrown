@@ -1,0 +1,133 @@
+/* Tailwind source for the launcher splash.
+ *
+ * Compiled ahead of time by scripts/build_splash.py and inlined into
+ * launcher/_splash.py. Never shipped as a file -- see the comment at the top
+ * of splash.html for why this surface cannot use Tailwind's Play CDN.
+ *
+ * The palette is a hand-mirror of the Studio (default) theme in
+ * frontend/src/styles/tokens.css. It has to be: the launcher paints before a
+ * browser exists, so it cannot read localStorage and cannot know which theme
+ * the user picked -- it is permanently Studio-coloured. Drift is caught by
+ * scripts/check_design_tokens.py, which checks this surface against the
+ * default theme only.
+ *
+ * This mirror already failed once: after the studio was rethemed the launcher
+ * kept the old blue, so the first screen a desktop user saw was a different
+ * product from the one that loaded ten seconds later.
+ */
+/* An explicit path, not the bare `@import 'tailwindcss'` the docs show.
+   `frontend/` is the only directory in this repo with a node_modules, and
+   Tailwind resolves imports relative to the importing FILE -- so from
+   launcher/ the bare specifier has nothing to resolve against, and the CLI's
+   --cwd does not help because it does not change resolution. Spelling the
+   path out says the quiet part: the launcher borrows the SPA's toolchain. */
+@import '../frontend/node_modules/tailwindcss/index.css';
+
+/* Only this one file. The CLI would otherwise crawl the repo. */
+@source './splash.html';
+
+@theme {
+  --color-base: #14151a; /* --bg-base */
+  --color-ink: #f5f6f8; /* --text-primary */
+  --color-muted: #a9adba; /* --text-muted */
+  --color-faint: #8b90a4; /* --text-faint */
+  --color-progress: #ffb43a; /* --accent, "work in progress" */
+  --color-danger: #ff6169; /* --danger */
+  --color-danger-text: #ffc9cc; /* --danger-text */
+
+  /* Name-only references to locally installed families, with full fallbacks.
+     Nothing is fetched -- @fontsource is a dependency of the SPA, not of a
+     frozen exe, and there is no network here to fetch from anyway. */
+  --font-body: Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Dark, always. There is no theme switcher here and no preference to read. */
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background: var(--color-base);
+}
+
+/* ==== Runtime state classes ============================================
+   These three are toggled by the page's own JavaScript (className and
+   classList in splash.html), so they cannot be expressed at the call site --
+   the call site is not where the decision is made. Everything else on this
+   page is a utility in the markup. */
+
+/* The hero carries either a percentage or a phase word. A word at the
+   percentage size wraps to three lines on a narrow window, so it gets its own
+   step. Written as `&.hero` so specificity (0,2,0) settles the conflict with
+   the base size rather than source order. */
+@utility hero {
+  font-size: clamp(4rem, 14vw, 9rem);
+  letter-spacing: -0.03em;
+}
+
+@utility is-word {
+  &.hero {
+    font-size: clamp(2rem, 7vw, 3.5rem);
+    letter-spacing: -0.02em;
+  }
+}
+
+/* No percentage yet: a fixed-width bar sweeping across the track. */
+@utility indeterminate {
+  & .fill {
+    width: 28%;
+    animation: sweep 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+/* Set on <body> when the backend has died. The progress track goes (there is
+   no progress to report), the prose and the metric go, and the driver's own
+   message and a Retry button appear. The headline steps down because on this
+   screen the message underneath it is the useful part -- at 9rem it buried
+   the thing the user actually needs to read. */
+@utility is-error {
+  & .track {
+    display: none;
+  }
+
+  & .hero {
+    color: var(--color-danger);
+    font-size: clamp(1.5rem, 4vw, 2.25rem);
+  }
+
+  & .tagline,
+  & .metric {
+    display: none;
+  }
+
+  & .error-text {
+    display: block;
+  }
+
+  & .retry {
+    display: block;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+
+  .indeterminate .fill {
+    animation: none;
+    width: 15%;
+  }
+}
