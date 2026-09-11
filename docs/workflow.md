@@ -148,9 +148,11 @@ The voice dropdown stays usable while a job runs, so you can line up the next on
 There is no queue list and no reorder control in the UI, although `POST /api/queue/reorder` exists and
 works. If the backend becomes unreachable, an error row with a **Retry** button appears above the script.
 
-**Generate shows an estimate first** — roughly how long, and how many chunks. Rounded deliberately:
-the underlying figure is one global chars/second average across every voice, and chunk size depends
-on the voice, so it drifts right after you switch to a very different reference clip.
+**Generate shows an estimate first** — "Generation will take about 25 min". Rounded deliberately, and
+it **does not respond to the voice**: it comes from the character count and one global chars/second
+average over the last 20 renders, and never sees which voice is selected. A voice with a long
+reference clip really does render slower, so read it as an order of magnitude rather than a
+countdown.
 
 **Each finished or failed job raises a toast** — "Voiceover ready" with the voice name, or a failure toast
 that stays until dismissed. Transient errors elsewhere are toasts too. Three notices stay inline because

@@ -615,11 +615,15 @@ export default function StudioShell() {
               Beside Generate rather than under the script box: it qualifies
               the button, and it is the last thing read before pressing it.
 
-              Rounded by approxDuration, deliberately. The backend divides by a
-              GLOBAL chars/second average that takes no preset, so it is
-              systematically off just after switching to a voice unlike the
-              recent ones. Keying that average per preset is the real fix and a
-              separate change. */}
+              Rounded by approxDuration, deliberately, and it does NOT respond
+              to the voice. _estimate_seconds takes a character count and
+              nothing else -- it divides by a global chars/second average over
+              the last 20 jobs. Only `chunks`/`chunk_chars`/`warning` come from
+              _seq_budget(preset). So switching voice cannot move this number,
+              by construction, and the chunk count that used to sit beside it
+              was the only part that ever did. Making the estimate voice-aware
+              means estimating per CHUNK rather than per character, which is a
+              backend change and not this one. */}
           <section className="compose-bar flex flex-wrap items-center gap-2">
             <GenerateButton
               disabled={!canGenerate}
@@ -631,11 +635,8 @@ export default function StudioShell() {
             />
 
             {estimate != null && estimate.estimated_s > 0 && scriptReady && (
-              <p className="mono m-0 text-[11px] whitespace-nowrap text-faint">
-                {approxDuration(estimate.estimated_s)}
-                {estimate.chunks != null && estimate.chunks > 1
-                  ? ` · ${estimate.chunks} chunks`
-                  : ''}
+              <p className="m-0 text-[12px] whitespace-nowrap text-muted">
+                Generation will take {approxDuration(estimate.estimated_s)}
               </p>
             )}
 

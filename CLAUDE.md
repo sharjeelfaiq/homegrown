@@ -260,9 +260,25 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   therefore systematically wrong just after switching to a voice unlike the recent ones. `formatDuration`
   stays for ELAPSED time, which is measured; `approxDuration` exists for this, which is predicted, and
   reports "about 25 min" rather than "24m 51s" because the underlying number cannot support the second
-  form. **The real fix is keying the timing window per preset**, which is a backend change and was
-  deliberately not made here. `/api/estimate` was already being fetched on a 400ms debounce and its
+  form.
+  **It does not respond to the voice, and cannot.** `_estimate_seconds(char_count)` takes a character
+  count and nothing else; only `chunks`, `chunk_chars` and `warning` come from `_seq_budget(preset)`.
+  The chunk count shown beside it was the one part that ever moved when you switched voice, and it has
+  since been removed from the copy — so the line is now voice-blind by construction. **The real fix is
+  to estimate per CHUNK rather than per character** (record `total_chunks` alongside `generation_s` in
+  `_record_timing_sample` and keep a rolling seconds-per-chunk), which makes it voice-aware because
+  chunk count already is. That is a backend change and deliberately not made here. `/api/estimate` was already being fetched on a 400ms debounce and its
   answer discarded; this displays it, and adds no request.
+
+- **`ThemeSwitch`'s root must not carry a transform.** It centred itself with
+  `top-1/2 -translate-y-1/2`, and a transform does two things beyond moving the box: it creates a
+  **stacking context**, and it becomes the **containing block for `position: fixed` descendants**.
+  Both bit. The menu's `z-150` was trapped inside a root with `z-index: auto`, and `<main>` comes
+  later in the DOM at `z-index: auto` too — so the voiceovers search field painted over an open menu.
+  And the menu's coordinates, computed from `getBoundingClientRect()` (viewport-relative), were being
+  resolved against the root's own box instead. It is now `inset-y-0 flex items-center` with `z-150`
+  on the root. Verified by hit-testing the menu's centre pixel: with the transform the topmost element
+  there was `INPUT.sb`, without it the menu's own button.
 
 - **`@custom-variant coarse` is the app's only custom variant.** `pointer: coarse`, used to drop the
   `Ctrl+F` key cap on touch, where it advertised a key that is not on the keyboard and ate 12-14% of

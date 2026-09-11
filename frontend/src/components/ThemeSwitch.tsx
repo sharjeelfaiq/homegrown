@@ -18,6 +18,22 @@ interface MenuPos {
 /** Theme picker, in the header. A menu rather than a two-state toggle because
  * there are nine themes plus System, and a toggle has nowhere to put them.
  *
+ * NO TRANSFORM ON THE ROOT, and that is load-bearing twice over. It used to
+ * centre itself with `top-1/2 -translate-y-1/2`, and a transform does two
+ * things a transform is not usually wanted for:
+ *
+ *  - it creates a STACKING CONTEXT, which trapped the menu's z-150 inside a
+ *    root that had no z-index of its own. <main> comes later in the DOM with
+ *    z-index: auto, so the voiceovers search field painted straight over an
+ *    open menu.
+ *  - it becomes the CONTAINING BLOCK for `position: fixed` descendants, so the
+ *    menu's coordinates -- computed from getBoundingClientRect(), i.e. from the
+ *    viewport -- were being resolved against the root's box instead.
+ *
+ * `inset-y-0 flex items-center` centres it with no transform, and z-150 on the
+ * root puts the whole switch above <main> rather than relying on the menu to
+ * win a fight it could not reach.
+ *
  * Modelled on VoicePicker: same pointerdown-to-close, same Escape handling,
  * same arrow-key walk. Two things differ deliberately -- the roles are
  * menu/menuitemradio rather than VoicePicker's listbox-over-a-role-less-list,
@@ -41,11 +57,17 @@ export default function ThemeSwitch() {
   // The menu is position: fixed, so its coordinates come off the trigger's
   // viewport rect at open time.
   //
-  // Fixed, NOT absolute: above 1025px `.studio` is `height: 100svh;
+  // Fixed, NOT absolute: above 1025px the shell is `height: 100svh;
   // overflow: hidden`, so a menu hanging off the header would be clipped to
-  // the header's own ~87px box and show about one row. Nothing in the
-  // ancestor chain sets transform, filter or contain -- checked -- so a fixed
-  // element escapes the clip without needing a portal.
+  // the header's own ~87px box and show about one row. Nothing in the ancestor
+  // chain sets transform, filter or contain, so a fixed element escapes the
+  // clip without needing a portal.
+  //
+  // That was checked for ANCESTORS and was true. What it missed is that the
+  // ROOT OF THIS COMPONENT used to carry `-translate-y-1/2` itself, which made
+  // it the containing block for this fixed menu -- so these viewport
+  // coordinates were being resolved against the root's own box. The root no
+  // longer transforms; see the note on the component above.
   useLayoutEffect(() => {
     if (!open) return
     const r = triggerRef.current?.getBoundingClientRect()
@@ -142,7 +164,7 @@ export default function ThemeSwitch() {
 
   return (
     <div
-      className="absolute top-1/2 right-(--gutter) -translate-y-1/2 font-body text-[13px]/[1.55] font-normal tracking-normal normal-case text-left"
+      className="absolute inset-y-0 right-(--gutter) z-150 flex items-center font-body text-[13px]/[1.55] font-normal tracking-normal normal-case text-left"
       ref={rootRef}
     >
       {/* Borderless, like every other icon button in the app. It briefly had
