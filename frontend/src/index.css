@@ -447,9 +447,13 @@ body {
 @utility result-list {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: calc(8 * var(--result-row-h));
+  /* The padding is ADDED to the cap, not taken out of it. Preflight sets
+     box-sizing: border-box, so a bare `8 * --result-row-h` would spend 12px of
+     the eight-row window on its own padding and show seven rows and a sliver.
+     The window is specified in rows; keep the arithmetic saying so. */
+  max-height: calc(8 * var(--result-row-h) + 12px);
   margin: 0;
-  padding: 0;
+  padding: 6px 8px;
   overflow-y: auto;
   list-style: none;
   /* Keeps the scrollbar off the row content rather than over it. */

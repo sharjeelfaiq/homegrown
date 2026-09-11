@@ -717,8 +717,13 @@ export default function HistoryList({
     }
   }
 
+  // mb-6 so the column stops short of the page edge rather than running into
+  // it. It reads as separation in BOTH layout modes, for different reasons:
+  // below 1025px the page scrolls and this is the last thing above main's
+  // pb-[72px]; above it the page is pinned to one viewport and this is slack
+  // inside the aside, on top of main's wide:pb-8.
   return (
-    <section className="results flex flex-col gap-1">
+    <section className="results mb-6 flex flex-col gap-1">
       <h2 className="section-rule">
         <span>Voiceovers</span>
         {total > 0 && <span className="mono order-3 text-[11px]">{total}</span>}
