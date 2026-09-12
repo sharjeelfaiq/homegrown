@@ -416,9 +416,16 @@ green and jade), **Booth** (near-black, on air), **Marquee** (violet, magenta an
 (warm black and gold), **Tide** (midnight navy and teal) — and three light — **Daylight** (neutral),
 **Tape** (warm paper and rust), **Score** (paper white, high contrast). **System** follows your OS.
 
-The choice is stored in `localStorage` and applied before the first paint, so there is no flash of
-the wrong theme on load. Every palette is checked against WCAG AA by `scripts/check_contrast.py` at
-build time rather than by eye.
+The picker groups them under **Dark** and **Light** headings.
+
+Each theme has its own **identity colour** — the wordmark tells you which one you are in at a
+glance — while the amber "generating" bar means the same thing in all nine, the way the red error
+and purple queued colours do. Those were one colour until recently, which is why eight of the nine
+themes used to look alike.
+
+Every palette is checked at build time rather than by eye: `scripts/check_contrast.py` for WCAG AA,
+and `scripts/check_palette.py` for the things a contrast ratio cannot see — a waveform that looks
+like an error message, or a card that does not separate from the page.
 
 ### Voiceovers
 
@@ -630,9 +637,10 @@ frontend/      React 19 + Vite + TypeScript dashboard (the app)
 landing-page/  Marketing page -- the only thing Vercel deploys; separate release cadence
 launcher/      Frozen-app launcher (PyInstaller)
 installer/     NSIS installer script (unusable at current payload size, see above)
-scripts/       Build gates and dev utilities. build.sh runs five: check_design_tokens.py,
-               check_contrast.py, check_orphan_css.py, check_desktop_port.py and
-               build_splash.py --check. Also build_og_image.sh and measure_landing.sh
+scripts/       Build gates and dev utilities. build.sh runs six: check_design_tokens.py,
+               check_contrast.py, check_palette.py, check_orphan_css.py,
+               check_desktop_port.py and build_splash.py --check. Also
+               build_og_image.sh and measure_landing.sh
 assets/        Build-time binaries: icon.ico, consumed by launcher.spec and setup.nsi
 ```
 

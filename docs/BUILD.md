@@ -76,7 +76,7 @@ not a runtime dependency.
 
 Do these before spending 30 minutes freezing a broken build.
 
-These are the same five gates `build.sh` runs, in the same order. All five
+These are the same six gates `build.sh` runs, in the same order. All six
 must pass; each exists because something once shipped broken past it.
 
 ```bash
@@ -88,15 +88,19 @@ python scripts/check_design_tokens.py
 # 2. WCAG AA for every theme, computed rather than eyeballed.
 python scripts/check_contrast.py
 
-# 3. CSS classes no component uses -- written after a ported component left
+# 3. Hue collisions and surface separation -- the axis a contrast ratio
+#    cannot express. A waveform that looks like an error passes check 2.
+python scripts/check_palette.py
+
+# 4. CSS classes no component uses -- written after a ported component left
 #    .compose-bar .generate matching nothing and un-anchored Generate.
 python scripts/check_orphan_css.py
 
-# 4. backend/run.py's PORT and launcher/launcher.py's PORT must agree. They
+# 5. backend/run.py's PORT and launcher/launcher.py's PORT must agree. They
 #    are separately frozen exes with no import path between them.
 python scripts/check_desktop_port.py
 
-# 5. launcher/_splash.py must be current with splash.html/splash.css.
+# 6. launcher/_splash.py must be current with splash.html/splash.css.
 python scripts/build_splash.py --check
 
 # Frontend types + lint

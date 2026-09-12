@@ -341,12 +341,16 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   ellipsised to `Sep 11, 02:32 P…` on the very machine it was written on. Measured after the fix:
   text `Sep 11, 07:15 PM`, slot 112.2px, `scrollWidth` 112, not truncated, with the script preview
   giving up exactly that width. Do not re-derive this from a 24-hour clock.
-  **`var(--progress)` DOES NOT EXIST and fails silently.** `--progress` is only the `@theme` bridge
-  name `--color-progress` that the `bg-progress` utility compiles against; there is no raw custom
-  property, so `color: var(--progress)` is an invalid declaration that leaves the element inheriting
-  `--text-primary`. It shipped that way for one build and **nothing caught it** —
-  `check_design_tokens.py` scans hex literals, so an undefined `var()` is invisible to it. Raw CSS here
-  uses `--accent`, `--queued`, `--danger-text`, as `is-queued`/`is-failed` already do.
+  **`--progress` IS a raw token now, and the clock uses it.** It was not when the clock was written:
+  `--progress` existed only as the `@theme` bridge name `--color-progress`, so `color: var(--progress)`
+  was an invalid declaration that left the clock inheriting `--text-primary`. It shipped that way for
+  one build and **nothing caught it** — `check_design_tokens.py` scans hex literals, so an undefined
+  `var()` is invisible to it, and the build stays green. The rule then used `var(--accent)` as a
+  workaround. Splitting `--progress` out of `--accent` (see the themes section) removed the cause, and
+  the clock now names the state it is showing rather than the theme's identity colour — which is what
+  it always meant. **The general trap stands**: an undefined `var()` fails silently and no gate sees
+  it, so raw CSS here uses tokens that exist in layer 1 — `--progress`, `--queued`, `--danger-text` —
+  as `is-queued`/`is-failed` already do.
 
 - **`ThemeSwitch`'s root must not carry a transform.** It centred itself with
   `top-1/2 -translate-y-1/2`, and a transform does two things beyond moving the box: it creates a
@@ -570,20 +574,61 @@ it:
   primitives, and the base element reset that came out of App.css.
 
 **Nine themes, and the blocks are NOT uniform — copying the wrong one silently breaks a theme.**
-A dark theme states the 20 layer-1 values (`greenroom` is the reference). `booth` adds `--line`,
+A dark theme states the 21 layer-1 values (`greenroom` is the reference; the count went from 20 to
+21 when `--progress` was split out of `--accent`). `booth` adds `--line`,
 `--line-strong` and `--line-focus` because near-black needs stronger hairlines than the derived
 10%/40% give. **Every LIGHT theme must also restate `--scrim-boot`, `--scrim-modal` and
-`--scrim-drop`** — `daylight`, `tape` and `score` all state 26 — because inherited they are Studio's
+`--scrim-drop`** — `daylight`, `tape` and `score` all state 27 — because inherited they are Studio's
 dark-derived values and every overlay comes out wrong, on that one theme only, which is how it would
 go unnoticed. Adding a theme touches four places: the block here, `ThemeId` **and** `THEMES` in
 `theme.ts`, and two hand-mirrors in `index.html` (the `DARK`/`LIGHT` array and an inlined
 `html[data-theme] { background }` that must equal that theme's `--bg-base` exactly —
 `check_design_tokens.py` scans that file for precisely this drift).
-`check_contrast.py` is the gate that matters: every palette is computed, never eyeballed. The four
-added in this round passed unmodified, tuned against the same WCAG maths before being written.
-**Marquee is the one theme whose `--accent` is not amber** — magenta reads as *live* rather than as
-caution, which is the palette's whole point, so its `--danger` is pushed warm and light to stay
-distinguishable.
+`check_contrast.py` and `check_palette.py` are the gates that matter: every palette is computed,
+never eyeballed.
+
+- **`--progress` is the WORKING STATE and is amber in all nine themes. `--accent` is the theme's
+  IDENTITY and differs in all nine.** They were one token, which is why eight of the nine themes
+  shared their most prominent colour (accent hues: studio 35°, daylight 35°, tape 34°, greenroom
+  36°, booth 39°, vinyl 36°, tide 42°, score 18° — and marquee 330°). That was wrong in both
+  directions at once: the progress bar looked the same in eight themes, *and* meant something
+  visually different in the ninth. Progress now joins `--danger` and `--queued` as a learnable
+  state; identity is free to vary. Measured after the split: progress amber 9/9, identity distinct
+  9/9, waveform distinct 9/9.
+- **Identity needed somewhere to live.** Before the split `--accent`'s only consumer was
+  `--color-progress`; `--line-focus` derives from `--line-ink` and the Generate button from
+  `--btn-invert-bg` — both neutral — so the only saturated pixels in the app were the progress bar
+  and the waveform. The wordmark (`text-accent`) and `::selection` now carry identity. **The
+  Generate button deliberately stays neutral-inverted**: a near-white primary action is the stronger
+  convention, and tinting it would fight the progress colour inches away.
+- **`check_palette.py` exists because a contrast ratio has no opinion about hue.** Three collisions
+  shipped invisibly past `check_contrast.py`: tape's waveform sat **12°** from its own `--danger` at
+  the same lightness, vinyl **19°**, and booth's was `#ff3b30` — a *purer* alarm red than its own
+  danger — so every finished voiceover read as a failure. Daylight and score also put the card
+  within 4% luminance of the page (1.034, 1.044), so cards did not read as surfaces.
+- **Identity and audio are a TONAL pair, separated by lightness, and that is arithmetic rather than
+  taste.** With amber, red, violet and green reserved as semantics, only three hue bands sit 40°
+  clear of all four (76–100, 180–222, 302–317) and exactly one is wide enough to hold two hues that
+  are also 40° apart. Demanding a hue split would push all nine themes into the same cyan-blue band
+  and make them *more* alike. The lightness floor is 20, against a measured 35–66 points of usable
+  range per theme.
+- **The hue floors are per-pair on purpose.** Waveform-vs-danger is strict (40°) because the two
+  occupy the same slot — line 2 of a voiceover row — so one is read as the other. Progress-vs-danger
+  is 30°, because amber (~36°) and a warm red (~0–4°) are 32–38° apart in every theme, have always
+  been, and never occupy the same role. Raising it would force a greenish progress or a pink danger
+  in five themes to fix a confusion nobody has.
+- **Marquee keeps magenta and vinyl keeps gold as their identity**, both deliberate: magenta reads
+  as *live*, and "warm black and gold" is vinyl's whole premise — so vinyl is the one theme whose
+  identity and progress coincide.
+- **The light themes' fills may be brighter than their text.** Their accents sat at lightness 29–34
+  because they were tuned as if they were paragraphs, which is why Daylight's progress bar rendered
+  as muddy brown. Only text needs 4.5:1; a bar or badge is non-text at 3:1. Daylight and score also
+  had to darken `--bg-base` to separate the card — **which means the `index.html` mirror changed
+  too**, the drift `check_design_tokens.py` watches for.
+- **The theme menu groups by mode.** Six dark and three light in one flat list meant reading every
+  hint to tell which was which. `role="group"` with an `aria-label`, not a bare heading: the outer
+  list is `role="menu"`, whose only valid children are menuitems and groups, so a decorative `<li>`
+  heading would be announced as an empty item.
 
 **The theme menu is capped and scrolls.** `max-h-[min(60svh,332px)]` with `overflow-y: auto` and
 `scrollbar-gutter: stable`, the same shape as `result-list` and `voice-list`. It was uncapped when
@@ -702,9 +747,10 @@ and Google forbids marking up hidden content -- that earns a manual action, not 
 copy is still crawled and indexed as ordinary body text; hidden-behind-a-disclosure content is not
 demoted for ordinary ranking. It is only rich-result eligibility that is forfeited.
 
-**Five build gates, all in `build.sh`.** `check_design_tokens.py` (hex outside the palette; two palettes —
+**Six build gates, all in `build.sh`.** `check_design_tokens.py` (hex outside the palette; two palettes —
 the full nine-theme set for the SPA, Studio-only for `launcher.py` and the landing page, which can never be
-another theme), `check_contrast.py` (WCAG AA for every theme, computed not eyeballed), `check_orphan_css.py`
+another theme), `check_contrast.py` (WCAG AA for every theme, computed not eyeballed), `check_palette.py` (hue collisions and surface separation — the axis a contrast ratio cannot
+express), `check_orphan_css.py`
 (CSS classes no component uses — written after a ported component left `.compose-bar .generate` matching
 nothing and silently un-anchored the Generate button), `check_desktop_port.py`, and
 `build_splash.py --check` (the launcher splash is regenerated from source, not trusted).
