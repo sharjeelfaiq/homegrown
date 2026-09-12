@@ -212,6 +212,41 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   an **Undo** instead of silently overwriting a typed script; a confirm would tax every re-queue to
   protect the rare one, and `window.confirm` is already rejected elsewhere in this app.
 
+- **Everything the user types survives an immediate reload, and `useFlushOnHide` is what closes the
+  gap in each case.** Four stores, four different holes, one primitive:
+  `homegrown-script-draft` and `voiceoverSearch` (`usePersistedDraft`), `historyFileNames` and
+  `pendingVoiceoverNames` (`usePersistedRecord`).
+  **The debounce used to eat the last edit.** `usePersistedDraft`'s timeout cleanup cancelled the
+  pending write without performing it, so a reload inside the 400ms window discarded everything typed
+  since the previous flush — precisely the case the persistence exists for. It now writes on the way
+  out. Shortening the delay would have narrowed that window without closing it, while paying back the
+  writes the debounce exists to avoid.
+  **`pagehide` + `visibilitychange`, never `beforeunload`.** `beforeunload` is what produces the
+  "Leave site?" prompt this app deliberately does not have; it also disqualifies the page from the
+  bfcache. Both of the other two are registered because neither alone is reliable — mobile Safari
+  often terminates a page having fired only `visibilitychange` — so **every flush must be
+  idempotent**, and unmount runs it too (a row filtered out by a search takes its editor with it).
+  **`InlineName` commits an edit it is still holding, and this must not become
+  commit-on-keystroke.** That was the original design and was removed because it destroys
+  Escape-to-revert. The flush is guarded on `editing`, so Escape — which blurs first, leaving editing
+  mode — is untouched, and a `flushed` ref stops the trailing blur committing the same value twice.
+  **A voice rename needs `keepalive`, a voiceover rename does not.** A voiceover's name is a
+  synchronous localStorage write and lands whatever happens. A voice's name is
+  `PATCH /api/presets/{id}`, and an ordinary `fetch` started during unload is **cancelled with the
+  document** — so the flush would fire and the rename would still be lost. `renamePreset` takes the
+  flag, and `handleRenamePreset` skips its optimistic rollback and error toast on that path, both
+  being pointless on a page that is leaving. Not `sendBeacon`: it cannot issue a `PATCH` and cannot
+  set a content type.
+  **`pendingNames` is persisted, and its old comment claimed the opposite.** It said the job "either
+  lands within the session or never existed" — false, because `queue.json` is replayed on startup and
+  `job_id` survives a reload, so renaming an in-progress voiceover and refreshing threw the name away
+  while the job carried on generating. Persisting it costs a prune: ids are dropped only after a
+  **non-empty** queue poll has been seen, never on the empty first response — the same trap
+  `useJobToasts` documents. Residual hole, stated so it is not later filed as a bug: a job that
+  finishes *and* leaves the queue without this client seeing it `done` (a backend restart clears the
+  in-memory job table) can no longer be matched to a history entry, so its name is dropped. That was
+  equally true before it was persisted.
+
 - **`POST /api/history/zip` takes the display names from the client.** They are localStorage overrides
   the server has never seen, so without them every file in the archive is named after its *voice*.
   `ZIP_STORED`, not deflate — mp3 is already compressed. Unknown or other-user ids are skipped rather
@@ -261,22 +296,57 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   delete confirmation says queued voiceovers will fail. The delete is still allowed: wanting a voice
   gone is a legitimate reason to accept that.
 
-- **The render estimate is shown rounded, and the rounding is not cosmetic.** `_estimate_seconds`
-  (`backend/main.py`) divides by `_avg_chars_per_second()`, a **global** rolling average over the last
-  20 jobs that takes no preset -- but chunk size comes from `_seq_budget(preset)`, so a voice with a
-  long reference clip chunks smaller, makes more chunks and runs slower per character. The estimate is
-  therefore systematically wrong just after switching to a voice unlike the recent ones. `formatDuration`
-  stays for ELAPSED time, which is measured; `approxDuration` exists for this, which is predicted, and
-  reports "about 25 min" rather than "24m 51s" because the underlying number cannot support the second
-  form.
-  **It does not respond to the voice, and cannot.** `_estimate_seconds(char_count)` takes a character
-  count and nothing else; only `chunks`, `chunk_chars` and `warning` come from `_seq_budget(preset)`.
-  The chunk count shown beside it was the one part that ever moved when you switched voice, and it has
-  since been removed from the copy — so the line is now voice-blind by construction. **The real fix is
-  to estimate per CHUNK rather than per character** (record `total_chunks` alongside `generation_s` in
-  `_record_timing_sample` and keep a rolling seconds-per-chunk), which makes it voice-aware because
-  chunk count already is. That is a backend change and deliberately not made here. `/api/estimate` was already being fetched on a 400ms debounce and its
-  answer discarded; this displays it, and adds no request.
+- **The render estimate is `_JOB_OVERHEAD_S + chunks × median(seconds per chunk)`, and every part of
+  that was chosen by measurement.** It replaced a chars/second model that was wrong by a mean of 50%,
+  with the **rounded string the user reads wrong on 65% of jobs** — measured against this repo's own
+  `history.json`, which stores `estimated_s` beside `generation_s` for exactly this purpose. Now 20%
+  and 39%. Full leave-one-out table in `backend/main.py` above `TIMING_WINDOW`, and in
+  `docs/gpu-notes.md`.
+  **The obvious diagnosis was wrong, and the file says so to stop it being re-adopted.** Per-voice
+  *chars/second* spans 3.2× (7.27 on a 16.1s clip, 2.26 on a 40.0s one), which reads as "the estimate
+  is voice-blind". Per CHUNK those voices are 16.3s / 15.5s / 55.3s — **not ordered by clip length**,
+  and an explicit `a + b*ref_seconds` term made the model *worse* (34% mean, 117% worst). The spread
+  was mostly job-length mix: a voice used for short scripts looks slow per character because fixed
+  overhead dominates. The overhead term absorbs that; do not add a reference-length term on intuition.
+  Two traps worth keeping: **median, not mean** (22% vs 40% — resampled chunks and the cold
+  CUDA-graph run are outliers that drag an average), and a least-squares `a·frames + b·chunks` fit
+  that scores best (26%) but whose **seconds-per-frame coefficient is negative at every sample count**
+  — `frames` and `chunks` are collinear, so it is numerically good and physically nonsense.
+  Chunk count *is* voice-aware by construction, but note it is currently **latent**: with every clip
+  trimmed to `REF_TRIM_SECS` the budget lands at `ELISION_SAFE_CHUNK_CHARS` for all of them, so the
+  estimate only moves between voices for one whose clip forces smaller chunks.
+  `formatDuration` stays for ELAPSED time, which is measured; `approxDuration` is for the predicted
+  number and reports "about 25 min" rather than "24m 51s" because 20% error cannot support the second
+  form. It now survives only in the clock's `title`, the estimate having been removed from beside
+  Generate -- quoting a guess before someone commits reads as a promise. `/api/estimate` was already fetched on a 400ms debounce
+  and its answer discarded; displaying it adds no request.
+
+- **The running row's clock is `elapsed / ~guess`, and the `~` is load-bearing.** The denominator is
+  `QueueEntry.estimated_s` — a prediction with 20% mean error — so it is marked as a guess rather than
+  presented as a deadline. **On overrun the denominator does NOT move**: a re-projection from
+  `chunks_done` would drift in both directions, which is exactly why `eta_s` was never shown (see
+  `useElapsed.ts`). The clock keeps counting and the colour changes instead — `is-running` (`--accent`,
+  matching the bar beside it) becomes `is-over` (`--danger-text`). Never clamp elapsed to the estimate;
+  a frozen clock beside a live bar reads as a hung job.
+  Three things that are easy to get wrong: the two classes are **mutually exclusive in the component**,
+  not layered, because they are equal-specificity single-class utilities and Tailwind emitted `is-over`
+  *first* — relying on source order would have silently inverted them. The overrun tint is gated on
+  `reachable`, because `useElapsed` freezes when contact is lost and a frozen clock past its estimate
+  is a statement about our knowledge, not about the job. And `.result-time` is **15ch**, not 14: the
+  added `~` is one more character, and the width is fixed in both directions so the preview beside it
+  never moves.
+  **`.result-stamp` is 17ch, and the number comes from the LONGEST LOCALE FORM.** The timestamp is
+  `toLocaleTimeString`, so on an `en-US` machine `14:32` is rendered `02:32 PM` and the dated form
+  becomes `Sep 11, 02:32 PM` — **16 characters**, not 13. Sized against a 24-hour example it
+  ellipsised to `Sep 11, 02:32 P…` on the very machine it was written on. Measured after the fix:
+  text `Sep 11, 07:15 PM`, slot 112.2px, `scrollWidth` 112, not truncated, with the script preview
+  giving up exactly that width. Do not re-derive this from a 24-hour clock.
+  **`var(--progress)` DOES NOT EXIST and fails silently.** `--progress` is only the `@theme` bridge
+  name `--color-progress` that the `bg-progress` utility compiles against; there is no raw custom
+  property, so `color: var(--progress)` is an invalid declaration that leaves the element inheriting
+  `--text-primary`. It shipped that way for one build and **nothing caught it** —
+  `check_design_tokens.py` scans hex literals, so an undefined `var()` is invisible to it. Raw CSS here
+  uses `--accent`, `--queued`, `--danger-text`, as `is-queued`/`is-failed` already do.
 
 - **`ThemeSwitch`'s root must not carry a transform.** It centred itself with
   `top-1/2 -translate-y-1/2`, and a transform does two things beyond moving the box: it creates a
@@ -370,8 +440,13 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   override per browser (the two-name-stores rule below), and the default `Voiceover 27` is derived from
   the row's position rather than stored anywhere. A server filter could therefore only have matched the
   voice name. So `/api/history` has no `q` (its docstring says why, so it is not re-added),
-  `HistoryList` filters `history` directly, and there is no debounce — with no request to coalesce, the
-  250ms wait was pure latency.
+  `HistoryList` filters `history` directly, and there is no debounce on the FILTERING — with no request
+  to coalesce, the 250ms wait was pure latency. (The query itself is now written to localStorage on
+  `usePersistedDraft`'s 400ms debounce, which is a different thing: it delays the *save*, not the
+  filter, so typing still narrows the list on the keystroke. A restored query boots the column into a
+  filtered view, which is safe because the box renders whenever `searching` is true — it cannot vanish
+  and leave a filter with no way to clear it — and `onSearchActiveChange` firing on mount is what
+  makes the parent load the whole history, without which the filter would only see the first page.)
   Two consequences that are easy to break:
   **numbering happens BEFORE filtering.** The number is `total - i` over the *whole* list, so
   numbering the filtered array would renumber every row as you typed — "Voiceover 26" becoming
@@ -766,7 +841,8 @@ below for why one wrong click there is unrecoverable.
 - **Two things the UI does not do, despite appearances.** `startGenerate()` sends only
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
   `natural`/`balanced`). **The estimate is no longer among them** -- `estimated_s` and `chunks` now
-  render beside Generate, rounded by `approxDuration`. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
+  reach the running row's clock as its `~guess` denominator -- **not** beside Generate, where a figure
+  quoted before committing reads as a promise rather than the ~20%-error guess it is. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
   this machine, so wiring Stability up would buy nothing — see `docs/gpu-notes.md`. Style is untested. And `is_builtin` is dead weight: the backend hardcodes it `False`
   (`main.py`), no "Studio Voices" gallery section exists in the frontend any more, and
   `NewVoiceModal` no longer filters on it -- the field survives only in `Preset` on both sides.
@@ -838,6 +914,11 @@ below for why one wrong click there is unrecoverable.
   storage. Relatedly, `rename_preset` deliberately does **not** back-fill `preset_name` on
   existing history entries — that field is a snapshot of the name at generation time.
   `PATCH /api/presets/{id}` is also the only PATCH route in the backend.
+  There is a **third** store, easy to miss: a voiceover that has not finished yet has no history
+  entry to key an override against, so its name goes to `pendingVoiceoverNames` keyed by `job_id`
+  and moves to `historyFileNames` when the job lands (matched on `audio_url`, the only field a
+  `QueueEntry` and a `HistoryEntry` share). All three survive a reload — see the persistence bullet
+  above for what each one needed to get there, and why only the voice rename needs `keepalive`.
 - **`GET /api/presets/{id}/download` exists rather than linking at `/refs`.** The on-disk name is a
   uuid hex, the download has to be named after the voice's *current* name (which only the server
   knows after a rename), and `/refs` is an unauthenticated StaticFiles mount while this checks

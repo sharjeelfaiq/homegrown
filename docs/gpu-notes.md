@@ -196,6 +196,77 @@ Conclusions:
 - `creative` (temperature 1.2) was not tested.
 
 
+TIME-ESTIMATE MODEL SELECTION (2026-09-12, GTX 970 sm_52)
+----------------------------------------
+Question: the estimate beside Generate was wrong by a mean of 50%, and
+the ROUNDED STRING the user reads was wrong on 65% of jobs. What model
+should replace chars/second?
+
+Method: 24 completed jobs from this machine's history.json, which
+stores estimated_s beside generation_s. Chunk counts recomputed with
+the real chunk_text()/_seq_budget() for each entry's preset. Scored by
+leave-one-out: predict each job from the other 23 only.
+
+    model                                 mean err   worst
+    ----------------------------------    --------   -----
+    per-character (the old model)              50%     84%
+    per-chunk, mean                            47%    109%
+    per-frame (chars x frames_per_char)       135%    278%
+    per-character keyed by voice               36%    147%
+    least squares  a*frames + b*chunks         26%     77%
+    overhead + chunks x MEDIAN(sec/chunk)      22%     75%   <- adopted
+
+Adopted model measured through the shipped _estimate_seconds: 20% mean,
+75% worst, displayed string wrong 9/23 (39%) against 15/23 (65%).
+
+Three findings that are not obvious and cost real time:
+
+1. MEDIAN vs MEAN is the single biggest lever: 22% vs 40% on identical
+   samples. Generation produces outliers by design -- a chunk failing
+   _chunk_duration_is_sane() is resampled, and the first job after a
+   restart pays CUDA-graph capture. Both drag a mean.
+
+2. THE BEST-SCORING MODEL IS PHYSICALLY WRONG. The least-squares fit
+   scores 26%, but its seconds-per-frame coefficient is NEGATIVE at
+   every sample count from n=2 to n=23 -- it claims more audio makes
+   generation faster. frames and chunks are collinear
+   (frames ~= chunks x chunk_chars x frames_per_char), so the fit is
+   unstable and would predict nonsense on a voice with different
+   geometry. Rejected despite the score. Fit coefficients were printed
+   per n specifically to check this; a score alone would have hidden it.
+
+3. THE "VOICE-BLIND" DIAGNOSIS WAS MOSTLY WRONG. Per-voice chars/sec
+   spans 3.2x (7.27 on a 16.1s clip, 2.26 on a 40.0s one), which reads
+   as a missing per-voice term. Per CHUNK the same voices are:
+
+       English Discussion   16.1s clip   n=13   16.3 s/chunk
+       English Clone        26.8s clip   n=1    30.9 s/chunk
+       Muslim English Voice 34.4s clip   n=8    15.5 s/chunk
+       Juan sample          40.0s clip   n=1    55.3 s/chunk
+
+   -- not ordered by clip length at all. Adding an explicit
+   a + b*ref_seconds term made the model WORSE (34% mean, 117% worst).
+   The chars/sec spread was mostly job-length mix: a voice used for
+   many short scripts looks slow per character because the fixed
+   overhead dominates. Do not add a reference-length term on intuition.
+
+Overhead sweep (median model, leave-one-out mean / worst):
+
+     0s -> 28% / 83%     20s -> 22% / 75%     35s -> 29% /  86%
+     5s -> 24% / 81%     25s -> 22% / 73%     40s -> 32% / 101%
+    10s -> 24% / 78%     30s -> 25% / 71%     50s -> 39% / 130%
+    15s -> 22% / 78%
+
+Flat from 15-25s, so _JOB_OVERHEAD_S = 20.0 is a plateau value rather
+than a fitted constant.
+
+Limits: 24 jobs, one machine, two voices carrying 21 of them. The two
+single-job voices contribute one leave-one-out point each and should
+not be read as per-voice measurements. history.json keeps estimated_s
+beside generation_s precisely so the next change can be scored the
+same way.
+
+
 REFERENCE-CLIP LENGTH vs CHUNK BUDGET (2026-09-12, GTX 970 sm_52)
 ----------------------------------------
 Question: at what clip length does _seq_budget() force chunks below
@@ -288,6 +359,14 @@ Next step if this recurs: check whether the strikes stop with only one
 model process running, before touching DECODE_CHUNK_FRAMES. Raising
 Windows' TdrDelay is the other lever, but it is a machine-wide registry
 change and should be a last resort.
+
+RECURRED 2026-09-12, and the profile matches exactly: a single-chunk,
+18-character job ("Persistence probe.") on the 16.1s-clip preset struck
+cudaErrorLaunchTimeout on its first and only chunk. That is the third
+independent confirmation that script length is not the variable. The
+backend set _gpu_fault and every subsequent job failed until the process
+was restarted, which is the designed behaviour -- see the gpu_fault note
+in CLAUDE.md. DECODE_CHUNK_FRAMES was still 100.
 
 SOURCES (pricing, verified July 2026)
 ----------------------------------------

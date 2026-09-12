@@ -91,6 +91,12 @@ sends them.
 **The script is saved as you type** (`localStorage`), so a reload or a closed tab does not lose it.
 The re-queue wand offers an **Undo** when it replaces something you had written.
 
+The same is true of everything else you type: the voiceovers **search box** keeps its query, and a
+**name** — a voiceover's or a voice's — is kept even if you reload while still typing it, without
+having pressed Enter or clicked away. A name given to a voiceover that is **still generating**
+survives the reload too, and still transfers to the finished voiceover when it lands. Escape still
+discards an edit; only edits you have not abandoned are kept.
+
 Shortcuts: **Ctrl/Cmd+Enter** generates, **/** focuses the script, **Ctrl/Cmd+F** focuses the voiceovers
 search, **Escape** dismisses an error. `/` and `Ctrl+F` appear as key caps on the controls they drive;
 Generate shows its shortcut on hover. **There is no Space shortcut** — it used to play the newest
@@ -103,7 +109,9 @@ Jobs process **one at a time** — single GPU, one worker thread, one lock.
 
 The voiceover being generated appears **immediately as the first row of the Voiceovers column**, laid out
 exactly like the finished row it will become — same editable name, same voice — with three swaps: the
-waveform is a progress bar, the transport is a labelled **Cancel**, and the clock counts **elapsed** time.
+waveform is a progress bar, the transport is a labelled **Cancel**, and the clock reads
+**elapsed / ~estimated** (`1:12 / ~2:30`) in amber, where a finished row's clock is grey. Run past the
+estimate and the clock turns red and keeps counting — the guess is not revised upward to save face.
 Download and re-queue are absent until there is something to download.
 
 **You can queue more while one runs.** The Generate button stays live — type another script, change
@@ -113,8 +121,10 @@ and they are **purple** where the one being generated is amber: an empty bar and
 instead of a filling bar and a ticking clock. When the running one finishes, the next promotes in place
 and turns amber. Cancel works on either — cancelling a queued voiceover leaves the running one alone.
 
-Elapsed, never remaining: the backend's `eta_s` is a rolling chars/second average that moves in *both*
-directions as chunks land, so watching it told you nothing. The **Generate** button just says Generate,
+Elapsed against a fixed guess, never a live countdown: the backend's `eta_s` re-projects from
+`elapsed / chunks_done` every poll, so it moves in *both* directions as chunks land and watching it
+told you nothing. The `~2:30` beside the clock is the estimate made once, at submission, and left
+alone even when the render overruns it. The **Generate** button just says Generate,
 throughout — the Voiceovers column reports the work, so the button does not need to.
 
 **Cancel** stops a running job after the current chunk, within about a second. On a **running** job it
@@ -156,11 +166,11 @@ works. If the backend becomes unreachable — it crashed, the machine slept, the
 row with a **Retry** button appears above the script, and any in-flight row **stops its clock** rather
 than counting up against a process that may be gone.
 
-**Generate shows an estimate first** — "Generation will take about 25 min". Rounded deliberately, and
-it **does not respond to the voice**: it comes from the character count and one global chars/second
-average over the last 20 renders, and never sees which voice is selected. A voice with a long
-reference clip really does render slower, so read it as an order of magnitude rather than a
-countdown.
+**Generate does not quote you a time.** It used to, and that was removed — a number given before you
+commit reads as a promise, and this one is a guess. You get it once the job is running, as the
+`~2:30` half of the row's clock, where the elapsed time beside it shows how the guess is holding up.
+It is `20s + chunks × the median seconds-per-chunk of your last 20 renders`, wrong by a mean of 20% on
+this machine's real history — the character-based figure it replaced was wrong by 50%.
 
 **Each finished or failed job raises a toast** — "Voiceover ready" with the voice name, or a failure toast
 that stays until dismissed. Transient errors elsewhere are toasts too. Three notices stay inline because
@@ -179,7 +189,8 @@ reports its actual error here rather than timing out after ten minutes.
 Finished jobs land in **Voiceovers** in the right-hand column, newest first.
 
 A **search box** sits under the heading, focused by **Ctrl/Cmd+F** — the shortcut is printed inside the
-field so you find it before pressing it. It filters as you type with no delay, matching a voiceover's
+field so you find it before pressing it. It filters as you type with no delay, keeps its query across
+a reload, and matches a voiceover's
 **name** and the **voice** that spoke it. It deliberately does **not** search the script: a script runs to
 60,000 characters, so a common word matches nearly everything and the list is not narrowed. The whole
 search runs in the browser, because two of the things it matches are not on the server at all — a custom
@@ -200,13 +211,15 @@ Each row is three lines:
    comes from position, so deleting one renumbers the rest. The name is click-to-edit: type, click away to
    save, **Escape** to revert, clear it to fall back to `Voiceover N`. Whatever you call it is also the
    download filename, and the rename persists in `localStorage`. The field hugs its own text. A name typed
-   into a row that is still generating carries over to the finished voiceover.
+   into a row that is still generating survives a reload and carries over to the finished voiceover.
 2. **Play**, the waveform (which doubles as the seek bar — click or arrow-key), a **`0:12 / 1:06`** clock,
    and the actions at the right, dimmed until you hover the row: **download**, **re-queue** (wand — pulls
    that script and voice back into the script box), and **delete**. Click the clock's left half to switch
    it to time remaining (`-0:54`); the total on the right stays put, and the slot is a fixed width so
    nothing beside it shifts.
-3. The first words of the script.
+3. The first words of the script, and on the right the time it was made — `14:32`, gaining a date
+   once it is no longer today, with the full timestamp on hover. A row still generating shows when it
+   was **sent**, which is the only indication of how long a queued job has been waiting.
 
 **Click the preview to copy that script** — a toast confirms it. Nothing expands. A copy glyph
 appears on the row as you hover it, and the full text sits in the tooltip. If you want to *edit* an
@@ -233,11 +246,11 @@ restart.
   reference clip leaves in the context window, and chunks are size-balanced so there is no runt final
   chunk. A chunk whose audio comes out wildly longer or shorter than its text warrants is regenerated.
   See `README.md`'s "How generation works".
-- **Time estimates** come from a rolling average of chars/second across the last 20 completed jobs (seeded
-  from `history.json` on restart, so estimates are sane immediately, not just after the first job of a
-  session). The estimate is shown beside Generate before you press it (see section 4); once a job is
-  running the row reports **elapsed** time instead, because the remaining-time figure moves in both
-  directions as chunks land. `/api/estimate` also carries the long-reference-clip `warning`.
+- **Time estimates** are `20s + chunks × median(seconds per chunk)` over the last 20 completed jobs
+  (seeded from `history.json` on restart, so estimates are sane immediately, not just after the first
+  job of a session). Shown only as the denominator of the running row's clock, never before you
+  press Generate. The 20s is a fixed per-job cost — without it every short job under-predicted
+  badly. `/api/estimate` also carries the long-reference-clip `warning`.
 - **The queue survives a backend restart** — `queue.json` persists queued/in-flight jobs and resumes them
   (from the start of that job, not mid-chunk) on the next startup.
 - **The waveform** reflects real audio amplitude via the Web Audio API while something plays. Only one
