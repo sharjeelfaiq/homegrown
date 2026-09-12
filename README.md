@@ -262,8 +262,19 @@ The reference clip and your script share a single 1024-position context window. 
 | **53s** | **~860 of 1024** | **too little — output degrades** |
 
 When too little is left, the app is forced into chunk sizes below the point where this model starts padding
-and dragging — which you hear as murmuring, long pauses, and dropped words. The backend logs a warning when
-a voice is in that state. Anything longer than 40 seconds is **trimmed to the first 40 seconds of speech**
+and dragging — which you hear as murmuring, long pauses, and dropped words. **The app tells you before you
+spend a render on it**: the voice carries its clip length as a badge in the Voices dialog, and selecting it
+puts a notice under the script box naming the clip length and the chunk size it forces.
+
+Measured on this machine against `REF_TRIM_SECS=40`, at a nominal 13 characters/second:
+
+| clip length | chunk size | what happens |
+|---|---|---|
+| up to 48s | 150–200 | fine, no notice |
+| 50–54s | 104–127 | notice shown; still generates |
+| 56s and over | 80 (the floor) | notice shown, and `/api/generate` **refuses the job** — the clip leaves no room to generate speech |
+
+A voice reporting 80-character chunks is therefore a ~54s clip sitting a second from that refusal. Anything longer than 40 seconds is **trimmed to the first 40 seconds of speech**
 rather than rejected (`REF_TRIM_SECS`), and the upload itself is only capped at 30 minutes
 (`MAX_REF_AUDIO_SECS`) — a guard on buffering the file in memory, not a quality limit. But **longer is not
 better**: 10–20 seconds of clean speech clones better than 40 seconds of anything, and past ~23s output has
@@ -312,6 +323,11 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
   format it was uploaded in (no re-encoding). Renaming the voice changes the downloaded filename.
 - **A voice that is mid-generation is marked `busy`**, and its delete confirmation warns that queued
   voiceovers will fail. The delete is still allowed — wanting a voice gone is a good enough reason.
+- **A voice whose reference clip is too long is marked with that clip's length** (`55s`), with the full
+  explanation in its tooltip. This is how a voice made by an older build — before clips were trimmed on
+  upload — is spotted without generating anything first. Upgrading does not re-trim an existing voice, so
+  the fix is to delete it and re-create it from a 10–20s clip. At most one badge shows per row: `busy`
+  wins while it applies, being the transient one.
 - **Delete** — in the dialog only, and two-step (the row flips to Delete/Keep). Removes the voice and its
   reference audio permanently. Deleting the selected voice clears the selection. The dropdown deliberately
   has no delete: it is a menu you open to pick a voice, not to destroy one.
@@ -426,8 +442,9 @@ Each row is three lines:
 3. The first words of the script.
 
 **Click the script preview to copy the whole script**, with a toast to confirm. Nothing opens. The
-row shows the first 96 characters and hovering it reveals a copy glyph; the full text is also in the
-native tooltip. To *edit* an old script rather than copy it, the re-queue wand pulls it back into the
+row shows the first 80 characters and hovering it reveals a copy glyph; the full text is also in the
+native tooltip. 80 matches what the backend truncates `text_preview` to, so a voiceover does not
+visibly gain characters at the moment it finishes. To *edit* an old script rather than copy it, the re-queue wand pulls it back into the
 compose box (and offers an Undo if that replaced something).
 
 **Deleting a voiceover is undoable.** The row disappears at once and a toast offers **Undo** for

@@ -102,14 +102,21 @@ WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
   slower "manual PyTorch version" fallback per its own startup warning).
   This alone is a meaningful speedup on any modern datacenter GPU
   (T4/L4/A10G/A100 all support it; RTX 4090 does too).
-- MAX_REF_AUDIO_SECS (currently 60.0, in backend/main.py) is no longer
-  the binding limit -- _seq_budget() derives the real per-preset budget
-  from what the reference clip leaves of max_seq_len, so raising the
-  guard alone just starves generation. Raise max_seq_len first. Note
-  also that the practical ceiling is quality, not capacity: clips over
-  ~23s have produced garbled output on this card regardless of budget,
-  and 10-20s remains the recommended range.
-  (This line previously read "currently 15s", which was wrong by 4x.)
+- MAX_REF_AUDIO_SECS is not the binding limit and never was a quality
+  number. It is 1800.0 (thirty minutes) in backend/main.py today, and
+  it guards create_preset buffering the upload in memory. What bounds
+  the clip is REF_TRIM_SECS = 40.0: anything longer is trimmed to the
+  first 40 seconds of speech rather than rejected, so raising the
+  upload guard alone changes nothing about generation.
+  _seq_budget() derives the real per-preset budget from what the
+  trimmed clip leaves of max_seq_len, so on a bigger card raise
+  max_seq_len first, then REF_TRIM_SECS, re-solving the table in the
+  REF_TRIM_SECS comment in backend/main.py as you go. Note also that
+  the practical ceiling is quality, not capacity: clips over ~23s have
+  produced garbled output on this card regardless of budget, and 10-20s
+  remains the recommended range. See also the 2026-09-12 sweep below.
+  (This line has been wrong twice -- it read "currently 15s", then
+  "currently 60.0", while the constant moved to 1800.0.)
 - If you want real concurrent multi-user throughput (not just bigger/
   faster single requests), the global _gen_lock serialization needs to
   become a small worker pool (one model instance per GPU, or multiple
@@ -187,6 +194,60 @@ Conclusions:
   not proof of absence. Keep the resampling; a longer reference clip
   may still land outside the sweet spot.
 - `creative` (temperature 1.2) was not tested.
+
+
+REFERENCE-CLIP LENGTH vs CHUNK BUDGET (2026-09-12, GTX 970 sm_52)
+----------------------------------------
+Question: at what clip length does _seq_budget() force chunks below
+PADDING_SAFE_MIN_CHARS, and where does /api/generate start refusing the
+job outright? Prompted by a report of "80-character chunks" from a
+voice created on another machine, read by the user as a limit of that
+machine's hardware. It is not: MAX_SEQ_LEN is a property of the model
+and is identical on every GPU.
+
+Method: synthesised silent wavs of known duration, paired with a
+ref_text sized to a nominal 13 chars/sec, and called _ref_facts() and
+main.estimate() directly. No generation -- only the budget arithmetic,
+which is deterministic.
+
+    clip   chunk_chars   max_new_tokens   notice?   /api/generate
+    ----   -----------   --------------   -------   -------------
+     40s       200            280            -         allowed
+     42s       200            249            -         allowed
+     44s       196            218            -         allowed
+     46s       174            192            -         allowed
+     48s       150            166            -         allowed
+     50s       127            141          shown       allowed
+     52s       104            115          shown       allowed
+     54s        81             89          shown       allowed
+     56s        80              0          shown       REJECTED
+     60s        80             -5          shown       REJECTED
+
+Three things fall out:
+- The notice threshold (chunk_chars < PADDING_SAFE_MIN_CHARS = 150) is
+  crossed between 48s and 50s.
+- 80 is MIN_CHUNK_CHARS, a floor. A voice reporting 80 is therefore not
+  "80 and could be worse" -- it is clamped, and somewhere past ~54s.
+- The hard gate (max_new_tokens < MIN_GEN_FRAMES = 64) arrives only two
+  seconds after the floor is reached, so the band where a voice warns
+  but still renders is narrow: roughly 50-54s.
+
+Reverse-solving the floor across the whole clamped rate range
+(_MIN/_MAX_SPEECH_CHARS_PER_SEC, 8-20 chars/sec) puts it at 50.4s at
+20 chars/sec, 54.1s at 13, and 54.9s at 8 -- so "80-char chunks" means
+a ~50-55s clip whatever the speaker's pace.
+
+None of this is reachable through the current upload path:
+REF_TRIM_SECS=40 trims every clip on create, and 40s yields 200-char
+chunks. Clips in this range only exist on presets created before
+trimming shipped (2026-09-10, commit 352bcde), and upgrading does not
+re-trim a stored clip. All five presets on this machine measured 16.1s
+to 40.0s and 200-char chunks.
+
+Limits: the budget is arithmetic, so these rows are exact for the given
+rate -- but the AUDIBLE quality claim behind PADDING_SAFE_MIN_CHARS is
+the older 380/190/110-char measurement recorded in CLAUDE.md, not
+re-measured here. No audio was generated for this sweep.
 
 
 TDR STRIKES (2026-09-10, GTX 970 sm_52, display-attached)

@@ -49,6 +49,12 @@ anywhere in the window — that opens the same dialog with the file already load
    The dialog **does not change height** as voices come and go: the list is a fixed six-row window that
    scrolls past six.
 
+   A voice whose reference clip is long enough to hurt quality is **marked with that clip's length**
+   (`55s`), explained in full in the tooltip. That is mostly how you find a voice made by an older
+   build, before clips were trimmed on upload — upgrading does not shorten a clip that is already
+   stored, so the fix is to delete the voice and re-create it. A voice mid-generation shows `busy`
+   instead; only one badge appears at a time.
+
 Everything else about the voice is decided for you, because it can be: the **name** comes from the
 filename with separators turned into spaces, the **language** is detected from the recording itself, and
 the **transcript** is produced with faster-whisper. There is no language control anywhere — asking was
@@ -159,7 +165,8 @@ countdown.
 **Each finished or failed job raises a toast** — "Voiceover ready" with the voice name, or a failure toast
 that stays until dismissed. Transient errors elsewhere are toasts too. Three notices stay inline because
 they describe a condition rather than an event: the model-down row above (which carries Retry), the
-CPU-fallback notice, and the long-reference-clip warning.
+CPU-fallback notice, and the long-reference-clip warning — which names the clip's length and the chunk
+size it forces, since the clip is the thing you can actually change.
 
 **While the backend is still starting**, a status row sits above the script showing the phase
 (*Tuning*, *Almost there*), a ticking elapsed counter and a progress bar, and both columns say they are
@@ -228,9 +235,9 @@ restart.
   See `README.md`'s "How generation works".
 - **Time estimates** come from a rolling average of chars/second across the last 20 completed jobs (seeded
   from `history.json` on restart, so estimates are sane immediately, not just after the first job of a
-  session). Nothing in the UI shows them any more — the in-progress row reports elapsed time instead, and
-  the only part of `/api/estimate` that reaches the screen is its `warning` field, which surfaces the
-  long-reference-clip notice.
+  session). The estimate is shown beside Generate before you press it (see section 4); once a job is
+  running the row reports **elapsed** time instead, because the remaining-time figure moves in both
+  directions as chunks land. `/api/estimate` also carries the long-reference-clip `warning`.
 - **The queue survives a backend restart** — `queue.json` persists queued/in-flight jobs and resumes them
   (from the start of that job, not mid-chunk) on the next startup.
 - **The waveform** reflects real audio amplitude via the Web Audio API while something plays. Only one

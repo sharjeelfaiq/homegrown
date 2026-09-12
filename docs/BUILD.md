@@ -76,18 +76,39 @@ not a runtime dependency.
 
 Do these before spending 30 minutes freezing a broken build.
 
+These are the same five gates `build.sh` runs, in the same order. All five
+must pass; each exists because something once shipped broken past it.
+
 ```bash
-# Design tokens: no colour may drift from frontend/src/styles/tokens.css
+# 1. No colour outside frontend/src/styles/tokens.css (reads 6-digit hex,
+#    3-digit hex and rgb()/rgba(); two palettes -- all nine themes for the
+#    SPA, Studio only for launcher.py and the landing page).
 python scripts/check_design_tokens.py
+
+# 2. WCAG AA for every theme, computed rather than eyeballed.
+python scripts/check_contrast.py
+
+# 3. CSS classes no component uses -- written after a ported component left
+#    .compose-bar .generate matching nothing and un-anchored Generate.
+python scripts/check_orphan_css.py
+
+# 4. backend/run.py's PORT and launcher/launcher.py's PORT must agree. They
+#    are separately frozen exes with no import path between them.
 python scripts/check_desktop_port.py
+
+# 5. launcher/_splash.py must be current with splash.html/splash.css.
+python scripts/build_splash.py --check
 
 # Frontend types + lint
 cd frontend && npm install && npm run lint && cd ..
 ```
 
-`npm run lint` reports two pre-existing `react(only-export-components)`
-warnings in `AudioActivityContext.tsx` and `GenerationActivityContext.tsx`.
-Those are expected. Anything else is new.
+`npm run lint` reports **four** pre-existing `react(only-export-components)`
+warnings — one each in `AudioActivityContext.tsx` and
+`GenerationActivityContext.tsx`, and two in `ThemeContext.tsx`. Those are
+expected. Anything else is new.
+
+`npm run build` is the typecheck (`tsc -b && vite build`); step 4 runs it.
 
 ---
 

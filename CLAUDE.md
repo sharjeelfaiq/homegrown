@@ -242,7 +242,9 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   Two things this restored: **rows are uniform height again** (measured 86.8px for a one-word and a
   170-character script alike), which the eight-row window
   (`max-height: calc(8 * var(--result-row-h) + 12px)`) assumes; and `title={entry.text}` is back,
-  since with no in-place reader the native tooltip is the only way to see past 96 characters.
+  since with no in-place reader the native tooltip is the only way to see past `PREVIEW_CHARS`.
+  (That was 96 when this was written and is 80 now — see the one-preview-length note below;
+  the number is stated once, there, so this reads it rather than restating it.)
   **Copy works in every deployment mode**, unlike *reading* the clipboard: `useCopyToClipboard` falls
   back to an off-screen `<textarea>` + `execCommand('copy')` where `navigator.clipboard` is absent,
   which is the case on LAN over plain http.
@@ -729,11 +731,14 @@ below for why one wrong click there is unrecoverable.
   with "No matching distribution found").
 - **`setup.sh` is the one-shot installer.** Idempotent, and it keeps pip's cache/temp plus the model on the
   repo's own drive — the defaults live on `C:` and this project pulls ~5GB.
-- **`CHUNK_MAX_CHARS=800` / `max_seq_len=1024` / `MAX_REF_AUDIO_SECS=60` are empirical, GPU-specific
+- **`CHUNK_MAX_CHARS=800` / `max_seq_len=1024` / `REF_TRIM_SECS=40` are empirical, GPU-specific
   numbers**, tuned on a 4GB Maxwell card — `docs/gpu-notes.md` records a GTX 960, while the machine this
   runs on now reports a **GTX 970 (sm_52)** via `/api/health`; both are 4GB `sm_52`, so the constants hold
   either way (see `docs/gpu-notes.md`, `qwen/HOW_TO_RUN.md`). Raising them is plausible on
   bigger cards but untested; reference clips over ~23s previously produced garbled/looping output.
+  **`MAX_REF_AUDIO_SECS` is NOT in that list** and is not a quality number: it is `1800.0` (thirty
+  minutes), a guard on `create_preset` buffering the upload in memory. What actually bounds the clip
+  is `REF_TRIM_SECS`, because anything longer is trimmed rather than rejected.
   `CHUNK_MAX_CHARS` is now only a ceiling — `_seq_budget()` lowers it per preset (see above). The failure
   it fixes: a 53.5s clip + an 876-char script asked for ~1729 positions against 1024, and the output came
   back as murmur and long silence (54.4s of audio holding ~20s of speech) rather than as an error.
@@ -802,6 +807,27 @@ below for why one wrong click there is unrecoverable.
   `@media (pointer: coarse)` override to 49px, because `icon-btn` takes a 40px floor on touch and
   lifts the row with it. Without the override a tablet reserves 24px too little. Verified: 49px
   rows, a 294px window, no scrollbar at six and one at nine.
+- **`ref_seconds` and `chunk_chars` are DERIVED per request, not stored, and that is the whole
+  point.** `_preset_response` computes both through `_ref_facts`, so `/api/presets` reports each
+  voice's reference-clip length and the chunk size it forces. A persisted field would have been
+  absent on precisely the voices worth flagging — the ones created before `_trim_reference_clip`
+  existed, when a 60s clip was accepted whole — and would have needed a migration to backfill.
+  Upgrading does **not** re-trim an existing voice, so a pre-trim preset keeps its long clip
+  forever. Conclusion, with the sweep in `docs/gpu-notes.md` (2026-09-12): **≤48s is clean, 50–54s
+  warns but still generates, ≥56s warns and `/api/generate` rejects the job** (`max_new_tokens`
+  falls under `MIN_GEN_FRAMES`). A voice reporting 80-char chunks is at the `MIN_CHUNK_CHARS`
+  floor, which reverse-solves to ~50–55s across the whole clamped speaking-rate range — so that
+  number means "clamped", not "80 and could be worse".
+  `_seq_budget` is now a **memoised** wrapper; the uncached one is `_compute_seq_budget`, and
+  nothing should call it directly. Without the cache, `/api/estimate` (per keystroke, 400ms
+  debounce) and `/api/presets` (per voice, per list) each repeated an `sf.info()` read and logged
+  the same WARNING about the same preset indefinitely. Keyed on path+mtime, which is sound because
+  a reference clip is immutable once saved and `PATCH /api/presets/{id}` only touches `name`.
+  The dialog's badge shows the clip length on a flagged voice and is **mutually exclusive with
+  `busy`** — at most one badge per row. Two badges plus three icon buttons crowd the name out, and
+  a second line is impossible here by construction: the window is six times *one* row height, which
+  is what the earlier `Trimmed from 2:03` note broke. Verified against the built CSS: a badged row
+  and a plain row both measure **45.00px**, and the list stays 270.00px (6 × 45).
 - **Two names, two completely different stores, one component.** `InlineName` is the shared
   rename field, but what a commit *does* is a prop, because the two callers could not be more
   different. A **voiceover's** name is a localStorage display override (`usePersistedRecord`,
