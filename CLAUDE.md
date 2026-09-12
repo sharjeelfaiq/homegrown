@@ -212,6 +212,41 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   an **Undo** instead of silently overwriting a typed script; a confirm would tax every re-queue to
   protect the rare one, and `window.confirm` is already rejected elsewhere in this app.
 
+- **Everything the user types survives an immediate reload, and `useFlushOnHide` is what closes the
+  gap in each case.** Four stores, four different holes, one primitive:
+  `homegrown-script-draft` and `voiceoverSearch` (`usePersistedDraft`), `historyFileNames` and
+  `pendingVoiceoverNames` (`usePersistedRecord`).
+  **The debounce used to eat the last edit.** `usePersistedDraft`'s timeout cleanup cancelled the
+  pending write without performing it, so a reload inside the 400ms window discarded everything typed
+  since the previous flush — precisely the case the persistence exists for. It now writes on the way
+  out. Shortening the delay would have narrowed that window without closing it, while paying back the
+  writes the debounce exists to avoid.
+  **`pagehide` + `visibilitychange`, never `beforeunload`.** `beforeunload` is what produces the
+  "Leave site?" prompt this app deliberately does not have; it also disqualifies the page from the
+  bfcache. Both of the other two are registered because neither alone is reliable — mobile Safari
+  often terminates a page having fired only `visibilitychange` — so **every flush must be
+  idempotent**, and unmount runs it too (a row filtered out by a search takes its editor with it).
+  **`InlineName` commits an edit it is still holding, and this must not become
+  commit-on-keystroke.** That was the original design and was removed because it destroys
+  Escape-to-revert. The flush is guarded on `editing`, so Escape — which blurs first, leaving editing
+  mode — is untouched, and a `flushed` ref stops the trailing blur committing the same value twice.
+  **A voice rename needs `keepalive`, a voiceover rename does not.** A voiceover's name is a
+  synchronous localStorage write and lands whatever happens. A voice's name is
+  `PATCH /api/presets/{id}`, and an ordinary `fetch` started during unload is **cancelled with the
+  document** — so the flush would fire and the rename would still be lost. `renamePreset` takes the
+  flag, and `handleRenamePreset` skips its optimistic rollback and error toast on that path, both
+  being pointless on a page that is leaving. Not `sendBeacon`: it cannot issue a `PATCH` and cannot
+  set a content type.
+  **`pendingNames` is persisted, and its old comment claimed the opposite.** It said the job "either
+  lands within the session or never existed" — false, because `queue.json` is replayed on startup and
+  `job_id` survives a reload, so renaming an in-progress voiceover and refreshing threw the name away
+  while the job carried on generating. Persisting it costs a prune: ids are dropped only after a
+  **non-empty** queue poll has been seen, never on the empty first response — the same trap
+  `useJobToasts` documents. Residual hole, stated so it is not later filed as a bug: a job that
+  finishes *and* leaves the queue without this client seeing it `done` (a backend restart clears the
+  in-memory job table) can no longer be matched to a history entry, so its name is dropped. That was
+  equally true before it was persisted.
+
 - **`POST /api/history/zip` takes the display names from the client.** They are localStorage overrides
   the server has never seen, so without them every file in the archive is named after its *voice*.
   `ZIP_STORED`, not deflate — mp3 is already compressed. Unknown or other-user ids are skipped rather
@@ -242,7 +277,9 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   Two things this restored: **rows are uniform height again** (measured 86.8px for a one-word and a
   170-character script alike), which the eight-row window
   (`max-height: calc(8 * var(--result-row-h) + 12px)`) assumes; and `title={entry.text}` is back,
-  since with no in-place reader the native tooltip is the only way to see past 96 characters.
+  since with no in-place reader the native tooltip is the only way to see past `PREVIEW_CHARS`.
+  (That was 96 when this was written and is 80 now — see the one-preview-length note below;
+  the number is stated once, there, so this reads it rather than restating it.)
   **Copy works in every deployment mode**, unlike *reading* the clipboard: `useCopyToClipboard` falls
   back to an off-screen `<textarea>` + `execCommand('copy')` where `navigator.clipboard` is absent,
   which is the case on LAN over plain http.
@@ -259,22 +296,61 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   delete confirmation says queued voiceovers will fail. The delete is still allowed: wanting a voice
   gone is a legitimate reason to accept that.
 
-- **The render estimate is shown rounded, and the rounding is not cosmetic.** `_estimate_seconds`
-  (`backend/main.py`) divides by `_avg_chars_per_second()`, a **global** rolling average over the last
-  20 jobs that takes no preset -- but chunk size comes from `_seq_budget(preset)`, so a voice with a
-  long reference clip chunks smaller, makes more chunks and runs slower per character. The estimate is
-  therefore systematically wrong just after switching to a voice unlike the recent ones. `formatDuration`
-  stays for ELAPSED time, which is measured; `approxDuration` exists for this, which is predicted, and
-  reports "about 25 min" rather than "24m 51s" because the underlying number cannot support the second
-  form.
-  **It does not respond to the voice, and cannot.** `_estimate_seconds(char_count)` takes a character
-  count and nothing else; only `chunks`, `chunk_chars` and `warning` come from `_seq_budget(preset)`.
-  The chunk count shown beside it was the one part that ever moved when you switched voice, and it has
-  since been removed from the copy — so the line is now voice-blind by construction. **The real fix is
-  to estimate per CHUNK rather than per character** (record `total_chunks` alongside `generation_s` in
-  `_record_timing_sample` and keep a rolling seconds-per-chunk), which makes it voice-aware because
-  chunk count already is. That is a backend change and deliberately not made here. `/api/estimate` was already being fetched on a 400ms debounce and its
-  answer discarded; this displays it, and adds no request.
+- **The render estimate is `_JOB_OVERHEAD_S + chunks × median(seconds per chunk)`, and every part of
+  that was chosen by measurement.** It replaced a chars/second model that was wrong by a mean of 50%,
+  with the **rounded string the user reads wrong on 65% of jobs** — measured against this repo's own
+  `history.json`, which stores `estimated_s` beside `generation_s` for exactly this purpose. Now 20%
+  and 39%. Full leave-one-out table in `backend/main.py` above `TIMING_WINDOW`, and in
+  `docs/gpu-notes.md`.
+  **The obvious diagnosis was wrong, and the file says so to stop it being re-adopted.** Per-voice
+  *chars/second* spans 3.2× (7.27 on a 16.1s clip, 2.26 on a 40.0s one), which reads as "the estimate
+  is voice-blind". Per CHUNK those voices are 16.3s / 15.5s / 55.3s — **not ordered by clip length**,
+  and an explicit `a + b*ref_seconds` term made the model *worse* (34% mean, 117% worst). The spread
+  was mostly job-length mix: a voice used for short scripts looks slow per character because fixed
+  overhead dominates. The overhead term absorbs that; do not add a reference-length term on intuition.
+  Two traps worth keeping: **median, not mean** (22% vs 40% — resampled chunks and the cold
+  CUDA-graph run are outliers that drag an average), and a least-squares `a·frames + b·chunks` fit
+  that scores best (26%) but whose **seconds-per-frame coefficient is negative at every sample count**
+  — `frames` and `chunks` are collinear, so it is numerically good and physically nonsense.
+  Chunk count *is* voice-aware by construction, but note it is currently **latent**: with every clip
+  trimmed to `REF_TRIM_SECS` the budget lands at `ELISION_SAFE_CHUNK_CHARS` for all of them, so the
+  estimate only moves between voices for one whose clip forces smaller chunks.
+  `formatDuration` stays for ELAPSED time, which is measured; `approxDuration` is for the predicted
+  number and reports "about 25 min" rather than "24m 51s" because 20% error cannot support the second
+  form. It now survives only in the clock's `title`, the estimate having been removed from beside
+  Generate -- quoting a guess before someone commits reads as a promise. `/api/estimate` was already fetched on a 400ms debounce
+  and its answer discarded; displaying it adds no request.
+
+- **The running row's clock is `elapsed / ~guess`, and the `~` is load-bearing.** The denominator is
+  `QueueEntry.estimated_s` — a prediction with 20% mean error — so it is marked as a guess rather than
+  presented as a deadline. **On overrun the denominator does NOT move**: a re-projection from
+  `chunks_done` would drift in both directions, which is exactly why `eta_s` was never shown (see
+  `useElapsed.ts`). The clock keeps counting and the colour changes instead — `is-running` (`--accent`,
+  matching the bar beside it) becomes `is-over` (`--danger-text`). Never clamp elapsed to the estimate;
+  a frozen clock beside a live bar reads as a hung job.
+  Three things that are easy to get wrong: the two classes are **mutually exclusive in the component**,
+  not layered, because they are equal-specificity single-class utilities and Tailwind emitted `is-over`
+  *first* — relying on source order would have silently inverted them. The overrun tint is gated on
+  `reachable`, because `useElapsed` freezes when contact is lost and a frozen clock past its estimate
+  is a statement about our knowledge, not about the job. And `.result-time` is **15ch**, not 14: the
+  added `~` is one more character, and the width is fixed in both directions so the preview beside it
+  never moves.
+  **`.result-stamp` is 17ch, and the number comes from the LONGEST LOCALE FORM.** The timestamp is
+  `toLocaleTimeString`, so on an `en-US` machine `14:32` is rendered `02:32 PM` and the dated form
+  becomes `Sep 11, 02:32 PM` — **16 characters**, not 13. Sized against a 24-hour example it
+  ellipsised to `Sep 11, 02:32 P…` on the very machine it was written on. Measured after the fix:
+  text `Sep 11, 07:15 PM`, slot 112.2px, `scrollWidth` 112, not truncated, with the script preview
+  giving up exactly that width. Do not re-derive this from a 24-hour clock.
+  **`--progress` IS a raw token now, and the clock uses it.** It was not when the clock was written:
+  `--progress` existed only as the `@theme` bridge name `--color-progress`, so `color: var(--progress)`
+  was an invalid declaration that left the clock inheriting `--text-primary`. It shipped that way for
+  one build and **nothing caught it** — `check_design_tokens.py` scans hex literals, so an undefined
+  `var()` is invisible to it, and the build stays green. The rule then used `var(--accent)` as a
+  workaround. Splitting `--progress` out of `--accent` (see the themes section) removed the cause, and
+  the clock now names the state it is showing rather than the theme's identity colour — which is what
+  it always meant. **The general trap stands**: an undefined `var()` fails silently and no gate sees
+  it, so raw CSS here uses tokens that exist in layer 1 — `--progress`, `--queued`, `--danger-text` —
+  as `is-queued`/`is-failed` already do.
 
 - **`ThemeSwitch`'s root must not carry a transform.** It centred itself with
   `top-1/2 -translate-y-1/2`, and a transform does two things beyond moving the box: it creates a
@@ -368,8 +444,13 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   override per browser (the two-name-stores rule below), and the default `Voiceover 27` is derived from
   the row's position rather than stored anywhere. A server filter could therefore only have matched the
   voice name. So `/api/history` has no `q` (its docstring says why, so it is not re-added),
-  `HistoryList` filters `history` directly, and there is no debounce — with no request to coalesce, the
-  250ms wait was pure latency.
+  `HistoryList` filters `history` directly, and there is no debounce on the FILTERING — with no request
+  to coalesce, the 250ms wait was pure latency. (The query itself is now written to localStorage on
+  `usePersistedDraft`'s 400ms debounce, which is a different thing: it delays the *save*, not the
+  filter, so typing still narrows the list on the keystroke. A restored query boots the column into a
+  filtered view, which is safe because the box renders whenever `searching` is true — it cannot vanish
+  and leave a filter with no way to clear it — and `onSearchActiveChange` firing on mount is what
+  makes the parent load the whole history, without which the filter would only see the first page.)
   Two consequences that are easy to break:
   **numbering happens BEFORE filtering.** The number is `total - i` over the *whole* list, so
   numbering the filtered array would renumber every row as you typed — "Voiceover 26" becoming
@@ -493,20 +574,61 @@ it:
   primitives, and the base element reset that came out of App.css.
 
 **Nine themes, and the blocks are NOT uniform — copying the wrong one silently breaks a theme.**
-A dark theme states the 20 layer-1 values (`greenroom` is the reference). `booth` adds `--line`,
+A dark theme states the 21 layer-1 values (`greenroom` is the reference; the count went from 20 to
+21 when `--progress` was split out of `--accent`). `booth` adds `--line`,
 `--line-strong` and `--line-focus` because near-black needs stronger hairlines than the derived
 10%/40% give. **Every LIGHT theme must also restate `--scrim-boot`, `--scrim-modal` and
-`--scrim-drop`** — `daylight`, `tape` and `score` all state 26 — because inherited they are Studio's
+`--scrim-drop`** — `daylight`, `tape` and `score` all state 27 — because inherited they are Studio's
 dark-derived values and every overlay comes out wrong, on that one theme only, which is how it would
 go unnoticed. Adding a theme touches four places: the block here, `ThemeId` **and** `THEMES` in
 `theme.ts`, and two hand-mirrors in `index.html` (the `DARK`/`LIGHT` array and an inlined
 `html[data-theme] { background }` that must equal that theme's `--bg-base` exactly —
 `check_design_tokens.py` scans that file for precisely this drift).
-`check_contrast.py` is the gate that matters: every palette is computed, never eyeballed. The four
-added in this round passed unmodified, tuned against the same WCAG maths before being written.
-**Marquee is the one theme whose `--accent` is not amber** — magenta reads as *live* rather than as
-caution, which is the palette's whole point, so its `--danger` is pushed warm and light to stay
-distinguishable.
+`check_contrast.py` and `check_palette.py` are the gates that matter: every palette is computed,
+never eyeballed.
+
+- **`--progress` is the WORKING STATE and is amber in all nine themes. `--accent` is the theme's
+  IDENTITY and differs in all nine.** They were one token, which is why eight of the nine themes
+  shared their most prominent colour (accent hues: studio 35°, daylight 35°, tape 34°, greenroom
+  36°, booth 39°, vinyl 36°, tide 42°, score 18° — and marquee 330°). That was wrong in both
+  directions at once: the progress bar looked the same in eight themes, *and* meant something
+  visually different in the ninth. Progress now joins `--danger` and `--queued` as a learnable
+  state; identity is free to vary. Measured after the split: progress amber 9/9, identity distinct
+  9/9, waveform distinct 9/9.
+- **Identity needed somewhere to live.** Before the split `--accent`'s only consumer was
+  `--color-progress`; `--line-focus` derives from `--line-ink` and the Generate button from
+  `--btn-invert-bg` — both neutral — so the only saturated pixels in the app were the progress bar
+  and the waveform. The wordmark (`text-accent`) and `::selection` now carry identity. **The
+  Generate button deliberately stays neutral-inverted**: a near-white primary action is the stronger
+  convention, and tinting it would fight the progress colour inches away.
+- **`check_palette.py` exists because a contrast ratio has no opinion about hue.** Three collisions
+  shipped invisibly past `check_contrast.py`: tape's waveform sat **12°** from its own `--danger` at
+  the same lightness, vinyl **19°**, and booth's was `#ff3b30` — a *purer* alarm red than its own
+  danger — so every finished voiceover read as a failure. Daylight and score also put the card
+  within 4% luminance of the page (1.034, 1.044), so cards did not read as surfaces.
+- **Identity and audio are a TONAL pair, separated by lightness, and that is arithmetic rather than
+  taste.** With amber, red, violet and green reserved as semantics, only three hue bands sit 40°
+  clear of all four (76–100, 180–222, 302–317) and exactly one is wide enough to hold two hues that
+  are also 40° apart. Demanding a hue split would push all nine themes into the same cyan-blue band
+  and make them *more* alike. The lightness floor is 20, against a measured 35–66 points of usable
+  range per theme.
+- **The hue floors are per-pair on purpose.** Waveform-vs-danger is strict (40°) because the two
+  occupy the same slot — line 2 of a voiceover row — so one is read as the other. Progress-vs-danger
+  is 30°, because amber (~36°) and a warm red (~0–4°) are 32–38° apart in every theme, have always
+  been, and never occupy the same role. Raising it would force a greenish progress or a pink danger
+  in five themes to fix a confusion nobody has.
+- **Marquee keeps magenta and vinyl keeps gold as their identity**, both deliberate: magenta reads
+  as *live*, and "warm black and gold" is vinyl's whole premise — so vinyl is the one theme whose
+  identity and progress coincide.
+- **The light themes' fills may be brighter than their text.** Their accents sat at lightness 29–34
+  because they were tuned as if they were paragraphs, which is why Daylight's progress bar rendered
+  as muddy brown. Only text needs 4.5:1; a bar or badge is non-text at 3:1. Daylight and score also
+  had to darken `--bg-base` to separate the card — **which means the `index.html` mirror changed
+  too**, the drift `check_design_tokens.py` watches for.
+- **The theme menu groups by mode.** Six dark and three light in one flat list meant reading every
+  hint to tell which was which. `role="group"` with an `aria-label`, not a bare heading: the outer
+  list is `role="menu"`, whose only valid children are menuitems and groups, so a decorative `<li>`
+  heading would be announced as an empty item.
 
 **The theme menu is capped and scrolls.** `max-h-[min(60svh,332px)]` with `overflow-y: auto` and
 `scrollbar-gutter: stable`, the same shape as `result-list` and `voice-list`. It was uncapped when
@@ -625,9 +747,10 @@ and Google forbids marking up hidden content -- that earns a manual action, not 
 copy is still crawled and indexed as ordinary body text; hidden-behind-a-disclosure content is not
 demoted for ordinary ranking. It is only rich-result eligibility that is forfeited.
 
-**Five build gates, all in `build.sh`.** `check_design_tokens.py` (hex outside the palette; two palettes —
+**Six build gates, all in `build.sh`.** `check_design_tokens.py` (hex outside the palette; two palettes —
 the full nine-theme set for the SPA, Studio-only for `launcher.py` and the landing page, which can never be
-another theme), `check_contrast.py` (WCAG AA for every theme, computed not eyeballed), `check_orphan_css.py`
+another theme), `check_contrast.py` (WCAG AA for every theme, computed not eyeballed), `check_palette.py` (hue collisions and surface separation — the axis a contrast ratio cannot
+express), `check_orphan_css.py`
 (CSS classes no component uses — written after a ported component left `.compose-bar .generate` matching
 nothing and silently un-anchored the Generate button), `check_desktop_port.py`, and
 `build_splash.py --check` (the launcher splash is regenerated from source, not trusted).
@@ -729,11 +852,14 @@ below for why one wrong click there is unrecoverable.
   with "No matching distribution found").
 - **`setup.sh` is the one-shot installer.** Idempotent, and it keeps pip's cache/temp plus the model on the
   repo's own drive — the defaults live on `C:` and this project pulls ~5GB.
-- **`CHUNK_MAX_CHARS=800` / `max_seq_len=1024` / `MAX_REF_AUDIO_SECS=60` are empirical, GPU-specific
+- **`CHUNK_MAX_CHARS=800` / `max_seq_len=1024` / `REF_TRIM_SECS=40` are empirical, GPU-specific
   numbers**, tuned on a 4GB Maxwell card — `docs/gpu-notes.md` records a GTX 960, while the machine this
   runs on now reports a **GTX 970 (sm_52)** via `/api/health`; both are 4GB `sm_52`, so the constants hold
   either way (see `docs/gpu-notes.md`, `qwen/HOW_TO_RUN.md`). Raising them is plausible on
   bigger cards but untested; reference clips over ~23s previously produced garbled/looping output.
+  **`MAX_REF_AUDIO_SECS` is NOT in that list** and is not a quality number: it is `1800.0` (thirty
+  minutes), a guard on `create_preset` buffering the upload in memory. What actually bounds the clip
+  is `REF_TRIM_SECS`, because anything longer is trimmed rather than rejected.
   `CHUNK_MAX_CHARS` is now only a ceiling — `_seq_budget()` lowers it per preset (see above). The failure
   it fixes: a 53.5s clip + an 876-char script asked for ~1729 positions against 1024, and the output came
   back as murmur and long silence (54.4s of audio holding ~20s of speech) rather than as an error.
@@ -761,7 +887,8 @@ below for why one wrong click there is unrecoverable.
 - **Two things the UI does not do, despite appearances.** `startGenerate()` sends only
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
   `natural`/`balanced`). **The estimate is no longer among them** -- `estimated_s` and `chunks` now
-  render beside Generate, rounded by `approxDuration`. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
+  reach the running row's clock as its `~guess` denominator -- **not** beside Generate, where a figure
+  quoted before committing reads as a promise rather than the ~20%-error guess it is. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
   this machine, so wiring Stability up would buy nothing — see `docs/gpu-notes.md`. Style is untested. And `is_builtin` is dead weight: the backend hardcodes it `False`
   (`main.py`), no "Studio Voices" gallery section exists in the frontend any more, and
   `NewVoiceModal` no longer filters on it -- the field survives only in `Preset` on both sides.
@@ -802,6 +929,27 @@ below for why one wrong click there is unrecoverable.
   `@media (pointer: coarse)` override to 49px, because `icon-btn` takes a 40px floor on touch and
   lifts the row with it. Without the override a tablet reserves 24px too little. Verified: 49px
   rows, a 294px window, no scrollbar at six and one at nine.
+- **`ref_seconds` and `chunk_chars` are DERIVED per request, not stored, and that is the whole
+  point.** `_preset_response` computes both through `_ref_facts`, so `/api/presets` reports each
+  voice's reference-clip length and the chunk size it forces. A persisted field would have been
+  absent on precisely the voices worth flagging — the ones created before `_trim_reference_clip`
+  existed, when a 60s clip was accepted whole — and would have needed a migration to backfill.
+  Upgrading does **not** re-trim an existing voice, so a pre-trim preset keeps its long clip
+  forever. Conclusion, with the sweep in `docs/gpu-notes.md` (2026-09-12): **≤48s is clean, 50–54s
+  warns but still generates, ≥56s warns and `/api/generate` rejects the job** (`max_new_tokens`
+  falls under `MIN_GEN_FRAMES`). A voice reporting 80-char chunks is at the `MIN_CHUNK_CHARS`
+  floor, which reverse-solves to ~50–55s across the whole clamped speaking-rate range — so that
+  number means "clamped", not "80 and could be worse".
+  `_seq_budget` is now a **memoised** wrapper; the uncached one is `_compute_seq_budget`, and
+  nothing should call it directly. Without the cache, `/api/estimate` (per keystroke, 400ms
+  debounce) and `/api/presets` (per voice, per list) each repeated an `sf.info()` read and logged
+  the same WARNING about the same preset indefinitely. Keyed on path+mtime, which is sound because
+  a reference clip is immutable once saved and `PATCH /api/presets/{id}` only touches `name`.
+  The dialog's badge shows the clip length on a flagged voice and is **mutually exclusive with
+  `busy`** — at most one badge per row. Two badges plus three icon buttons crowd the name out, and
+  a second line is impossible here by construction: the window is six times *one* row height, which
+  is what the earlier `Trimmed from 2:03` note broke. Verified against the built CSS: a badged row
+  and a plain row both measure **45.00px**, and the list stays 270.00px (6 × 45).
 - **Two names, two completely different stores, one component.** `InlineName` is the shared
   rename field, but what a commit *does* is a prop, because the two callers could not be more
   different. A **voiceover's** name is a localStorage display override (`usePersistedRecord`,
@@ -812,6 +960,11 @@ below for why one wrong click there is unrecoverable.
   storage. Relatedly, `rename_preset` deliberately does **not** back-fill `preset_name` on
   existing history entries — that field is a snapshot of the name at generation time.
   `PATCH /api/presets/{id}` is also the only PATCH route in the backend.
+  There is a **third** store, easy to miss: a voiceover that has not finished yet has no history
+  entry to key an override against, so its name goes to `pendingVoiceoverNames` keyed by `job_id`
+  and moves to `historyFileNames` when the job lands (matched on `audio_url`, the only field a
+  `QueueEntry` and a `HistoryEntry` share). All three survive a reload — see the persistence bullet
+  above for what each one needed to get there, and why only the voice rename needs `keepalive`.
 - **`GET /api/presets/{id}/download` exists rather than linking at `/refs`.** The on-disk name is a
   uuid hex, the download has to be named after the voice's *current* name (which only the server
   knows after a rename), and `/refs` is an unauthenticated StaticFiles mount while this checks

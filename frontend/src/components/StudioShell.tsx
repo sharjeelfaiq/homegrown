@@ -6,7 +6,7 @@ import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
 import GenerateButton from './GenerateButton'
 import { MAX_SCRIPT_CHARS } from '../constants'
-import { approxDuration, presetNameFromFile } from '../format'
+import { presetNameFromFile } from '../format'
 import { PlusIcon } from './Icons'
 import { Toaster, toast } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
@@ -341,9 +341,19 @@ export default function StudioShell() {
     void handleAddVoice(file)
   })
 
-  async function handleRenamePreset(id: string, name: string) {
+  async function handleRenamePreset(id: string, name: string, opts?: { unloading?: boolean }) {
     const trimmedName = name.trim()
     if (!trimmedName) return
+
+    // The page is going away mid-edit. Send the rename with keepalive so the
+    // request outlives the document -- a plain fetch here is cancelled -- and
+    // skip everything else: there is no point rolling back state that is about
+    // to be discarded, and a toast on a page that is unloading is never seen.
+    if (opts?.unloading) {
+      void renamePreset(id, trimmedName, { keepalive: true }).catch(() => {})
+      return
+    }
+
     const before = presets
     // Optimistic: the field has already visually committed, and bouncing the
     // text back on a slow round-trip reads as the edit being rejected.
@@ -498,7 +508,13 @@ export default function StudioShell() {
             The hairline is a full-width border beneath, not an underline on
             the text: it separates the title from the workspace without
             putting a rule through the wordmark's wide tracking. */}
-        <h1 className="border-b border-hairline px-(--gutter) py-[30px] text-center font-display text-[26px]/none font-semibold tracking-[0.1em] uppercase text-muted">
+        {/* text-accent, not text-muted. --accent is the theme's IDENTITY colour
+            now that --progress carries the "working" state, and the wordmark is
+            the one surface every theme shows on every screen -- so it is where
+            identity earns its keep. Large text, so the 3:1 non-text bar applies
+            rather than 4.5:1; check_palette.py holds every theme's accent above
+            that against all three surfaces. */}
+        <h1 className="border-b border-hairline px-(--gutter) py-[30px] text-center font-display text-[26px]/none font-semibold tracking-[0.1em] uppercase text-accent">
           Homegrown
         </h1>
         <ThemeSwitch />
@@ -619,23 +635,18 @@ export default function StudioShell() {
               GenerateButton stays a button throughout -- progress now lives in
               the Voiceovers column, as the first row, where the finished
               voiceover will land. */}
-          {/* The estimate was fetched on every keystroke and thrown away --
-              only `warning` was ever rendered. At roughly four minutes of work
-              per minute of speech, a long script was a long commitment made
-              blind, and the answer was already sitting on the client.
+          {/* NO ESTIMATE BESIDE GENERATE, deliberately. It was rendered here
+              for a while ("Generation will take about 25 min") and has been
+              removed: a figure quoted before you commit reads as a promise,
+              and this one is a guess with ~20% mean error (see
+              _estimate_seconds). It now appears only where it is honest --
+              as the denominator of the running row's clock, next to the
+              elapsed time that is actually measuring it, marked `~`.
 
-              Beside Generate rather than under the script box: it qualifies
-              the button, and it is the last thing read before pressing it.
-
-              Rounded by approxDuration, deliberately, and it does NOT respond
-              to the voice. _estimate_seconds takes a character count and
-              nothing else -- it divides by a global chars/second average over
-              the last 20 jobs. Only `chunks`/`chunk_chars`/`warning` come from
-              _seq_budget(preset). So switching voice cannot move this number,
-              by construction, and the chunk count that used to sit beside it
-              was the only part that ever did. Making the estimate voice-aware
-              means estimating per CHUNK rather than per character, which is a
-              backend change and not this one. */}
+              /api/estimate is still fetched on the same 400ms debounce and is
+              still used: `warning` below is the long-reference-clip notice,
+              and the backend puts the same estimate on the job so the row can
+              show it. Nothing extra is requested for this. */}
           <section className="compose-bar flex flex-wrap items-center gap-2">
             <GenerateButton
               disabled={!canGenerate}
@@ -645,12 +656,6 @@ export default function StudioShell() {
               count={scriptReady ? 1 : 0}
               onClick={handleGenerate}
             />
-
-            {estimate != null && estimate.estimated_s > 0 && scriptReady && (
-              <p className="m-0 text-[12px] whitespace-nowrap text-muted">
-                Generation will take {approxDuration(estimate.estimated_s)}
-              </p>
-            )}
 
           </section>
 

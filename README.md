@@ -262,8 +262,19 @@ The reference clip and your script share a single 1024-position context window. 
 | **53s** | **~860 of 1024** | **too little — output degrades** |
 
 When too little is left, the app is forced into chunk sizes below the point where this model starts padding
-and dragging — which you hear as murmuring, long pauses, and dropped words. The backend logs a warning when
-a voice is in that state. Anything longer than 40 seconds is **trimmed to the first 40 seconds of speech**
+and dragging — which you hear as murmuring, long pauses, and dropped words. **The app tells you before you
+spend a render on it**: the voice carries its clip length as a badge in the Voices dialog, and selecting it
+puts a notice under the script box naming the clip length and the chunk size it forces.
+
+Measured on this machine against `REF_TRIM_SECS=40`, at a nominal 13 characters/second:
+
+| clip length | chunk size | what happens |
+|---|---|---|
+| up to 48s | 150–200 | fine, no notice |
+| 50–54s | 104–127 | notice shown; still generates |
+| 56s and over | 80 (the floor) | notice shown, and `/api/generate` **refuses the job** — the clip leaves no room to generate speech |
+
+A voice reporting 80-character chunks is therefore a ~54s clip sitting a second from that refusal. Anything longer than 40 seconds is **trimmed to the first 40 seconds of speech**
 rather than rejected (`REF_TRIM_SECS`), and the upload itself is only capped at 30 minutes
 (`MAX_REF_AUDIO_SECS`) — a guard on buffering the file in memory, not a quality limit. But **longer is not
 better**: 10–20 seconds of clean speech clones better than 40 seconds of anything, and past ~23s output has
@@ -312,6 +323,11 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
   format it was uploaded in (no re-encoding). Renaming the voice changes the downloaded filename.
 - **A voice that is mid-generation is marked `busy`**, and its delete confirmation warns that queued
   voiceovers will fail. The delete is still allowed — wanting a voice gone is a good enough reason.
+- **A voice whose reference clip is too long is marked with that clip's length** (`55s`), with the full
+  explanation in its tooltip. This is how a voice made by an older build — before clips were trimmed on
+  upload — is spotted without generating anything first. Upgrading does not re-trim an existing voice, so
+  the fix is to delete it and re-create it from a 10–20s clip. At most one badge shows per row: `busy`
+  wins while it applies, being the transient one.
 - **Delete** — in the dialog only, and two-step (the row flips to Delete/Keep). Removes the voice and its
   reference audio permanently. Deleting the selected voice clears the selection. The dropdown deliberately
   has no delete: it is a menu you open to pick a voice, not to destroy one.
@@ -322,8 +338,12 @@ One script box, up to 60,000 characters, fixed height — drag the corner grip t
 in the bottom-right corner *inside* the box rather than in a row of its own. The **voice dropdown**
 and **✚** sit *above* the box, at the right; **Generate** sits alone below it.
 
-**Your script survives a reload.** It is kept in `localStorage` as you type, so closing the tab or
-refreshing does not lose it — which is also why there is no "are you sure you want to leave" prompt.
+**Everything you type survives a reload — immediately, not a moment later.** The script, the
+voiceovers search, a voiceover's name and a voice's name are all written as you type or, for the
+names, the instant you stop editing; and anything still unsaved is flushed when the page goes away.
+That includes a name typed into a voiceover that is *still generating*: reload mid-render and the
+name is still there, and still lands on the finished voiceover. The script is kept in `localStorage`,
+so closing the tab or refreshing does not lose it — which is also why there is no "are you sure you want to leave" prompt.
 The re-queue wand, which replaces the box with an old script, offers an **Undo** when it overwrites
 something you had written.
 
@@ -339,7 +359,10 @@ Only one job runs at a time — one worker thread, one GPU lock.
 The voiceover being generated appears at once as the **first row of the Voiceovers column**, in the slot
 its finished self will occupy and laid out identically, with three swaps: the waveform becomes a progress
 bar (hairline ticks at the chunk boundaries, advancing smoothly between completions rather than jumping),
-the transport becomes a labelled **Cancel**, and the clock counts **elapsed** time.
+the transport becomes a labelled **Cancel**, and the clock reads **elapsed / ~estimated** in amber
+— `1:12 / ~2:30`. The `~` is there because the second number is a guess. If the render runs past it
+the clock keeps counting and the guess stays put rather than being quietly revised; the time turns
+red instead, so an overrun reads as an overrun and not as a stuck widget.
 
 The Generate button stays live throughout, so a second script submitted mid-run is queued rather than
 refused. Queued voiceovers are further rows above the finished ones, in processing order, and are
@@ -347,16 +370,17 @@ refused. Queued voiceovers are further rows above the finished ones, in processi
 ticking clock, so the difference survives greyscale as well as colour. Each promotes in place when its
 turn comes.
 
-Elapsed rather than remaining, deliberately: `eta_s` is a rolling chars/second average that moves in both
-directions as chunks land. The **Generate** button stays a button and keeps its label throughout: progress
+Elapsed over a fixed guess, rather than a live countdown: the backend's `eta_s` re-projects from
+`elapsed / chunks_done` on every poll, so it moves in *both* directions as chunks land and is not
+worth watching. The denominator here is the estimate made once at submission and left alone. The **Generate** button stays a button and keeps its label throughout: progress
 belongs in the Voiceovers column, not on the control you press.
 
-**Before you press Generate** the row beneath the script box shows roughly how long the render will
-take — "Generation will take about 25 min". Rounded hard on purpose, and worth understanding: the
-figure is derived from the character count and one global characters-per-second average over the last
-20 renders. **It does not change when you switch voice**, even though a voice with a longer reference
-clip genuinely renders slower, because the estimate never sees which voice you picked. Treat it as an
-order of magnitude, not a countdown.
+**There is no estimate beside Generate.** One was shown there for a while and was removed: a figure
+quoted before you commit reads as a promise, and this one is a guess. The estimate appears instead
+where it is honest — as the `~2:30` denominator of the running row's clock, beside the elapsed time
+that is actually measuring it. It is `20s + chunks × the median seconds-per-chunk of your last 20
+renders`, wrong by a mean of 20% on this machine's real history against 50% for the character-based
+figure it replaced.
 
 **A toast reports each job as it ends** — "Voiceover ready" with the voice name, or a failure toast that
 does not auto-dismiss. Transient errors elsewhere in the app are toasts too. Three notices stay inline
@@ -392,14 +416,22 @@ green and jade), **Booth** (near-black, on air), **Marquee** (violet, magenta an
 (warm black and gold), **Tide** (midnight navy and teal) — and three light — **Daylight** (neutral),
 **Tape** (warm paper and rust), **Score** (paper white, high contrast). **System** follows your OS.
 
-The choice is stored in `localStorage` and applied before the first paint, so there is no flash of
-the wrong theme on load. Every palette is checked against WCAG AA by `scripts/check_contrast.py` at
-build time rather than by eye.
+The picker groups them under **Dark** and **Light** headings.
+
+Each theme has its own **identity colour** — the wordmark tells you which one you are in at a
+glance — while the amber "generating" bar means the same thing in all nine, the way the red error
+and purple queued colours do. Those were one colour until recently, which is why eight of the nine
+themes used to look alike.
+
+Every palette is checked at build time rather than by eye: `scripts/check_contrast.py` for WCAG AA,
+and `scripts/check_palette.py` for the things a contrast ratio cannot see — a waveform that looks
+like an error message, or a card that does not separate from the page.
 
 ### Voiceovers
 
 A **search box** sits under the heading, focused by `Ctrl/Cmd+F` (the shortcut is printed inside the
-field). It filters as you type, with no delay, and matches a voiceover's **name** and the **voice** that
+field). It filters as you type, with no delay, keeps its query across a reload, and matches a
+voiceover's **name** and the **voice** that
 spoke it — not the script, since a 60,000-character script makes any common word match nearly everything.
 It runs entirely in the browser, because two of the things it searches are not on the server at all: a
 custom name is a `localStorage` override, and the default `Voiceover 27` is derived from the row's
@@ -418,16 +450,20 @@ Each row is three lines:
 1. Its name — **`Voiceover 1`** is the oldest, numbered by position — and, on the right, the voice that
    spoke it. The name is click-to-edit: type, click away to save, Escape to revert, clear it to fall back
    to `Voiceover N`. Whatever you call it is also the download filename. The field is sized to its text. A
-   name typed while the voiceover is still generating carries over when it lands.
+   name typed while the voiceover is still generating survives a reload and carries over when it
+   lands.
 2. Play, the waveform (which doubles as the seek bar), a `0:12 / 1:06` clock — click its left half to count
    down the time remaining instead — and the actions at the right, dimmed until you hover the row:
    download, re-queue (wand — pulls that script and voice back into the script box), and delete. The clock
    occupies a fixed 14ch so nothing beside it shifts as it ticks.
-3. The first words of the script.
+3. The first words of the script, and on the right the time it was generated (or, on a row still
+   working, sent to generate) — `14:32`, with the date once it is no longer today and the full
+   timestamp on hover.
 
 **Click the script preview to copy the whole script**, with a toast to confirm. Nothing opens. The
-row shows the first 96 characters and hovering it reveals a copy glyph; the full text is also in the
-native tooltip. To *edit* an old script rather than copy it, the re-queue wand pulls it back into the
+row shows the first 80 characters and hovering it reveals a copy glyph; the full text is also in the
+native tooltip. 80 matches what the backend truncates `text_preview` to, so a voiceover does not
+visibly gain characters at the moment it finishes. To *edit* an old script rather than copy it, the re-queue wand pulls it back into the
 compose box (and offers an Undo if that replaced something).
 
 **Deleting a voiceover is undoable.** The row disappears at once and a toast offers **Undo** for
@@ -466,8 +502,9 @@ script -> chunk_text() -> per-chunk generate -> resample if degenerate -> trim e
   one voice on one machine is not a proof of absence. Numbers in `docs/gpu-notes.md`.
 - **No partial delivery.** You get audio when the whole job finishes; progress is chunk-level.
 
-Time estimates come from a rolling average of characters/second over the last 20 completed jobs, seeded from
-`history.json` at startup. The queue survives a restart (`queue.json`), resuming from the *start* of an
+Time estimates are `20s + chunks × median(seconds per chunk)` over the last 20 completed jobs, seeded from
+`history.json` at startup. Median rather than mean, because a resampled chunk or the first job after a
+restart are outliers that drag an average and not a middle. The queue survives a restart (`queue.json`), resuming from the *start* of an
 interrupted job.
 
 ---
@@ -600,9 +637,10 @@ frontend/      React 19 + Vite + TypeScript dashboard (the app)
 landing-page/  Marketing page -- the only thing Vercel deploys; separate release cadence
 launcher/      Frozen-app launcher (PyInstaller)
 installer/     NSIS installer script (unusable at current payload size, see above)
-scripts/       Build gates and dev utilities. build.sh runs five: check_design_tokens.py,
-               check_contrast.py, check_orphan_css.py, check_desktop_port.py and
-               build_splash.py --check. Also build_og_image.sh and measure_landing.sh
+scripts/       Build gates and dev utilities. build.sh runs six: check_design_tokens.py,
+               check_contrast.py, check_palette.py, check_orphan_css.py,
+               check_desktop_port.py and build_splash.py --check. Also
+               build_og_image.sh and measure_landing.sh
 assets/        Build-time binaries: icon.ico, consumed by launcher.spec and setup.nsi
 ```
 

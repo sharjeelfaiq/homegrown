@@ -22,12 +22,18 @@ export interface Preset {
   is_builtin: boolean
   preview_url: string
   created_at: number
-  /** Both are returned by POST /api/presets only, never by the list. The
-   *  measured length of what was kept, and -- when the clip was longer than
-   *  the model can hold alongside a script -- what it was cut down from.
-   *  `trimmed_from_seconds` is null unless a trim actually happened, so it is
-   *  both the value and its own condition. */
-  ref_seconds?: number
+  /** Measured length of the reference clip, and the chunk size it leaves the
+   *  script (see _seq_budget). Both are DERIVED per request rather than stored,
+   *  so they are present on the list as well as on create -- which is the point:
+   *  voices made by a build older than clip-trimming are exactly the ones with
+   *  no persisted field to report, and they are the ones worth flagging.
+   *  `chunk_chars` below PADDING_SAFE_MIN_CHARS (150) means the clip is long
+   *  enough to hurt output quality. */
+  ref_seconds?: number | null
+  chunk_chars?: number
+  /** POST /api/presets only, and null unless a trim actually happened -- so it
+   *  is both the value and its own condition. Nothing persisted records what an
+   *  upload was cut down FROM, which is why this one cannot be derived. */
   trimmed_from_seconds?: number | null
 }
 
@@ -166,11 +172,25 @@ export function createPreset(
  * the backend on every generate and stamped into history as `preset_name`, so
  * it has to be stored where the backend can see it.
  */
-export function renamePreset(presetId: string, name: string): Promise<Preset> {
+export function renamePreset(
+  presetId: string,
+  name: string,
+  opts: { keepalive?: boolean } = {},
+): Promise<Preset> {
   return authFetch(apiUrl(`/api/presets/${presetId}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
+    // Set only when the rename is being flushed because the page is going
+    // away. An ordinary fetch started during unload is cancelled with the
+    // document, so without this the edit is lost -- which is the whole reason
+    // InlineName reports `unloading` at all. A voiceover's name does not need
+    // this: it is a synchronous localStorage write.
+    //
+    // NOT sendBeacon, the usual reach for unload-time requests: it cannot
+    // issue a PATCH and cannot set a content type. keepalive keeps the real
+    // request, and a name is far under its 64 kB body cap.
+    keepalive: opts.keepalive,
   }).then(parseOrThrow<Preset>)
 }
 

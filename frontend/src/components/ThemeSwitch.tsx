@@ -194,23 +194,50 @@ export default function ThemeSwitch() {
           onKeyDown={onMenuKeyDown}
           style={pos ? { top: pos.top, right: pos.right } : { visibility: 'hidden' }}
         >
-          {THEMES.map((t) => (
-            <li key={t.id} role="none">
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={choice === t.id}
-                className="theme-menu-pick flex w-full min-h-9 items-start gap-2 rounded-sm px-[9px] py-[7px] text-left text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink focus-visible:bg-surface-hover focus-visible:text-ink"
-                onClick={() => pick(t.id)}
+          {/* Grouped by mode. Six dark and three light in one flat list meant
+              scanning every hint to find out which was which, and the two
+              kinds are never alternatives to each other -- you are choosing
+              within one or switching between them.
+
+              role="group" with an aria-label, not a bare heading: the outer
+              list is role="menu", whose only valid children are menuitems and
+              groups. A decorative <li> heading would be announced as an empty
+              item. The visible caption is aria-hidden because the group's own
+              label already carries it. */}
+          {(['dark', 'light'] as const).map((mode) => (
+            <li key={mode} role="none">
+              <ul
+                role="group"
+                aria-label={mode === 'dark' ? 'Dark themes' : 'Light themes'}
+                className="m-0 list-none p-0"
               >
-                <span className="grid h-[18px] flex-[0_0_12px] place-items-center text-audio" aria-hidden="true">
-                  {choice === t.id && <CheckIcon size={12} />}
-                </span>
-                <span className="flex flex-col gap-px">
-                  {t.label}
-                  <span className="text-[11px] text-faint">{t.hint}</span>
-                </span>
-              </button>
+                <li
+                  role="presentation"
+                  aria-hidden="true"
+                  className="mono px-[9px] pt-2 pb-1 text-[10px] tracking-[0.12em] text-faint uppercase"
+                >
+                  {mode}
+                </li>
+                {THEMES.filter((t) => t.mode === mode).map((t) => (
+                  <li key={t.id} role="none">
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={choice === t.id}
+                      className="theme-menu-pick flex w-full min-h-9 items-start gap-2 rounded-sm px-[9px] py-[7px] text-left text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink focus-visible:bg-surface-hover focus-visible:text-ink"
+                      onClick={() => pick(t.id)}
+                    >
+                      <span className="grid h-[18px] flex-[0_0_12px] place-items-center text-audio" aria-hidden="true">
+                        {choice === t.id && <CheckIcon size={12} />}
+                      </span>
+                      <span className="flex flex-col gap-px">
+                        {t.label}
+                        <span className="text-[11px] text-faint">{t.hint}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
           <li role="none">

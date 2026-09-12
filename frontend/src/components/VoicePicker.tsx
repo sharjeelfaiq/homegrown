@@ -148,16 +148,31 @@ export default function VoicePicker({
       className="relative min-w-[124px] flex-[0_1_168px] wide:min-w-0 wide:flex-[0_0_168px]"
       ref={rootRef}
     >
+      {/* aria-label OVERRIDES the button's text content when computing its
+          accessible name, so a bare "Voice" meant a screen reader announced
+          "Voice, collapsed" and never said WHICH voice was selected --
+          verified against the accessibility tree, which reported the name as
+          exactly "Voice" while the button visibly read "Steven Seagal
+          Humiliated Bruce Lee on St". The selection has to be in the label. */}
       <button
         type="button"
         ref={triggerRef}
         className="select flex w-full items-center gap-1.5 text-left"
-        aria-label="Voice"
+        aria-label={selected ? `Voice: ${selected.name}` : 'Choose a voice'}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => (open ? close() : setOpen(true))}
       >
-        <span className="overflow-hidden text-ellipsis whitespace-nowrap">{selected ? selected.name : 'Choose a voice…'}</span>
+        {/* title, because the field is deliberately a fixed 168px (see above)
+            and a long name is genuinely cut -- measured at 126px visible of
+            258px, i.e. under half. Widening it is not the fix; that was tried
+            and read as a search bar. Hover reveals the rest instead. */}
+        <span
+          className="overflow-hidden text-ellipsis whitespace-nowrap"
+          title={selected ? selected.name : undefined}
+        >
+          {selected ? selected.name : 'Choose a voice…'}
+        </span>
         {generating && (
           <span
             className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`}

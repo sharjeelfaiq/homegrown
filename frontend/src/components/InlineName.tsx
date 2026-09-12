@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useFlushOnHide } from '../hooks/useFlushOnHide'
 
 interface Props {
   /** The name to show when not being edited. */
@@ -8,9 +9,16 @@ interface Props {
   placeholder: string
   ariaLabel: string
   title?: string
-  /** Receives the trimmed draft. Called on Enter and on blur, never on
-   *  Escape. May be async; the field does not wait for it. */
-  onCommit: (next: string) => void
+  /** Receives the trimmed draft. Called on Enter, on blur, and when the page
+   *  is going away mid-edit -- never on Escape. May be async; the field does
+   *  not wait for it.
+   *
+   *  `unloading` is true only for that last case. It matters because the two
+   *  callers persist to different places: a voiceover's name is a localStorage
+   *  write that lands instantly either way, but a voice's name is a PATCH, and
+   *  an ordinary fetch started while the page unloads is cancelled. The caller
+   *  needs to know to send it keepalive. */
+  onCommit: (next: string, opts?: { unloading?: boolean }) => void
   /** Smallest `size` the field will shrink to, in characters. */
   minChars?: number
   className?: string
@@ -41,6 +49,13 @@ interface Props {
  *    change underneath the editor -- an in-progress voiceover lands and its
  *    name carries over to the history entry -- and that must not yank the
  *    text out from under someone mid-edit.
+ *  - An edit still in the field when the page goes away IS committed. Holding
+ *    the draft locally is what makes Escape able to revert, so committing on
+ *    every keystroke is not an option -- that was the original design and was
+ *    removed for exactly that reason -- but the consequence was that typing a
+ *    name and hitting reload threw it away. useFlushOnHide closes that without
+ *    touching Escape, which blurs first and has therefore already left editing
+ *    mode by the time any hide event could fire.
  *
  * The `result-name` utility it is styled with carries the other half of this:
  * every box-affecting property is identical focused and unfocused, so
@@ -66,6 +81,23 @@ export default function InlineName({
     if (!editing) setDraft(value)
   }, [value, editing])
 
+  // Committed by the flush already, so the blur that follows must not repeat
+  // it -- a reload triggers pagehide AND visibilitychange, and an unmount runs
+  // the same handler once more.
+  const flushed = useRef(false)
+
+  useFlushOnHide(() => {
+    if (!editing || flushed.current) return
+    const next = draft.trim()
+    // Nothing typed, or typed back to what it already was.
+    if (next === value) return
+    flushed.current = true
+    // Blur fires after this in some teardown orders; suppress its commit
+    // rather than send the same value twice (for a voice that is two PATCHes).
+    skipBlurCommit.current = true
+    onCommit(next, { unloading: true })
+  })
+
   const shown = editing ? draft : value
 
   return (
@@ -81,6 +113,7 @@ export default function InlineName({
       onFocus={() => {
         setDraft(value)
         skipBlurCommit.current = false
+        flushed.current = false
         setEditing(true)
       }}
       onChange={(e) => setDraft(e.target.value)}

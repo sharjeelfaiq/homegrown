@@ -65,6 +65,39 @@ export function formatClock(seconds: number | null | undefined): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
+/** When a voiceover was made, as wall-clock time: `14:32`, or `Sep 11, 14:32`
+ * once it is no longer today.
+ *
+ * Absolute rather than relative, unlike timeAgo(), and the two coexist on
+ * purpose: this sits in the row permanently, where "3m ago" would have to
+ * re-render to stay true and would read as a stopwatch next to the actual
+ * stopwatch on the line above. timeAgo() is still right for the name tooltip,
+ * where recency is the useful framing.
+ *
+ * The date appears only when it is needed. Every row saying "Sep 12" on the day
+ * you made them is noise; a bare "14:32" on a row from last week is a lie of
+ * omission. Locale-formatted, because this is a time a person reads on their
+ * own machine, not a stored value.
+ */
+export function formatTimeOfDay(unixSeconds: number | null | undefined): string {
+  if (unixSeconds == null || !isFinite(unixSeconds)) return ''
+  const d = new Date(unixSeconds * 1000)
+  const now = new Date()
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  if (sameDay) return time
+  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`
+}
+
+/** The same instant, spelled out, for a `title`. */
+export function formatTimestampFull(unixSeconds: number | null | undefined): string {
+  if (unixSeconds == null || !isFinite(unixSeconds)) return ''
+  return new Date(unixSeconds * 1000).toLocaleString()
+}
+
 export function downloadName(presetName: string, unixSeconds: number): string {
   const date = new Date(unixSeconds * 1000)
   const stamp = date.toISOString().slice(0, 16).replace(/[:T]/g, '-')

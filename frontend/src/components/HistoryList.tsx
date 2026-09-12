@@ -11,12 +11,13 @@ import {
   type HistoryEntry,
   type QueueEntry,
 } from '../api'
-import { downloadName, formatClock, timeAgo } from '../format'
+import { approxDuration, downloadName, formatClock, formatTimeOfDay, formatTimestampFull, timeAgo } from '../format'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useElapsed } from '../hooks/useElapsed'
 import { useOptimisticProgress } from '../hooks/useOptimisticProgress'
 import { toast } from 'sonner'
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard'
+import { usePersistedDraft } from '../hooks/usePersistedDraft'
 import { usePersistedRecord } from '../hooks/usePersistedRecord'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
@@ -270,6 +271,12 @@ function PendingRow({
   // it counted up forever -- which is why only it needs this.
   const progress = useOptimisticProgress(running ? job : undefined)
   const elapsed = useElapsed(job, reachable)
+  // Past the estimate. Gated on `reachable` deliberately: useElapsed FREEZES
+  // when contact is lost, so without this a job whose clock happened to stop
+  // beyond its guess would be tinted as overrunning when what actually
+  // happened is that we stopped being told anything. A frozen clock is a
+  // statement about our knowledge, not about the job.
+  const over = reachable && elapsed != null && job.estimated_s != null && elapsed > job.estimated_s
   const reduced = usePrefersReducedMotion()
 
   const total = job.total_chunks || 0
@@ -298,6 +305,13 @@ function PendingRow({
         'flex flex-col gap-0.5 border-b border-hairline py-[7px] last:border-b-0',
         queued && 'is-queued',
         failed && 'is-failed',
+        // Exactly ONE of the two, never both. They are single-class utilities
+        // at equal specificity, so a row carrying both would be decided by
+        // emission order in the bundle -- and Tailwind emitted is-over FIRST,
+        // which is the opposite of what the overrun state needs. Making them
+        // mutually exclusive here removes the dependency on that order
+        // entirely rather than betting on it staying put.
+        running && (over ? 'is-over' : 'is-running'),
       ]
         .filter(Boolean)
         .join(' ')}
@@ -354,7 +368,16 @@ function PendingRow({
             the one event worth announcing was the one thing it did not cover.
             useJobToasts now announces completion through sonner's own live
             region. Visual output here is unchanged. */}
-        <span className="mono result-time">
+        <span
+          className="mono result-time"
+          title={
+            job.estimated_s == null
+              ? undefined
+              : over
+                ? `Taking longer than the estimate of ${approxDuration(job.estimated_s)}. The estimate is a guess from past renders, not a deadline.`
+                : `Estimated ${approxDuration(job.estimated_s)}, from how long past renders of this many chunks took`
+          }
+        >
           {/* The same reserved slot TransportTime puts the minus in. Empty
               here -- there is no remaining to toggle to -- but it keeps this
               row's digits on the same column as a finished row's. */}
@@ -367,7 +390,9 @@ function PendingRow({
               ? 'Cancelling…'
               : elapsed == null
                 ? 'Queued'
-                : formatClock(elapsed)}
+                : job.estimated_s != null
+                  ? `${formatClock(elapsed)} / ~${formatClock(job.estimated_s)}`
+                  : formatClock(elapsed)}
         </span>
 
         <div className="result-actions flex flex-none items-center gap-0.5">
@@ -415,10 +440,24 @@ function PendingRow({
         </div>
       </div>
 
+      {/* Script left, submitted-at right -- the same one-left-fact,
+          one-right-fact pairing lines 1 and 2 already use, which is what keeps
+          this narrow column readable. The preview gives up exactly the
+          timestamp's width; it does NOT get a line of its own, because the row
+          must stay --result-row-h tall for the eight-row window cap to hold. */}
       <div className="flex min-w-0 items-center gap-2.5">
         <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-muted" title={failed ? reason : job.text_preview}>
           {failed ? truncate(reason) : previewOf(job.text_preview)}
         </p>
+        {/* When it was SENT, not when it will finish -- a queued row has no
+            other indication of how long it has been waiting. */}
+        <time
+          className="result-stamp mono"
+          dateTime={new Date(job.submitted_at * 1000).toISOString()}
+          title={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}
+        >
+          {formatTimeOfDay(job.submitted_at)}
+        </time>
       </div>
     </li>
   )
@@ -561,6 +600,16 @@ function VoiceoverRow({
             className="flex-none opacity-0 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100"
           />
         </button>
+        {/* Outside the copy button on purpose: clicking the row's script copies
+            the script, and a timestamp inside that target would copy the script
+            too while looking like its own control. */}
+        <time
+          className="result-stamp mono"
+          dateTime={new Date(entry.created_at * 1000).toISOString()}
+          title={`Generated ${formatTimestampFull(entry.created_at)}`}
+        >
+          {formatTimeOfDay(entry.created_at)}
+        </time>
       </div>
     </li>
   )
@@ -621,10 +670,19 @@ export default function HistoryList({
 }: Props) {
   const { queue, refresh } = useGenerationActivity()
   const [entryFileNames, setFileName, removeFileName] = usePersistedRecord('historyFileNames')
-  // Names for jobs that have no history entry yet, keyed by job id. Not
-  // persisted: the job either lands within the session and the name moves to
-  // localStorage under the real entry id, or it never existed.
-  const [pendingNames, setPendingNames] = useState<Record<string, string>>({})
+  // Names for jobs that have no history entry yet, keyed by job id.
+  //
+  // PERSISTED, and the comment here used to say the opposite: "the job either
+  // lands within the session or it never existed". That premise was wrong. A
+  // job outlives the tab -- queue.json is replayed on startup and job_id is
+  // stable across a reload -- so renaming an in-progress voiceover and
+  // refreshing silently threw the name away, while the job it belonged to
+  // carried on generating.
+  //
+  // usePersistedRecord writes synchronously, so unlike the script draft this
+  // needs no flush; the name is durable the moment InlineName commits it.
+  const [pendingNames, setPendingName, removePendingName] =
+    usePersistedRecord('pendingVoiceoverNames')
   // The edit is held locally rather than written straight through, which is
   // what makes Escape able to revert -- the old rename box committed on every
   // keystroke, so there was nothing to go back to.
@@ -685,7 +743,15 @@ export default function HistoryList({
   //
   // That also removes the reason for a debounce: there is no request to
   // coalesce, so the 250ms wait was pure latency.
-  const [draft, setDraft] = useState('')
+  // Persisted, so a query survives a reload along with everything else the
+  // user typed. Restoring it boots the column into a filtered view, which is
+  // safe here and needs no extra affordance: the box renders whenever
+  // `searching` is true (so it cannot vanish leaving an uncleadable filter),
+  // it is type="search" so it keeps the native clear button, and Escape
+  // clears it. The knock-on matters -- onSearchActiveChange fires on mount
+  // with a restored query, which is what makes the parent load the whole
+  // history; filtering only ever sees what has been fetched.
+  const [draft, setDraft] = usePersistedDraft('voiceoverSearch')
   const searching = draft.trim() !== ''
 
   // Filtering only sees what has been fetched, so while a search runs the
@@ -838,13 +904,33 @@ export default function HistoryList({
       setFileName(entry.id, pendingNames[job.job_id])
       claimed.push(job.job_id)
     }
-    if (claimed.length === 0) return
-    setPendingNames((prev) => {
-      const next = { ...prev }
-      for (const id of claimed) delete next[id]
-      return next
-    })
-  }, [queue, history, pendingNames, setFileName])
+    for (const id of claimed) removePendingName(id)
+  }, [queue, history, pendingNames, setFileName, removePendingName])
+
+  // Drop names whose job is gone. The in-memory version got this for free --
+  // the record died with the tab -- but a persisted one accumulates an entry
+  // per job forever otherwise.
+  //
+  // Gated on having seen a REAL poll, not on the queue being empty: an empty
+  // array is what the first render and every idle moment look like, so pruning
+  // on that would delete the name a user typed seconds ago on a job that is
+  // merely between polls. Same trap useJobToasts documents for its
+  // reported-ids set, and the same fix -- wait for evidence, not for silence.
+  //
+  // The residual hole, stated so it is not later filed as a bug: a job that
+  // finishes AND leaves the queue without this client ever seeing it `done`
+  // (a backend restart clears the in-memory job table) can no longer be
+  // matched to a history entry, so its name is dropped here. That is the same
+  // outcome the unpersisted version had, not a regression.
+  const seenQueue = useRef(false)
+  if (queue.length > 0) seenQueue.current = true
+  useEffect(() => {
+    if (!seenQueue.current) return
+    const live = new Set(queue.map((e) => e.job_id))
+    for (const id of Object.keys(pendingNames)) {
+      if (!live.has(id)) removePendingName(id)
+    }
+  }, [queue, pendingNames, removePendingName])
 
   // Blank clears the override so the name falls back to "Voiceover N" -- and so
   // does the default itself. Focusing a row and tabbing straight out otherwise
@@ -853,12 +939,8 @@ export default function HistoryList({
   function commitRename(id: string, pending: boolean, defaultName: string, typed: string) {
     const next = typed === defaultName ? '' : typed
     if (pending) {
-      setPendingNames((prev) => {
-        const copy = { ...prev }
-        if (next) copy[id] = next
-        else delete copy[id]
-        return copy
-      })
+      if (next) setPendingName(id, next)
+      else removePendingName(id)
     } else if (next) {
       setFileName(id, next)
     } else {

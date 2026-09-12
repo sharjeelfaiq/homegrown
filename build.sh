@@ -92,6 +92,7 @@ fi
 step "Pre-build checks"
 python scripts/check_design_tokens.py
 python scripts/check_contrast.py
+python scripts/check_palette.py
 python scripts/check_orphan_css.py
 python scripts/check_desktop_port.py
 ( cd frontend && npm install --no-fund --no-audit --loglevel=error && npm run lint )
