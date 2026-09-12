@@ -519,7 +519,7 @@ def _chunk_token_cap(budget: _Budget, chunk: str) -> int:
     return max(MIN_GEN_FRAMES, min(budget.max_new_tokens, needed))
 
 
-def _seq_budget(preset: dict) -> _Budget:
+def _compute_seq_budget(preset: dict) -> _Budget:
     """(chunk_chars, max_new_tokens, frames_per_char) for this preset's reference.
 
     Each script char costs roughly 1/_CHARS_PER_TOKEN positions of prompt AND
@@ -588,6 +588,81 @@ def _seq_budget(preset: dict) -> _Budget:
             preset.get("name"), ref_cost, MAX_SEQ_LEN, max_new_tokens,
         )
     return _Budget(chunk_chars, max_new_tokens, frames_per_char)
+
+
+class _RefFacts(NamedTuple):
+    """Everything a preset's reference clip decides, computed once together.
+
+    ref_seconds is carried alongside the budget rather than read separately
+    because both come from the same sf.info() call, and both are now wanted on
+    the same request: /api/presets reports the clip length AND the chunk size it
+    forces, so a voice cloned from an over-long clip is visible before it costs
+    anyone a render.
+    """
+    ref_seconds: Optional[float]
+    budget: _Budget
+
+
+# Memoised because _compute_seq_budget is not cheap and is called a lot:
+# /api/estimate runs it per keystroke (400ms debounce) and /api/presets now runs
+# it once per voice per list. Each call is an sf.info() header read plus an INFO
+# and possibly a WARNING log line, so without this the log fills with the same
+# sentence about the same preset hundreds of times and says nothing new.
+_ref_facts_cache: dict[tuple, _RefFacts] = {}
+_ref_facts_lock = threading.Lock()
+# Keyed by path+mtime, so a deleted or re-created preset leaves its old entry
+# behind. Presets number in the tens, so this only matters over a very long
+# uptime; drop the whole cache rather than track ages.
+_REF_FACTS_CACHE_MAX = 256
+
+
+def _ref_cache_key(preset: dict) -> Optional[tuple]:
+    """Cache identity for a preset's reference clip, or None if unreadable.
+
+    mtime is enough to invalidate: a reference clip is immutable once the preset
+    is saved -- trimming happens during create, before the write -- and
+    PATCH /api/presets/{id} only ever touches `name`. ref_text length is in the
+    key anyway because the speaking rate derives from it, and a rate change
+    resizes every chunk.
+    """
+    path = preset.get("audio_path")
+    if not path:
+        return None
+    try:
+        mtime = os.stat(path).st_mtime_ns
+    except OSError:
+        return None
+    return (path, mtime, len(preset.get("ref_text") or ""))
+
+
+def _ref_facts(preset: dict) -> _RefFacts:
+    key = _ref_cache_key(preset)
+    if key is not None:
+        with _ref_facts_lock:
+            hit = _ref_facts_cache.get(key)
+        if hit is not None:
+            return hit
+
+    try:
+        ref_seconds = round(sf.info(preset["audio_path"]).duration, 1)
+    except Exception:
+        # Not fatal, and deliberately not logged here: _compute_seq_budget hits
+        # the same file next and logs its own warning before falling back to the
+        # static budget.
+        ref_seconds = None
+    facts = _RefFacts(ref_seconds, _compute_seq_budget(preset))
+
+    if key is not None:
+        with _ref_facts_lock:
+            if len(_ref_facts_cache) >= _REF_FACTS_CACHE_MAX:
+                _ref_facts_cache.clear()
+            _ref_facts_cache[key] = facts
+    return facts
+
+
+def _seq_budget(preset: dict) -> _Budget:
+    """Memoised _compute_seq_budget. Call this, not the uncached one."""
+    return _ref_facts(preset).budget
 
 
 # ---- Queue helpers (all assume caller holds _jobs_lock) --------------------
@@ -1165,25 +1240,31 @@ def estimate(req: EstimateRequest, user_id: str = Depends(get_current_user)) -> 
     if preset is None or preset.get("user_id") != user_id:
         return result  # no preset: time estimate only, chunking is unknowable
 
-    budget = _seq_budget(preset)
+    facts = _ref_facts(preset)
+    budget = facts.budget
     result["chunk_chars"] = budget.chunk_chars
     result["chunks"] = len(chunk_text(text, budget.chunk_chars))
+    result["ref_seconds"] = facts.ref_seconds
 
-    profile = _ref_profile(preset)
-    if profile is not None:
-        try:
-            result["ref_seconds"] = round(sf.info(preset["audio_path"]).duration, 1)
-        except Exception:
-            pass
-
-    # Surface the same condition _seq_budget only writes to the log today: a
+    # Surface the same condition _compute_seq_budget only writes to the log: a
     # reference long enough to force chunks below the point where this model
     # starts padding output with murmur and trailing silence.
+    #
+    # Lead with the clip length, because that is the cause and the only number
+    # the reader can act on. Without it this message named a chunk size nothing
+    # in the UI controls, and was read as a limit of the machine doing the
+    # rendering -- it is not; MAX_SEQ_LEN is a property of the model and is the
+    # same on every GPU.
     if budget.chunk_chars < PADDING_SAFE_MIN_CHARS:
+        cause = (
+            f"This voice was cloned from a {facts.ref_seconds:.0f}s reference clip, which "
+            f"leaves room for only {budget.chunk_chars}-character chunks"
+            if facts.ref_seconds is not None
+            else f"This voice renders in {budget.chunk_chars}-character chunks"
+        )
         result["warning"] = (
-            f"This voice renders in {budget.chunk_chars}-character chunks, below the "
-            f"{PADDING_SAFE_MIN_CHARS}-character point where quality starts to suffer. "
-            "Re-create it from a shorter reference clip (10-20s)."
+            f"{cause} -- below the {PADDING_SAFE_MIN_CHARS}-character point where quality "
+            "starts to suffer. Re-create it from a shorter reference clip (10-20s)."
         )
     return result
 
@@ -1214,8 +1295,23 @@ def _model_language_name(whisper_code: str) -> Optional[str]:
 
 def _preset_response(preset: dict) -> dict:
     """Add fields derivable/servable at read time without persisting them
-    redundantly (preview_url is just the reference file exposed over HTTP)."""
-    return {**preset, "preview_url": f"/refs/{Path(preset['audio_path']).name}"}
+    redundantly (preview_url is just the reference file exposed over HTTP).
+
+    ref_seconds and chunk_chars are COMPUTED here rather than stored, and that is
+    what makes them useful. The voices that need reporting on are the ones
+    created by an older build -- before _trim_reference_clip existed, when a
+    60s clip was accepted whole -- and a persisted field would be missing on
+    exactly those, needing a migration to backfill. Deriving covers them for
+    free. _ref_facts memoises the underlying sf.info()/_compute_seq_budget pair,
+    so listing N voices is N cache hits after the first call.
+    """
+    facts = _ref_facts(preset)
+    return {
+        **preset,
+        "preview_url": f"/refs/{Path(preset['audio_path']).name}",
+        "ref_seconds": facts.ref_seconds,
+        "chunk_chars": facts.budget.chunk_chars,
+    }
 
 
 @app.get("/api/presets")
@@ -1395,8 +1491,11 @@ async def create_preset(
         _presets.insert(0, preset)
         _save_json(PRESETS_FILE, _presets)
     response = _preset_response(preset)
-    # So the UI can confirm what was actually kept rather than what was sent.
-    response["ref_seconds"] = round(duration_s, 1)
+    # ref_seconds is NOT set here any more -- _preset_response measures the saved
+    # file and every later list call reads that same number, so assigning the
+    # in-process duration too would let create and list disagree by an mp3 frame
+    # about the same voice. Only the before/after pair is create-only: nothing
+    # persisted records what the upload was trimmed FROM.
     response["trimmed_from_seconds"] = (
         round(original_duration_s, 1) if original_duration_s > duration_s + 0.05 else None
     )

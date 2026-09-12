@@ -22,12 +22,18 @@ export interface Preset {
   is_builtin: boolean
   preview_url: string
   created_at: number
-  /** Both are returned by POST /api/presets only, never by the list. The
-   *  measured length of what was kept, and -- when the clip was longer than
-   *  the model can hold alongside a script -- what it was cut down from.
-   *  `trimmed_from_seconds` is null unless a trim actually happened, so it is
-   *  both the value and its own condition. */
-  ref_seconds?: number
+  /** Measured length of the reference clip, and the chunk size it leaves the
+   *  script (see _seq_budget). Both are DERIVED per request rather than stored,
+   *  so they are present on the list as well as on create -- which is the point:
+   *  voices made by a build older than clip-trimming are exactly the ones with
+   *  no persisted field to report, and they are the ones worth flagging.
+   *  `chunk_chars` below PADDING_SAFE_MIN_CHARS (150) means the clip is long
+   *  enough to hurt output quality. */
+  ref_seconds?: number | null
+  chunk_chars?: number
+  /** POST /api/presets only, and null unless a trim actually happened -- so it
+   *  is both the value and its own condition. Nothing persisted records what an
+   *  upload was cut down FROM, which is why this one cannot be derived. */
   trimmed_from_seconds?: number | null
 }
 

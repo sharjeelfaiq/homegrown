@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { mediaUrl, presetDownloadUrl, type Preset } from '../api'
+import { PADDING_SAFE_MIN_CHARS } from '../constants'
 import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import InlineName from './InlineName'
@@ -15,6 +16,23 @@ interface Props {
   uploading: boolean
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
+}
+
+/** True when this voice's reference clip is long enough to hurt output quality.
+ *
+ * Tests `chunk_chars` rather than the clip duration, because duration is only a
+ * proxy: the speaker's rate and the transcript length move the budget too, so a
+ * 40s clip can be fine and a shorter one from a fast reader may not be. The
+ * backend derives both per request (see Preset in api.ts), which is what makes
+ * this work on voices created before clip-trimming existed -- they have no
+ * stored field to read, and they are exactly the voices worth flagging.
+ *
+ * Undefined chunk_chars (an older backend, or a clip that could not be
+ * measured) reads as NOT flagged. A badge that appears because something failed
+ * to load would send people to delete a healthy voice.
+ */
+function overCap(preset: Preset): boolean {
+  return preset.chunk_chars != null && preset.chunk_chars < PADDING_SAFE_MIN_CHARS
 }
 
 /** Add a voice, and manage the ones already saved.
@@ -168,13 +186,36 @@ export default function NewVoiceModal({
                     >
                       <DownloadIcon size={13} />
                     </a>
-                    {runningPresetIds.has(preset.id) && (
+                    {/* At most ONE badge, never both. The row is a fixed
+                        height (voice-list is 6 x --voice-row-h, so a second
+                        line cannot be accommodated -- a per-voice note under
+                        the row was tried once and broke exactly this), and two
+                        badges plus three icon buttons crowd the name out at the
+                        modal's width. `busy` wins while it applies: it is
+                        transient and time-sensitive, whereas an over-long
+                        reference clip is a standing property of the voice and
+                        will still be there when the render finishes. */}
+                    {runningPresetIds.has(preset.id) ? (
                       <span
                         className="mono mr-1 text-[10px] text-progress"
                         title="This voice is generating a voiceover right now"
                       >
                         busy
                       </span>
+                    ) : (
+                      overCap(preset) && (
+                        <span
+                          className="mono mr-1 text-[10px] text-progress"
+                          title={
+                            `Cloned from a ${Math.round(preset.ref_seconds ?? 0)}s reference clip, which leaves ` +
+                            `room for only ${preset.chunk_chars}-character chunks -- below the ` +
+                            `${PADDING_SAFE_MIN_CHARS}-character point where quality starts to suffer. ` +
+                            `Delete this voice and re-create it from a 10-20s clip.`
+                          }
+                        >
+                          {Math.round(preset.ref_seconds ?? 0)}s
+                        </span>
+                      )
                     )}
                     <button
                       type="button"
