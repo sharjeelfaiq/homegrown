@@ -14,7 +14,7 @@ interface Props {
   presets: Preset[]
   onFileSelected: (file: File) => void
   uploading: boolean
-  onRename: (id: string, name: string) => void
+  onRename: (id: string, name: string, opts?: { unloading?: boolean }) => void
   onDelete: (id: string) => void
 }
 
@@ -121,7 +121,7 @@ export default function NewVoiceModal({
                   placeholder="Name this voice"
                   ariaLabel={`Name of voice ${preset.name}`}
                   title="Click to rename"
-                  onCommit={(next) => onRename(preset.id, next)}
+                  onCommit={(next, opts) => onRename(preset.id, next, opts)}
                 />
 
                 {confirmingId === preset.id ? (

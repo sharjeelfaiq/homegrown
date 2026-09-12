@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useFlushOnHide } from './useFlushOnHide'
 
 /** A string that survives a reload, written on a debounce.
  *
@@ -20,6 +21,14 @@ import { useEffect, useRef, useState } from 'react'
  * effect would render once with an empty box and then fill it, which reads as
  * the app losing the script and then finding it -- and would race a user who
  * starts typing in that gap.
+ *
+ * The debounce USED TO EAT THE LAST EDIT. The timeout's cleanup cancelled the
+ * pending write without performing it, so a reload inside the 400ms window --
+ * type, hit F5 -- discarded everything typed since the last flush, which is the
+ * exact case the persistence exists to cover. useFlushOnHide now writes
+ * immediately when the page is going away. Lowering the delay instead would
+ * have narrowed the window without closing it, at the cost of the writes the
+ * debounce is there to avoid.
  */
 export function usePersistedDraft(
   key: string,
@@ -40,24 +49,36 @@ export function usePersistedDraft(
   // the value that was just read back out of storage.
   const hydrated = useRef(false)
 
+  // The latest value, readable from a flush that may fire between renders.
+  const valueRef = useRef(value)
+  valueRef.current = value
+  const keyRef = useRef(key)
+  keyRef.current = key
+
+  const write = useCallback(() => {
+    try {
+      // Remove rather than store an empty string: a cleared box should leave
+      // nothing behind, not an empty key that looks like saved state.
+      if (valueRef.current === '') localStorage.removeItem(keyRef.current)
+      else localStorage.setItem(keyRef.current, valueRef.current)
+    } catch {
+      // Quota exceeded, or storage disabled. The draft is a convenience --
+      // failing to save one must never interrupt writing it.
+    }
+  }, [])
+
   useEffect(() => {
     if (!hydrated.current) {
       hydrated.current = true
       return
     }
-    const id = window.setTimeout(() => {
-      try {
-        // Remove rather than store an empty string: a cleared box should leave
-        // nothing behind, not an empty key that looks like saved state.
-        if (value === '') localStorage.removeItem(key)
-        else localStorage.setItem(key, value)
-      } catch {
-        // Quota exceeded, or storage disabled. The draft is a convenience --
-        // failing to save one must never interrupt writing it.
-      }
-    }, delayMs)
+    const id = window.setTimeout(write, delayMs)
     return () => window.clearTimeout(id)
-  }, [key, value, delayMs])
+  }, [key, value, delayMs, write])
+
+  // Idempotent by construction -- it writes the current value, so firing on
+  // both pagehide and visibilitychange just writes the same string twice.
+  useFlushOnHide(write)
 
   return [value, setValue]
 }

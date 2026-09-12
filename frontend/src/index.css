@@ -582,7 +582,7 @@ body {
    generating row goes "Queued" (6 chars) to "0:07" (4) to "Cancelling…" (11).
    Hence the fixed width.
 
-   14ch, not a pixel guess: 1ch sign + "12:07 / 45:33" is 14 characters, and
+   15ch, not a pixel guess: 1ch sign + "12:07 / ~45:33" is 15 characters, and
    --font-mono (IBM Plex Mono) is a true monospace, so every glyph -- letters
    and the ellipsis included, not just the tabular digits -- shares one
    advance and ch measures it exactly in this element's own font. The earlier
@@ -595,7 +595,7 @@ body {
    preview. */
 @utility result-time {
   flex: none;
-  width: 14ch;
+  width: 15ch;
   padding: 0;
   font-size: 11px;
   color: var(--text-faint);
@@ -647,6 +647,35 @@ body {
   }
 }
 
+/* When the voiceover was made, or sent to generate. Right-aligned on line 3
+   opposite the script preview, which gives up exactly this width.
+
+   flex: none and a character-based width for the same reason result-time has
+   one: the preview beside it is flex: 1 1 auto, so a stamp that resized
+   between "02:32 PM" and "Sep 11, 02:32 PM" would move the preview's right
+   edge and change where it ellipsises. The shorter form sits right-aligned
+   inside the same slot.
+
+   17ch, and the number comes from the LONGEST LOCALE FORM, not the shortest.
+   It was 13ch first, sized against "Sep 11, 14:32" -- but the time is
+   toLocaleTimeString, and on an en-US machine that is "02:32 PM", making the
+   full string "Sep 11, 02:32 PM" = 16 characters. A 13ch slot ellipsised it to
+   "Sep 11, 02:32 P…", i.e. the stamp was cut off on the very machine this is
+   developed on. Do not re-derive this width from a 24-hour example.
+
+   --text-faint, the same weight as a finished row's clock: this is reference
+   information you look up, never something to notice. */
+@utility result-stamp {
+  flex: none;
+  width: 17ch;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* A queued row is the same row in a different colour -- amber means the GPU
    is working on it, purple means it is waiting its turn.
 
@@ -666,6 +695,48 @@ body {
 
   & .result-time {
     color: var(--queued);
+  }
+}
+
+/* A running row's clock reads `1:12 / ~2:30` and is AMBER, matching the
+   progress bar it sits beside -- amber already means "the GPU is working on
+   this" everywhere else in this column, so the running row's time needs no new
+   token and separates itself from a finished row's faint grey for free.
+
+   The `~` is not decoration. The denominator is a guess with ~20% mean error
+   (see _estimate_seconds in backend/main.py), and a bare "2:30" would claim a
+   precision the number does not have.
+
+   Not in is-queued's block: a queued row has no elapsed time to pair with an
+   estimate, and is already purple. */
+@utility is-running {
+  & .result-time {
+    /* var(--accent), NOT var(--progress). `--progress` exists only as the
+       @theme bridge name --color-progress, which is what the `bg-progress`
+       utility compiles against; there is no raw --progress custom property, so
+       `color: var(--progress)` is an invalid declaration that resolves to
+       nothing and leaves the clock inheriting --text-primary. It did exactly
+       that, and NOTHING CAUGHT IT: check_design_tokens.py scans hex literals,
+       so an undefined var() is invisible to it, and the build is happy. The
+       neighbouring is-queued/is-failed rules use raw tokens (--queued,
+       --danger-text) for the same reason. */
+    color: var(--accent);
+  }
+}
+
+/* Past the estimate. The clock keeps counting and the denominator does NOT
+   move -- a re-projecting denominator was rejected for eta_s (see
+   useElapsed.ts) because it drifts in both directions and tells you nothing,
+   and reintroducing it here would be the same mistake in a new place. So the
+   pair goes `3:10 / ~2:30` and the colour is what says "over", rather than the
+   numbers being massaged until they agree.
+
+   --danger-text rather than --danger: this is a slower render, not a failure,
+   and it shares the tint with is-failed on purpose -- one "something is not
+   going to plan" colour in this column, not two. */
+@utility is-over {
+  & .result-time {
+    color: var(--danger-text);
   }
 }
 

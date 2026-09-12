@@ -341,9 +341,19 @@ export default function StudioShell() {
     void handleAddVoice(file)
   })
 
-  async function handleRenamePreset(id: string, name: string) {
+  async function handleRenamePreset(id: string, name: string, opts?: { unloading?: boolean }) {
     const trimmedName = name.trim()
     if (!trimmedName) return
+
+    // The page is going away mid-edit. Send the rename with keepalive so the
+    // request outlives the document -- a plain fetch here is cancelled -- and
+    // skip everything else: there is no point rolling back state that is about
+    // to be discarded, and a toast on a page that is unloading is never seen.
+    if (opts?.unloading) {
+      void renamePreset(id, trimmedName, { keepalive: true }).catch(() => {})
+      return
+    }
+
     const before = presets
     // Optimistic: the field has already visually committed, and bouncing the
     // text back on a slow round-trip reads as the edit being rejected.

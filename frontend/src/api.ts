@@ -172,11 +172,25 @@ export function createPreset(
  * the backend on every generate and stamped into history as `preset_name`, so
  * it has to be stored where the backend can see it.
  */
-export function renamePreset(presetId: string, name: string): Promise<Preset> {
+export function renamePreset(
+  presetId: string,
+  name: string,
+  opts: { keepalive?: boolean } = {},
+): Promise<Preset> {
   return authFetch(apiUrl(`/api/presets/${presetId}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
+    // Set only when the rename is being flushed because the page is going
+    // away. An ordinary fetch started during unload is cancelled with the
+    // document, so without this the edit is lost -- which is the whole reason
+    // InlineName reports `unloading` at all. A voiceover's name does not need
+    // this: it is a synchronous localStorage write.
+    //
+    // NOT sendBeacon, the usual reach for unload-time requests: it cannot
+    // issue a PATCH and cannot set a content type. keepalive keeps the real
+    // request, and a name is far under its 64 kB body cap.
+    keepalive: opts.keepalive,
   }).then(parseOrThrow<Preset>)
 }
 
