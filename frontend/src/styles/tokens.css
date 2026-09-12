@@ -139,18 +139,32 @@
   --text-muted: #a9adba;
   --text-faint: #8b90a4;
 
-  /* ---- Accent 1: amber = work in progress ------------------------------ */
-  --accent: #ffb43a;
-  --accent-dim: #c98a26;
+  /* ---- Accent 1: the theme's IDENTITY, + the work-in-progress state -----
+     These were one token, and the header here used to read "amber = work in
+     progress" -- which was the whole problem. --accent doubled as the theme's
+     signature colour AND as "the GPU is working", so eight of the nine themes
+     shared their most prominent colour and the ninth (marquee, pink) made the
+     state mean something different. They are separate now:
 
-  /* ---- Accent 2: cyan = audio ------------------------------------------ */
+       --accent    identity. Differs in every theme. Wordmark, ::selection.
+       --progress  the working state. Amber in every theme, because a state
+                   should be learnable -- the same reasoning that keeps
+                   --danger red and --queued violet everywhere.
+
+     scripts/check_palette.py holds both apart from --danger and from each
+     other; see its docstring for what it caught. */
+  --accent: #80e3f4;
+  --progress: #ffb43a;
+  --progress-dim: #c98a26;
+
+  /* ---- Accent 2: audio. Identity's tonal partner ------------------------ */
   /* Waveforms are most of what is on screen once you have generated
      anything, so this is the colour that actually stops the page reading as
      greyscale. */
-  --accent-2: #4dd4e8;
+  --accent-2: #1cc5e3;
   /* Played portion of a waveform, and the landing page's hot accent. The
      canvas no longer mirrors this by hand -- see --wave-* in layer 2. */
-  --accent-2-bright: #7ee4f3;
+  --accent-2-bright: #5cd5eb;
 
   /* ---- Status ---------------------------------------------------------- */
   /* Queued-but-not-started, and nothing else. Named for its meaning rather
@@ -225,13 +239,23 @@
      identical to the old literals. 7 tokens x 9 themes collapses to 7. */
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
   --accent-line: color-mix(in srgb, var(--accent) 40%, transparent);
+  /* --progress is the WORK-IN-PROGRESS state, split out of --accent so the two
+     stop being the same colour. --accent is now the theme's identity and is
+     free to differ per theme; --progress stays in the amber family in all nine,
+     because "the GPU is working" is a state and states should be learnable --
+     the same reasoning that keeps --danger red and --queued violet everywhere.
+     Before the split, --accent did both jobs, which made eight of the nine
+     themes share their most prominent colour. */
+  --progress-soft: color-mix(in srgb, var(--progress) 14%, transparent);
+  --progress-line: color-mix(in srgb, var(--progress) 40%, transparent);
   --accent-2-soft: color-mix(in srgb, var(--accent-2) 14%, transparent);
   --accent-2-line: color-mix(in srgb, var(--accent-2) 40%, transparent);
   --queued-soft: color-mix(in srgb, var(--queued) 14%, transparent);
   --queued-line: color-mix(in srgb, var(--queued) 40%, transparent);
   --danger-soft: color-mix(in srgb, var(--danger) 14%, transparent);
 
-  --amber: var(--accent);
+  /* Legacy alias. Amber is the PROGRESS colour, not the identity one. */
+  --amber: var(--progress);
 
   /* Scrims. Were three hand-mixed rgba() literals in App.css. */
   --scrim-boot: color-mix(in srgb, var(--scrim-ink) 62%, transparent);
@@ -289,8 +313,9 @@
 
   --accent-primary: var(--accent);
   --accent-secondary: var(--accent-2);
-  --accent-amber: var(--accent);
-  --accent-amber-soft: var(--accent-soft);
+  /* Named for the colour, so they follow --progress, not the identity accent. */
+  --accent-amber: var(--progress);
+  --accent-amber-soft: var(--progress-soft);
   --accent-secondary-soft: var(--accent-2-soft);
   --accent-red: var(--danger);
   --accent-red-soft: var(--danger-soft);
@@ -309,8 +334,8 @@
   --panel-border: var(--line);
   --panel-border-strong: var(--line-strong);
 
-  --warning: var(--accent);
-  --warning-soft: var(--accent-soft);
+  --warning: var(--progress);
+  --warning-soft: var(--progress-soft);
 
   /* Shadows and glows are deliberately neutralised rather than removed --
      any rule still referencing them renders as a hairline, not a halo. */
@@ -346,7 +371,7 @@
      the lights, not the lightest. It is also --btn-invert-fg, so it has to
      stay readable on a near-black button fill. */
   --bg-deepest: #e7e9ef;
-  --bg-base: #fbfbfd;
+  --bg-base: #f4f4fa;
   --bg-nav: #f2f3f7;
   --bg-card: #ffffff;
   --bg-hero: #ffffff;
@@ -364,13 +389,14 @@
   --text-muted: #4e5464;
   --text-faint: #636a7c;
 
-  --accent: #9a5b05;
-  --accent-dim: #7a4804;
+  --accent: #023d4a;
+  --progress: #bf7c08;
+  --progress-dim: #7a4804;
 
   /* On a light theme "played" is DEEPER, not brighter -- the inversion lives
      here rather than in the --wave-* derivation. */
-  --accent-2: #0b7f93;
-  --accent-2-bright: #095e6e;
+  --accent-2: #0c97b6;
+  --accent-2-bright: #1ac9f0;
 
   --queued: #6d43d6;
   --danger: #c5282f;
@@ -404,12 +430,13 @@
   --text-muted: #5c4633;
   --text-faint: #6b5440;
 
-  --accent: #8a5209;
-  --accent-dim: #6d4107;
+  --accent: #2a4017;
+  --progress: #b57508;
+  --progress-dim: #6d4107;
 
   /* Rust replaces cyan as the audio accent. Still one hue, still only audio. */
-  --accent-2: #a83f1c;
-  --accent-2-bright: #822f11;
+  --accent-2: #63913b;
+  --accent-2-bright: #86bb58;
 
   --queued: #5d4394;
   --danger: #a8231c;
@@ -440,13 +467,14 @@
   --text-muted: #a3b0a7;
   --text-faint: #8d9b92;
 
-  --accent: #e8a33d;
-  --accent-dim: #b87f2e;
+  --accent: #95dfc0;
+  --progress: #e8a33d;
+  --progress-dim: #b87f2e;
 
   /* Jade, not the surface green -- two accents have to stay two signals, and
      --green (healthy) is a separate job again. */
-  --accent-2: #79c9a8;
-  --accent-2-bright: #a4e3c6;
+  --accent-2: #42bd8a;
+  --accent-2-bright: #77cfab;
 
   --queued: #a996e0;
   --danger: #ef6b6b;
@@ -479,12 +507,13 @@
   --text-muted: #c3c8d0;
   --text-faint: #a2a9b4;
 
-  --accent: #ffc24d;
-  --accent-dim: #c9962f;
+  --accent: #79bafb;
+  --progress: #ffc24d;
+  --progress-dim: #c9962f;
 
   /* The tally light. This is the one theme where the audio accent is red. */
-  --accent-2: #ff3b30;
-  --accent-2-bright: #ff7a72;
+  --accent-2: #0f7ff0;
+  --accent-2-bright: #52a3f4;
 
   /* Both of these moved off their usual hues, and the reason is the red
      above. Destructive cannot also be red here, so it goes magenta; and once
@@ -497,6 +526,14 @@
   --green: #4ade80;
 
   --scrim-ink: #000000;
+}
+
+/* Selected text carries the theme's identity. It is the second surface (after
+   the wordmark) that every theme shows without the user doing anything
+   special, and it costs no layout. --accent-soft is the 14% mix, so the text
+   underneath keeps its own contrast rather than being painted over. */
+::selection {
+  background: var(--accent-soft);
 }
 
 :focus-visible {
@@ -537,10 +574,11 @@
      rather than as caution, which is the point of this palette -- but it has
      to stay clear of --danger, so the red here is pushed warm and light. */
   --accent: #ff6fb8;
-  --accent-dim: #c74d8d;
+  --progress: #f5b63f;
+  --progress-dim: #c74d8d;
 
   --accent-2: #63dcff;
-  --accent-2-bright: #9beaff;
+  --accent-2-bright: #aaecff;
 
   --queued: #b79cff;
   --danger: #ff7a7a;
@@ -557,7 +595,7 @@
   --bg-deepest: #0d0a07;
   --bg-base: #14100c;
   --bg-nav: #1a1511;
-  --bg-card: #1e1813;
+  --bg-card: #211a15;
   --bg-hero: #1e1813;
   --bg-raised: #292019;
   --bg-hover: #362b21;
@@ -569,12 +607,13 @@
   --text-faint: #a8977f;
 
   --accent: #e6ac52;
-  --accent-dim: #b8873f;
+  --progress: #e6ac52;
+  --progress-dim: #b8873f;
 
   /* Copper, and deliberately close to the gold: this palette is monochrome by
      design, so the two accents separate by weight rather than by hue. */
-  --accent-2: #e09a6e;
-  --accent-2-bright: #f0b98f;
+  --accent-2: #45baa3;
+  --accent-2-bright: #79cdbd;
 
   --queued: #c9a8dd;
   --danger: #f07a72;
@@ -602,11 +641,12 @@
   --text-muted: #a6b6ce;
   --text-faint: #8fa2bd;
 
-  --accent: #f0b429;
-  --accent-dim: #c08e1f;
+  --accent: #8be9e0;
+  --progress: #f0b429;
+  --progress-dim: #c08e1f;
 
-  --accent-2: #4fd1c5;
-  --accent-2-bright: #86e6dd;
+  --accent-2: #30cfbf;
+  --accent-2-bright: #6adcd1;
 
   --queued: #9db4ff;
   --danger: #f2777a;
@@ -623,7 +663,7 @@
   /* "deepest" is the DARKEST of the lights -- it is also --btn-invert-fg and
      has to stay readable on a near-black button fill. */
   --bg-deepest: #e8e8ea;
-  --bg-base: #ffffff;
+  --bg-base: #f0f0f0;
   --bg-nav: #ffffff;
   --bg-card: #fafafa;
   --bg-hero: #fafafa;
@@ -642,12 +682,13 @@
   --text-muted: #4a4a55;
   --text-faint: #5e5e6b;
 
-  --accent: #a63505;
-  --accent-dim: #7d2804;
+  --accent: #014565;
+  --progress: #c07a06;
+  --progress-dim: #7d2804;
 
   /* On a light theme "played" is DEEPER, not brighter. */
-  --accent-2: #015f8a;
-  --accent-2-bright: #01486a;
+  --accent-2: #0993d3;
+  --accent-2-bright: #2db6f6;
 
   --queued: #5b21b6;
   --danger: #b3261e;

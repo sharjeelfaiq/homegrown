@@ -87,10 +87,12 @@
   --color-control-fill-hover: var(--control-fill-hover);
 
   /* The two accents, each with exactly one job. */
-  --color-progress: var(--accent);
-  --color-progress-dim: var(--accent-dim);
-  --color-progress-soft: var(--accent-soft);
-  --color-progress-line: var(--accent-line);
+  --color-progress: var(--progress);
+  --color-progress-dim: var(--progress-dim);
+  --color-progress-soft: var(--progress-soft);
+  --color-progress-line: var(--progress-line);
+  --color-accent: var(--accent);
+  --color-accent-line: var(--accent-line);
   --color-audio: var(--accent-2);
   --color-audio-bright: var(--accent-2-bright);
   --color-audio-soft: var(--accent-2-soft);
@@ -711,16 +713,15 @@ body {
    estimate, and is already purple. */
 @utility is-running {
   & .result-time {
-    /* var(--accent), NOT var(--progress). `--progress` exists only as the
-       @theme bridge name --color-progress, which is what the `bg-progress`
-       utility compiles against; there is no raw --progress custom property, so
-       `color: var(--progress)` is an invalid declaration that resolves to
-       nothing and leaves the clock inheriting --text-primary. It did exactly
-       that, and NOTHING CAUGHT IT: check_design_tokens.py scans hex literals,
-       so an undefined var() is invisible to it, and the build is happy. The
-       neighbouring is-queued/is-failed rules use raw tokens (--queued,
-       --danger-text) for the same reason. */
-    color: var(--accent);
+    /* --progress IS a raw token now (tokens.css layer 1, one per theme). It
+       was not when this rule was written: the clock used var(--accent) and a
+       comment here warned that var(--progress) resolved to nothing and left
+       the clock inheriting --text-primary -- a bug nothing caught, because
+       check_design_tokens.py scans hex literals and an undefined var() is
+       invisible to it. Splitting progress out of accent fixed the cause; the
+       clock now names the state it is showing rather than the theme's
+       identity colour, which is what it always meant. */
+    color: var(--progress);
   }
 }
 

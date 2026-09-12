@@ -35,7 +35,10 @@ AA_LARGE = 3.0
 TEXT_TOKENS = ["--text-primary", "--text-muted", "--text-faint"]
 SURFACES = ["--bg-base", "--bg-card", "--bg-raised"]
 # Drawn ON a surface as a border, icon or bold label, never as a paragraph.
-SIGNAL_TOKENS = ["--accent", "--accent-2", "--queued", "--danger", "--green"]
+# --progress is here as well as --accent: they were ONE token until the split
+# (see check_palette.py), and the progress bar is a fill that still has to
+# clear the non-text 3:1 bar on every surface it is drawn on.
+SIGNAL_TOKENS = ["--accent", "--accent-2", "--progress", "--queued", "--danger", "--green"]
 # --danger-text IS a paragraph colour, on the tinted error panel. The panel is
 # --danger-soft over --bg-card; approximating with --bg-card is close enough
 # and errs strict (the tint is 14%).

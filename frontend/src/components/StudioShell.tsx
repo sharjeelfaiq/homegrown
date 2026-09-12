@@ -508,7 +508,13 @@ export default function StudioShell() {
             The hairline is a full-width border beneath, not an underline on
             the text: it separates the title from the workspace without
             putting a rule through the wordmark's wide tracking. */}
-        <h1 className="border-b border-hairline px-(--gutter) py-[30px] text-center font-display text-[26px]/none font-semibold tracking-[0.1em] uppercase text-muted">
+        {/* text-accent, not text-muted. --accent is the theme's IDENTITY colour
+            now that --progress carries the "working" state, and the wordmark is
+            the one surface every theme shows on every screen -- so it is where
+            identity earns its keep. Large text, so the 3:1 non-text bar applies
+            rather than 4.5:1; check_palette.py holds every theme's accent above
+            that against all three surfaces. */}
+        <h1 className="border-b border-hairline px-(--gutter) py-[30px] text-center font-display text-[26px]/none font-semibold tracking-[0.1em] uppercase text-accent">
           Homegrown
         </h1>
         <ThemeSwitch />
