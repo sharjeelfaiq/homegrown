@@ -35,7 +35,13 @@ export function useErrorToast(message: string | null, title: string): void {
       idRef.current = null
     }
     if (message == null || message === '') return
-    idRef.current = toast.error(title, { description: message, duration: Infinity })
+    // closeButton, because duration: Infinity means nothing else dismisses this.
+    // The Toaster turns it off globally -- see the comment there.
+    idRef.current = toast.error(title, {
+      description: message,
+      duration: Infinity,
+      closeButton: true,
+    })
   }, [message, title])
 
   // Unmount should not leave a toast behind pointing at a screen that is gone.

@@ -214,14 +214,25 @@ Expect, in order:
 1. A browser **loader within ~2 seconds** — not a blank desktop.
 2. `dist/Homegrown/storage/boot_status.json` appears during startup.
 3. `dist/Homegrown/storage/backend.log` gets written.
-4. **No Windows firewall prompt** — the backend binds `127.0.0.1` only.
+4. **A Windows firewall prompt on first run** — the backend binds `0.0.0.0`. Do not click Cancel: it
+   writes a permanent Block rule for that exe path which nothing in the app can undo. Pre-authorise the
+   exe beforehand from an elevated prompt and the prompt never appears:
+
+   ```
+   netsh advfirewall firewall add rule name="Homegrown" dir=in ^
+     action=allow program="C:\Homegrown\backend\backend.exe" ^
+     protocol=TCP localport=8731 enable=yes profile=private
+   ```
 5. The loader redirects to the app once the model has loaded.
 
-Then confirm the listener really is loopback-only:
+Then confirm the listener is on every interface:
 
 ```bash
-netstat -ano | findstr :8731    # expect 127.0.0.1:8731, never 0.0.0.0:8731
+netstat -ano | findstr :8731    # expect 0.0.0.0:8731
 ```
+
+The app has **no authentication**, so anyone who reaches this port can create voices and permanently
+delete voices and voiceovers. Trusted networks only.
 
 If the loader never appears, the launcher exe is stale — step 5 did not rebuild.
 

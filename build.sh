@@ -184,10 +184,24 @@ cat <<'NEXT'
     ./dist/Homegrown/Homegrown.exe
 
   Expect a browser loader within ~2s, storage/boot_status.json and
-  storage/backend.log appearing, NO Windows firewall prompt, and a redirect to
-  the app once the model loads. Confirm the listener is loopback-only:
+  storage/backend.log appearing, and a redirect to the app once the model
+  loads. Confirm the listener is on every interface:
 
-    netstat -ano | findstr :8731     # 127.0.0.1:8731, never 0.0.0.0:8731
+    netstat -ano | findstr :8731     # 0.0.0.0:8731
+
+  THE FIREWALL PROMPT IS THE DANGEROUS MOMENT. backend.exe now binds 0.0.0.0,
+  so Windows Defender Firewall asks on first run -- and choosing Cancel writes
+  a permanent Block rule for that exe path which nothing in the app can undo.
+  Pre-authorise it BEFORE the first launch, from an elevated prompt, and the
+  prompt never appears:
+
+    netsh advfirewall firewall add rule name="Homegrown" dir=in ^
+      action=allow program="C:\Homegrown\backend\backend.exe" ^
+      protocol=TCP localport=8731 enable=yes profile=private
+
+  And note what the wildcard bind exposes: this app has no authentication
+  (auth.py returns a constant user), so anyone who reaches :8731 can create
+  voices and permanently delete voices and voiceovers. Trusted networks only.
 
   If you publish this build, update the landing page's download link, size text
   and SHA-256 together. A stale checksum is worse than none.

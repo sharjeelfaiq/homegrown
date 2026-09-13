@@ -198,6 +198,24 @@ Conclusions:
 
 TIME-ESTIMATE MODEL SELECTION (2026-09-12, GTX 970 sm_52)
 ----------------------------------------
+RETIRED 2026-09-13. The model below shipped, and was then removed along with
+every predicted time in the product. Keep this section: it is the record of
+what was measured, and anyone proposing a new estimate should read it first.
+
+Why it was retired, despite scoring 22% mean error here: on a 50-job batch it
+ran OVER on 12 of 12 completed jobs, by 1.2x to 2.5x, and under on none. That
+is not a tuning miss, it is the objective being wrong. The fit below minimises
+MEAN ABSOLUTE ERROR, which is symmetric; overrun is not symmetric to the person
+waiting, and a median is beaten by half of all jobs by construction. The tail
+makes it worse: _chunk_duration_is_sane resamples a degenerate chunk up to
+CHUNK_ATTEMPTS times, and a median deliberately discards exactly those runs --
+measured p90 32.4 s/chunk against p50 19.3.
+
+If this is attempted again, score candidates on OVERRUN RATE (fraction of jobs
+where generation_s > estimated_s) with mean error reported alongside, and sweep
+the percentile as well as the overhead term. generation_s and total_chunks are
+still recorded on every history entry for exactly that purpose.
+
 Question: the estimate beside Generate was wrong by a mean of 50%, and
 the ROUNDED STRING the user reads was wrong on 65% of jobs. What model
 should replace chars/second?

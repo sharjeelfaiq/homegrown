@@ -123,6 +123,17 @@ export default function VoiceoverPlayer({
         }}
         onEnded={(e) => {
           setPlaying(false)
+          // Rewind on completion, so the row reads as ready to play again
+          // rather than spent. PLAYBACK was already correct -- calling play()
+          // on an element in the `ended` state seeks to the start first, per
+          // the media spec -- but nothing reset currentTime, so the clock sat
+          // at "1:06 / 1:06" and the playhead stayed pinned to the right edge
+          // until playback actually restarted.
+          //
+          // Seeking clears `ended` and leaves `paused` true; it does not
+          // resume. Done BEFORE releaseAudio so the resulting `seeked` event
+          // fires while the element is still wired to AudioActivityContext.
+          e.currentTarget.currentTime = 0
           releaseAudio(e.currentTarget)
         }}
         style={{ display: 'none' }}

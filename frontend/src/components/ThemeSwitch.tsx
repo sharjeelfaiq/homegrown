@@ -6,6 +6,8 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { useTheme } from '../ThemeContext'
 import { THEMES, type ThemeChoice } from '../theme'
 import { CheckIcon, ThemeIcon } from './Icons'
@@ -41,6 +43,7 @@ interface MenuPos {
  * leaves focus behind is a keyboard dead end. */
 export default function ThemeSwitch() {
   const { choice, theme, setChoice } = useTheme()
+  const reduced = usePrefersReducedMotion()
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<MenuPos | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -185,83 +188,97 @@ export default function ThemeSwitch() {
         <ThemeIcon size={16} />
       </button>
 
-      {open && (
-        <ul
-          className="fixed z-150 m-0 max-h-[min(60svh,332px)] min-w-[208px] list-none overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) [scrollbar-gutter:stable]"
-          ref={menuRef}
-          role="menu"
-          aria-label="Theme"
-          onKeyDown={onMenuKeyDown}
-          style={pos ? { top: pos.top, right: pos.right } : { visibility: 'hidden' }}
-        >
-          {/* Grouped by mode. Six dark and three light in one flat list meant
-              scanning every hint to find out which was which, and the two
-              kinds are never alternatives to each other -- you are choosing
-              within one or switching between them.
+      {/* The transform goes on the MENU, never on the root -- see the note in
+          CLAUDE.md. A transform on the root creates a stacking context and
+          becomes the containing block for this `fixed` element, which is what
+          once let the search field paint over an open menu and threw the
+          getBoundingClientRect coordinates off. The menu itself has no fixed
+          descendants, so scaling it is safe.
 
-              role="group" with an aria-label, not a bare heading: the outer
-              list is role="menu", whose only valid children are menuitems and
-              groups. A decorative <li> heading would be announced as an empty
-              item. The visible caption is aria-hidden because the group's own
-              label already carries it. */}
-          {(['dark', 'light'] as const).map((mode) => (
-            <li key={mode} role="none">
-              <ul
-                role="group"
-                aria-label={mode === 'dark' ? 'Dark themes' : 'Light themes'}
-                className="m-0 list-none p-0"
-              >
-                <li
-                  role="presentation"
-                  aria-hidden="true"
-                  className="mono px-[9px] pt-2 pb-1 text-[10px] tracking-[0.12em] text-faint uppercase"
+          Origin is top-right because that is the corner it is anchored to. */}
+      <AnimatePresence>
+        {open && (
+          <motion.ul
+            initial={reduced ? false : { opacity: 0, scale: 0.97, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={reduced ? undefined : { opacity: 0, scale: 0.97, y: -4 }}
+            transition={{ duration: reduced ? 0 : 0.14, ease: [0.2, 0, 0, 1] }}
+            className="fixed z-150 m-0 max-h-[min(60svh,332px)] min-w-[208px] list-none origin-top-right overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) [scrollbar-gutter:stable]"
+            ref={menuRef}
+            role="menu"
+            aria-label="Theme"
+            onKeyDown={onMenuKeyDown}
+            style={pos ? { top: pos.top, right: pos.right } : { visibility: 'hidden' }}
+          >
+            {/* Grouped by mode. Six dark and three light in one flat list meant
+                scanning every hint to find out which was which, and the two
+                kinds are never alternatives to each other -- you are choosing
+                within one or switching between them.
+
+                role="group" with an aria-label, not a bare heading: the outer
+                list is role="menu", whose only valid children are menuitems and
+                groups. A decorative <li> heading would be announced as an empty
+                item. The visible caption is aria-hidden because the group's own
+                label already carries it. */}
+            {(['dark', 'light'] as const).map((mode) => (
+              <li key={mode} role="none">
+                <ul
+                  role="group"
+                  aria-label={mode === 'dark' ? 'Dark themes' : 'Light themes'}
+                  className="m-0 list-none p-0"
                 >
-                  {mode}
-                </li>
-                {THEMES.filter((t) => t.mode === mode).map((t) => (
-                  <li key={t.id} role="none">
-                    <button
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={choice === t.id}
-                      className="theme-menu-pick flex w-full min-h-9 items-start gap-2 rounded-sm px-[9px] py-[7px] text-left text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink focus-visible:bg-surface-hover focus-visible:text-ink"
-                      onClick={() => pick(t.id)}
-                    >
-                      <span className="grid h-[18px] flex-[0_0_12px] place-items-center text-audio" aria-hidden="true">
-                        {choice === t.id && <CheckIcon size={12} />}
-                      </span>
-                      <span className="flex flex-col gap-px">
-                        {t.label}
-                        <span className="text-[11px] text-faint">{t.hint}</span>
-                      </span>
-                    </button>
+                  <li
+                    role="presentation"
+                    aria-hidden="true"
+                    className="mono px-[9px] pt-2 pb-1 text-[10px] tracking-[0.12em] text-faint uppercase"
+                  >
+                    {mode}
                   </li>
-                ))}
-              </ul>
+                  {THEMES.filter((t) => t.mode === mode).map((t) => (
+                    <li key={t.id} role="none">
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={choice === t.id}
+                        className="theme-menu-pick flex w-full min-h-9 items-start gap-2 rounded-sm px-[9px] py-[7px] text-left text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink focus-visible:bg-surface-hover focus-visible:text-ink"
+                        onClick={() => pick(t.id)}
+                      >
+                        <span className="grid h-[18px] flex-[0_0_12px] place-items-center text-audio" aria-hidden="true">
+                          {choice === t.id && <CheckIcon size={12} />}
+                        </span>
+                        <span className="flex flex-col gap-px">
+                          {t.label}
+                          <span className="text-[11px] text-faint">{t.hint}</span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+            <li role="none">
+              <hr className="my-1 h-0 border-0 border-t border-hairline" />
             </li>
-          ))}
-          <li role="none">
-            <hr className="my-1 h-0 border-0 border-t border-hairline" />
-          </li>
-          <li role="none">
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={choice === 'system'}
-              className="theme-menu-pick flex w-full min-h-9 items-start gap-2 rounded-sm px-[9px] py-[7px] text-left text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink focus-visible:bg-surface-hover focus-visible:text-ink"
-              onClick={() => pick('system')}
-            >
-              <span className="grid h-[18px] flex-[0_0_12px] place-items-center text-audio" aria-hidden="true">
-                {choice === 'system' && <CheckIcon size={12} />}
-              </span>
-              <span className="flex flex-col gap-px">
-                System
-                <span className="text-[11px] text-faint">Follows your OS setting</span>
-              </span>
-            </button>
-          </li>
-        </ul>
-      )}
+            <li role="none">
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={choice === 'system'}
+                className="theme-menu-pick flex w-full min-h-9 items-start gap-2 rounded-sm px-[9px] py-[7px] text-left text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink focus-visible:bg-surface-hover focus-visible:text-ink"
+                onClick={() => pick('system')}
+              >
+                <span className="grid h-[18px] flex-[0_0_12px] place-items-center text-audio" aria-hidden="true">
+                  {choice === 'system' && <CheckIcon size={12} />}
+                </span>
+                <span className="flex flex-col gap-px">
+                  System
+                  <span className="text-[11px] text-faint">Follows your OS setting</span>
+                </span>
+              </button>
+            </li>
+          </motion.ul>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

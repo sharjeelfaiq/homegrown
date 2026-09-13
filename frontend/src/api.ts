@@ -48,14 +48,12 @@ export interface HistoryEntry {
   audio_url: string
   duration_s: number
   generation_s: number | null
-  estimated_s: number | null
   created_at: number
 }
 
 export interface GenerateJobStart {
   job_id: string
   total_chunks: number
-  estimated_s: number
   queue_position: number
 }
 
@@ -68,9 +66,7 @@ export interface JobStatus {
   audio_url: string | null
   sample_rate: number | null
   error: string | null
-  estimated_s: number | null
   elapsed_s: number | null
-  eta_s: number | null
   queue_position: number | null
 }
 
@@ -84,9 +80,7 @@ export interface QueueEntry {
   status: JobStatusValue
   chunks_done: number
   total_chunks: number
-  estimated_s: number | null
   elapsed_s: number | null
-  eta_s: number | null
   queue_position: number | null
   submitted_at: number
   audio_url: string | null
@@ -205,10 +199,18 @@ export function presetDownloadUrl(presetId: string): string {
   return apiUrl(`/api/presets/${presetId}/download`)
 }
 
-export function deletePreset(presetId: string): Promise<{ ok: boolean }> {
-  return authFetch(apiUrl(`/api/presets/${presetId}`), { method: 'DELETE' }).then(
-    parseOrThrow<{ ok: boolean }>,
-  )
+export function deletePreset(
+  presetId: string,
+  opts: { keepalive?: boolean } = {},
+): Promise<{ ok: boolean }> {
+  return authFetch(apiUrl(`/api/presets/${presetId}`), {
+    method: 'DELETE',
+    // Set only when a held delete is being settled because the page is going
+    // away. An ordinary fetch started during unload is cancelled with the
+    // document, so without this the voice would reappear on the next load --
+    // the same reason deleteHistoryEntry takes the flag.
+    keepalive: opts.keepalive,
+  }).then(parseOrThrow<{ ok: boolean }>)
 }
 
 export interface HistoryPage {
@@ -243,10 +245,19 @@ export function listHistory(
   )
 }
 
-export function deleteHistoryEntry(entryId: string): Promise<{ ok: boolean }> {
-  return authFetch(apiUrl(`/api/history/${entryId}`), { method: 'DELETE' }).then(
-    parseOrThrow<{ ok: boolean }>,
-  )
+export function deleteHistoryEntry(
+  entryId: string,
+  opts: { keepalive?: boolean } = {},
+): Promise<{ ok: boolean }> {
+  return authFetch(apiUrl(`/api/history/${entryId}`), {
+    method: 'DELETE',
+    // Set only when a held delete is being settled because the page is going
+    // away. An ordinary fetch started during unload is cancelled with the
+    // document, which is the same reason renamePreset takes this flag -- and
+    // here it is the difference between the delete happening and the row
+    // reappearing on the next load.
+    keepalive: opts.keepalive,
+  }).then(parseOrThrow<{ ok: boolean }>)
 }
 
 export interface GenerateParams {
@@ -272,7 +283,6 @@ export function getJobStatus(jobId: string): Promise<JobStatus> {
 }
 
 export interface Estimate {
-  estimated_s: number
   /** Exact chunk count from the backend's own chunker, or null with no voice. */
   chunks: number | null
   /** This voice's chunk size. Derived from its reference clip, not a constant. */
@@ -343,10 +353,17 @@ export function listQueue(): Promise<{ queue: QueueEntry[] }> {
   return authFetch(apiUrl('/api/queue')).then(parseOrThrow<{ queue: QueueEntry[] }>)
 }
 
-export function cancelQueuedJob(jobId: string): Promise<{ ok: boolean }> {
-  return authFetch(apiUrl(`/api/queue/${jobId}/cancel`), { method: 'POST' }).then(
-    parseOrThrow<{ ok: boolean }>,
-  )
+export function cancelQueuedJob(
+  jobId: string,
+  opts: { keepalive?: boolean } = {},
+): Promise<{ ok: boolean }> {
+  return authFetch(apiUrl(`/api/queue/${jobId}/cancel`), {
+    method: 'POST',
+    // A cancel is held behind an Undo toast like the two deletes are, so it can
+    // still be in flight when the page goes away. Same reason as those: a fetch
+    // started during unload is cancelled with the document.
+    keepalive: opts.keepalive,
+  }).then(parseOrThrow<{ ok: boolean }>)
 }
 
 /** Resubmit a failed job's own script. The full text never leaves the backend

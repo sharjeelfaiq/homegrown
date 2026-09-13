@@ -60,7 +60,7 @@ Browser --> FastAPI (backend/main.py, one process, :8000)
               |-- storage/*.json  presets / history / queue (flat files, FileLock'd, gitignored)
 ```
 
-`backend/main.py` (~1100 lines) is the whole backend — jobs, queue, timing estimates, RunPod idle-stop,
+`backend/main.py` (~1100 lines) is the whole backend — jobs, queue, RunPod idle-stop,
 routes. The other backend modules are small and single-purpose (`text_chunker`, `audio_stitcher`,
 `audio_convert`, `auth`).
 
@@ -151,8 +151,8 @@ Flat JSON in `backend/storage/` (gitignored), written via temp-file + `.replace(
 resumed **from the start of the job**, not mid-chunk. Completed jobs live in `history.json`; the job dicts
 themselves (`_jobs`) are in-memory only, so a restart loses status of finished/failed jobs.
 
-Time estimates are a rolling `chars/second` average over the last 20 completed jobs, seeded from
-`history.json` on boot so estimates are sane immediately after a restart.
+Generation time is reported, never predicted: the running row counts elapsed seconds. Two estimators
+were built and both retired — see the no-predicted-time note below, and `docs/gpu-notes.md`.
 
 ### Frontend
 
@@ -192,6 +192,54 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   `removeFileName` is deferred with it, or an Undo would restore the row under its default
   `Voiceover N` instead of its custom name. Pending ids are filtered **after** numbering, with the
   search — same trap, same fix.
+
+- **Rows animate OUT, not IN -- and the pending rows are the exception.** framer-motion
+  (already a dependency) drives all of it; there are no new CSS classes, so
+  `check_orphan_css.py` is untouched. The asymmetry is the whole design and is easy to
+  "fix" back into a bug:
+  a **`VoiceoverRow` has no `initial`/`animate` at all**, because the three ways one
+  appears are a job completing, a load-more append, and first paint. The first is a
+  handoff -- `PendingRow` and `VoiceoverRow` are two `.map()`s in one `<ul>`, and the
+  completing job's row is replaced in the same frame, so an entrance there reads as a
+  flicker. The second is pagination. Neither is an event the user caused at that row.
+  A **`PendingRow` animates both ways**: it appears only because Generate was pressed.
+  **Its exit fade is load-bearing, and was removed once on a misreading before being
+  measured properly.** A finishing job does not hand off atomically -- the queue poll
+  drops it and the `/api/history` refetch adds it, and those are two independent round
+  trips. Sampled every 100ms across two real generations: with the fade the row count
+  went 14 -> 15 -> 14 and never dipped; without it, 15 -> 14 with the finished voiceover
+  in **neither** list until the refetch landed. The fade does not create a duplicate, it
+  covers a seam -- for ~160ms the outgoing row fades over its own finished row, which
+  reads as a handoff, where an empty slot reads as a lost voiceover. Opacity only, no
+  height collapse: collapsing would move every row below it twice, shut and open again,
+  for a row being replaced at its own height.
+  **`AnimatePresence initial={false}` on both lists** or every row on screen animates on
+  mount -- a reload with jobs running would replay an entrance for work started minutes ago.
+  **The history row's exit is suppressed while searching** (`animateExit={!searching}`):
+  one keystroke can filter out a dozen rows, and a dozen simultaneous height collapses is
+  the one place this column would feel slow, when the filter has to narrow on the keystroke.
+  **Height is the only layout property animated here**, bounded to one row at a time; it is
+  what stops the rows below snapping upward while the 7s undo is still open. Measured on a
+  real delete: height 30.1 -> 7.9 -> 1.1 with opacity 0.35 -> 0.09 -> 0.01, the next row's
+  top sliding 234.1 -> 211.9 -> 205.2 rather than jumping.
+  **Do NOT reach for framer's `layout` prop instead.** Up to ~20 `WaveRibbon` canvases are
+  mounted in this list and `layout` measures every one of them each frame.
+
+- **The bulk-action bar's centering had to move INTO the animation.** It centred with
+  the `-translate-x-1/2` utility; framer writes `transform` inline, which wins outright,
+  so animating it at all would walk the bar off centre by half its own width. `x: '-50%'`
+  is therefore repeated on `initial`/`animate`/`exit` **and** in `style`, and the utility
+  class is gone. Verified mid-flight, not just at rest: `centerOffset` 0.0px while opacity
+  was still 0.86, and 0.0px row/list shift at 700/1024/1440px -- unchanged from before the
+  animation existed.
+
+- **Menu transforms go on the MENU, never on `ThemeSwitch`'s root.** The root is the thing
+  that must stay transform-free (see the `ThemeSwitch` note below for what a transform there
+  breaks). Both menus scale-and-fade from the corner they are anchored to -- theme menu
+  `origin-top-right`, measured `transform-origin: 208px 0px`; voice menu `origin-top`, which
+  hangs directly under its control. Neither menu has `fixed` descendants, so scaling them is
+  safe. Under `prefers-reduced-motion` the menu appears at opacity 1 / `transform: none` and
+  is removed immediately on close -- element kept, motion gone.
 
 - **The bulk-action bar is `fixed`, and was in-flow for exactly one iteration.** Ticking a checkbox
   inserted a ~40px block above the list and pushed every row down — the shift this column was rebuilt
@@ -284,11 +332,43 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   back to an off-screen `<textarea>` + `execCommand('copy')` where `navigator.clipboard` is absent,
   which is the case on LAN over plain http.
 
-- **Cancel confirms; delete undoes. The asymmetry is deliberate.** A deleted voiceover can be put
-  back, so it is an undo toast. A cancelled generation cannot — the run stops and the partial audio is
-  discarded, so "undo" could only mean paying the whole render again. Hence an inline two-step, and
-  **only on a running job**: cancelling a queued one has spent no GPU time, so requiring two clicks
-  there would tax the cheap case to protect the expensive one.
+- **Every destructive action confirms AND undoes, and all three undos work the same way: by not
+  sending the request yet.** This note previously read "Cancel confirms; delete undoes. The
+  asymmetry is deliberate" — that asymmetry is gone by request. A voiceover delete, a voice delete
+  and now a **cancel** are all held for `UNDO_MS`; Undo simply cancels the timer.
+  **The obvious build for cancel was written first, measured, and thrown away.** Cancel immediately,
+  and let Undo resubmit through `POST /api/queue/{job_id}/retry` — which looks right, because
+  `retry_job` accepts a `canceled` job and still holds the full script. It does not work.
+  `POST /cancel` only moves the job to `canceling`; the worker reaches `canceled` whenever it next
+  escapes the chunk it is inside, and `retry_job` rejects everything in between. Every Undo pressed
+  inside the toast's own window returned *"Only a failed or canceled job can be retried."* — measured,
+  including with four retries 500ms apart. Widening the retry only trades a broken button for a slow
+  one, and even when it lands it buys a **fresh render of the whole script**, the partial audio having
+  already been discarded.
+  **Holding the cancel instead costs at most `UNDO_MS` of GPU on a job that was already running**, and
+  in exchange Undo means the generation was never interrupted: no resubmission, no lost chunks, no new
+  `job_id`, no new queue position. Verified against the server: `running` during the window, still
+  `running` with `attempt: 1` after Undo, `canceling` only once the window lapsed.
+  **`pendingCancels` is what makes the row disappear on the click**, and it is not optional — the job
+  really is still running, so the 1s queue poll puts the row straight back on the next tick without it.
+  Same shape as `pendingDeletes`, and filtered out of `active` for the same reason.
+  **The two-step confirms both stay**, against the usual argument that a confirm is the alternative to
+  an undo rather than its companion. The voices dialog's confirm is where "In use — queued voiceovers
+  will fail" is shown, which is information at decision time rather than friction; and the cancel
+  confirm is still **only on a running job**, since cancelling a queued one has spent no GPU time and
+  two clicks there would tax the cheap case to protect the expensive one.
+
+- **A voice delete is deferred client-side, exactly like a voiceover delete.** `DELETE
+  /api/presets/{id}` rewrites `presets.json` **and unlinks the reference clip**, so there is nothing
+  to restore after it fires; the undo works by not sending it. The voice is hidden immediately, and
+  the Undo puts it back **at its original index** (voices render in list order, and one reappearing
+  at the bottom reads as a different voice) and **restores the selection** if it was the selected
+  voice. Same residual hole as the voiceover case, stated so it is not later filed as a bug: close
+  the tab inside the undo window and `useFlushOnHide` sends the `DELETE` with `keepalive` — an
+  ordinary `fetch` started during unload is cancelled with the document, and without the flag the
+  voice returns on the next load.
+  `UNDO_MS` now lives in `frontend/src/constants.ts` rather than in `HistoryList`, because three
+  things read it: both deferred deletes and `UndoCountdown`'s ring.
 
 - **`QueueEntry` carries `preset_id`, and the busy-voice check uses it.** It was matched on
   `preset_name`, which marks the wrong voice as busy the moment two share a name — and renaming is
@@ -296,45 +376,43 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   delete confirmation says queued voiceovers will fail. The delete is still allowed: wanting a voice
   gone is a legitimate reason to accept that.
 
-- **The render estimate is `_JOB_OVERHEAD_S + chunks × median(seconds per chunk)`, and every part of
-  that was chosen by measurement.** It replaced a chars/second model that was wrong by a mean of 50%,
-  with the **rounded string the user reads wrong on 65% of jobs** — measured against this repo's own
-  `history.json`, which stores `estimated_s` beside `generation_s` for exactly this purpose. Now 20%
-  and 39%. Full leave-one-out table in `backend/main.py` above `TIMING_WINDOW`, and in
-  `docs/gpu-notes.md`.
-  **The obvious diagnosis was wrong, and the file says so to stop it being re-adopted.** Per-voice
-  *chars/second* spans 3.2× (7.27 on a 16.1s clip, 2.26 on a 40.0s one), which reads as "the estimate
-  is voice-blind". Per CHUNK those voices are 16.3s / 15.5s / 55.3s — **not ordered by clip length**,
-  and an explicit `a + b*ref_seconds` term made the model *worse* (34% mean, 117% worst). The spread
-  was mostly job-length mix: a voice used for short scripts looks slow per character because fixed
-  overhead dominates. The overhead term absorbs that; do not add a reference-length term on intuition.
-  Two traps worth keeping: **median, not mean** (22% vs 40% — resampled chunks and the cold
-  CUDA-graph run are outliers that drag an average), and a least-squares `a·frames + b·chunks` fit
-  that scores best (26%) but whose **seconds-per-frame coefficient is negative at every sample count**
-  — `frames` and `chunks` are collinear, so it is numerically good and physically nonsense.
-  Chunk count *is* voice-aware by construction, but note it is currently **latent**: with every clip
-  trimmed to `REF_TRIM_SECS` the budget lands at `ELISION_SAFE_CHUNK_CHARS` for all of them, so the
-  estimate only moves between voices for one whose clip forces smaller chunks.
-  `formatDuration` stays for ELAPSED time, which is measured; `approxDuration` is for the predicted
-  number and reports "about 25 min" rather than "24m 51s" because 20% error cannot support the second
-  form. It now survives only in the clock's `title`, the estimate having been removed from beside
-  Generate -- quoting a guess before someone commits reads as a promise. `/api/estimate` was already fetched on a 400ms debounce
-  and its answer discarded; displaying it adds no request.
+- **There is NO predicted generation time anywhere in the product, and re-adding one needs evidence.**
+  Two estimators shipped and both were retired. A chars/second model was wrong by a mean of 50%, with
+  the rounded string wrong on 65% of jobs. Its replacement —
+  `_JOB_OVERHEAD_S + chunks × median(seconds per chunk)` — scored 20% mean error against
+  `history.json`, which was a real improvement and still **not good enough in the way that mattered**:
+  measured on a 50-job batch, **12 of 12 completed jobs ran OVER, by 1.2×–2.5×, none under**.
+  The reason is structural, not a tuning miss. The model was fitted to minimise **mean absolute
+  error**, a symmetric metric, but overrun is not symmetric to the person waiting — finishing early is
+  invisible, finishing late reads as a broken promise. **A median is beaten by half of all jobs by
+  construction**, and the tail is fat because `_chunk_duration_is_sane` resamples a degenerate chunk up
+  to `CHUNK_ATTEMPTS` times while a median deliberately discards exactly those runs (measured p90
+  32.4s/chunk against p50 19.3s).
+  So the app reports **elapsed** time only, which is measured. `formatDuration` and `formatClock` stay;
+  `approxDuration` existed solely for the prediction and is gone. `generation_s` and `total_chunks` are
+  still written to every history entry — the raw material survives — but nothing consumes them.
+  **If you want to bring an estimate back**, read the model-selection table in `docs/gpu-notes.md`
+  first, and score candidates on **overrun rate**, not mean error. Two traps recorded there: a
+  least-squares `a·frames + b·chunks` fit scores best (26%) but its seconds-per-frame coefficient is
+  **negative at every sample count** because the two terms are collinear; and per-voice chars/second
+  spans 3.2× purely from job-length mix, which is not evidence that the estimate is voice-blind.
 
-- **The running row's clock is `elapsed / ~guess`, and the `~` is load-bearing.** The denominator is
-  `QueueEntry.estimated_s` — a prediction with 20% mean error — so it is marked as a guess rather than
-  presented as a deadline. **On overrun the denominator does NOT move**: a re-projection from
-  `chunks_done` would drift in both directions, which is exactly why `eta_s` was never shown (see
-  `useElapsed.ts`). The clock keeps counting and the colour changes instead — `is-running` (`--accent`,
-  matching the bar beside it) becomes `is-over` (`--danger-text`). Never clamp elapsed to the estimate;
-  a frozen clock beside a live bar reads as a hung job.
-  Three things that are easy to get wrong: the two classes are **mutually exclusive in the component**,
-  not layered, because they are equal-specificity single-class utilities and Tailwind emitted `is-over`
-  *first* — relying on source order would have silently inverted them. The overrun tint is gated on
-  `reachable`, because `useElapsed` freezes when contact is lost and a frozen clock past its estimate
-  is a statement about our knowledge, not about the job. And `.result-time` is **15ch**, not 14: the
-  added `~` is one more character, and the width is fixed in both directions so the preview beside it
-  never moves.
+- **The running row's clock shows ELAPSED time only, plus a pulsing dot.** It briefly read
+  `elapsed / ~guess` against `QueueEntry.estimated_s`; both the denominator and `is-over` (the tint
+  that fired once elapsed passed the guess) are gone with the estimate — "over" is undefined without
+  a prediction. `is-running` stays, so a running row's clock is still `--progress` amber against a
+  finished row's faint grey.
+  The working indicator is **VoicePicker's busy dot reused**, not a new spinner, and it sits in the
+  clock's already-reserved 1ch sign slot — the one `TransportTime` puts its minus in, empty on this
+  row and there purely to keep the digits column-aligned with a finished row's. So it costs **zero
+  layout**. It earns its place while the first chunk renders: the progress bar is still at zero then,
+  and a running row would otherwise look identical to a queued one.
+  It is gated on `prefers-reduced-motion`, because `--animate-pulse-soft` is a literal 1.4s and **not**
+  one of the tokens the reduced-motion block in `tokens.css` zeroes — the same trap that once let the
+  voice-picker dot pulse for whole generations. The element stays when reduced; only the motion goes.
+  `.result-time` went back to **14ch** when the `~` left, which is what a finished row's
+  `12:07 / 45:33` needs. Never clamp elapsed to anything; a frozen clock beside a live bar reads as a
+  hung job.
   **`.result-stamp` is 17ch, and the number comes from the LONGEST LOCALE FORM.** The timestamp is
   `toLocaleTimeString`, so on an `en-US` machine `14:32` is rendered `02:32 PM` and the dated form
   becomes `Sep 11, 02:32 PM` — **16 characters**, not 13. Sized against a 24-hour example it
@@ -430,10 +508,34 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   reuses and a retry mints a new one, so a retried failure is correctly a separate event.
   Failures use `duration: Infinity`; the row they leave behind carries the Retry.
   `theme` comes from `themeMode()` over our own nine-theme id, not sonner's default light -- three
-  of the five are dark. Surfaces are passed as CSS variables, not a className, because sonner sets
-  them on its own elements and a class would have to win a specificity fight on every future
-  version. **`richColors` is off**: it ships its own green and red, which would be the only two
+  of the five are dark. **The toasts are `unstyled` and wear the app's own classes** -- the
+  surface is `bg-surface-card` + `border-control`, the action is `ghost-btn`, the close is
+  `icon-btn`, and the *type* is carried by a leading icon rather than by a tinted border, since a
+  tinted border makes a routine success read as a warning. This note used to say the opposite: that
+  surfaces had to be passed as CSS *variables* because a className would have to win a specificity
+  fight against sonner's stylesheet on every future version. `unstyled` removes that stylesheet
+  from the contest, so the fight is not won -- it is not held.
+  **Two things that made this safe, both verified rather than assumed.** `unstyled` does **not**
+  cost the animation: sonner gates its APPEARANCE on `[data-styled='true']`, but zero of its
+  positioning, stacking, enter/exit, swipe or height-transition rules carry that attribute, so all
+  of it survives. And the one stacking rule that *does* require it
+  (`[data-front='false'][data-styled='true'] > *`, which dims the toasts behind the front one)
+  stops applying -- measured `childOpacity: 1` on all three of a three-toast stack -- but is
+  **invisible**, because the front toast is opaque and the ones behind it collapse to plain strips.
+  Do not replicate it on spec.
+  **The one place `unstyled` does NOT win is `description`, and the fix is an important modifier.**
+  `[data-sonner-toaster][data-sonner-theme='dark'] [data-description]` carries no `data-styled`
+  gate, and at three attribute selectors it beats a single utility class -- so the description came
+  out `rgb(232,232,232)` at 13.4:1, brighter than the muted tone intended, and the title lost its
+  lead. `text-muted!` restores it to 7.33:1. There is **no light-theme counterpart** to that rule,
+  which is why this was wrong in six themes and right in three.
+  **`richColors` is off**: it ships its own green and red, which would be the only two
   colours in the app `check_design_tokens.py` cannot see. Cost: 34.4 kB raw / 9.6 kB gzip.
+  The close button is `closeButton={false}` globally and opted into per-toast by the only two that
+  never dismiss themselves (`duration: Infinity`) -- the error toast and the job-failure toast.
+  Everything else auto-dismisses, and the undo toasts already have the action that is their whole
+  point; a second dismiss affordance beside Undo is noise. Before this it was global, and sonner's
+  default placement hung it **6px outside the toast on both axes**, straddling the corner.
   Relatedly, the elapsed-time span in `HistoryList` is **no longer `aria-live`** -- it announced a
   new time every second and said nothing at the finish. Sonner's own polite region replaced it.
 
@@ -674,6 +776,114 @@ hand-mirror (a blocking script cannot import a module and stay blocking); `check
 `index.html` for exactly that reason. localStorage carries the *choice* (`'system'` or a theme id); the
 attribute carries the *resolved* theme. Do not read the attribute as the source of truth — it cannot tell
 System-resolving-to-Studio from an explicit Studio.
+
+**The animated background is a WebGL shader, and three things keep it from being a liability.**
+`WebThreads.tsx` (adapted from reactbits, `ogl` as its only new dependency -- +51.1 kB raw /
++16.3 kB gzip) draws woven threads behind the whole app at `fixed inset-0 -z-10`.
+
+- **It stops while a voiceover is generating.** This shader and the TTS model share one GPU. The
+  vocoder is already capped to `DECODE_CHUNK_FRAMES=100` because a ~4s kernel tripped Windows' 2s
+  TDR watchdog and killed the CUDA context, and a persistent full-screen fragment shader is exactly
+  the contention that stretches kernel wall-time on a display-attached card. `anyRunning` from
+  `GenerationActivityContext` folds into the same `start()` gate as the IntersectionObserver and
+  `visibilitychange` checks, so the three compose instead of fighting. It holds its last frame; it
+  does not tear the context down.
+- **`pointer-events: none` is load-bearing, not tidiness.** The element covers the viewport, so
+  without it the canvas eats every click in the app. Verified by hit-testing three points: the
+  topmost element is `MAIN`, `H1` and `LI`, never `CANVAS`. That is also why the cursor effect
+  listens on **`window`** rather than on the canvas as the original does -- on a pointer-events:none
+  element those listeners are silently dead.
+- **It owns no colours.** `--thread-1/2/3` are derived in layer 2 of `tokens.css` from `--accent`,
+  `--accent-2-bright` and `--text-primary`, so all nine themes get a correct background with no new
+  raw value and no per-theme block, and a tenth theme would inherit one. They are read back through
+  `resolveThreadPalette()` in `theme.ts` -- **a probe element, not `getPropertyValue`**, which
+  returns the unevaluated `var()` chain that WebGL cannot parse. Same trap the waveform hit.
+  A **separate** probe from `resolveWavePalette` on purpose: widening that one changes the object
+  identity `WaveRibbon`'s `draw` callback depends on, and that dependency is the whole mechanism
+  repainting a *paused* ribbon. The cost is one extra style recalc per theme change, not per frame.
+- `prefers-reduced-motion` paints exactly one frame and never starts the loop -- an infinite rAF is
+  precisely what the `tokens.css` reduced-motion block cannot reach, since it only zeroes
+  `--fast/--base/--slow`. `dpr` is capped at **1.5**, not 2: it is a background, and the shader is
+  fragment-bound with a `pow()` per thread per pixel. A missing WebGL2 context is caught and the app
+  runs without it.
+- The shell root must stay **transform-free**, the same rule `ThemeSwitch` already carries: a
+  transform there would become the containing block for this `fixed` element and wrap it in a
+  stacking context.
+
+**The Voiceovers column's glass is painted on a PSEUDO-ELEMENT, and that is not a stylistic
+choice.** `backdrop-filter` makes an element the containing block for every `position: fixed`
+descendant -- and the bulk-action bar is a fixed child of `<section className="results">`. Putting
+the blur on `.results` itself re-anchors that bar to the section's box instead of the viewport,
+breaking both its `bottom-4` anchoring and the `x: '-50%'` centering that was fixed and measured at
+`centerOffset: 0.0px`. It is the same failure `ThemeSwitch`'s root already documents, and
+`backdrop-filter` creates a stacking context on top of it. A pseudo-element has no descendants, so
+it cannot become anyone's containing block. Verified after the change: bulk-bar shift 0/0/0 and
+`centerOffset: 0` at 700/1024/1440px.
+
+Being absolutely positioned, it also costs **zero layout**, which a wrapper `<div>` with padding and
+a border could not: row height 91.6px and list heights 716/670/538/470 at viewport 1100/900/768/700
+with `rootOverflow: 0` are all byte-identical to before. `z-index: -1` keeps it behind this
+section's own content but above the WebThreads canvas at `-10`, so the blur has something to blur.
+
+**`--glass-fill`'s alpha is a readability budget, and the honest worst case had to be measured, not
+assumed.** Compositing the fill over pure white -- the intuitive bound -- says 86% fails at 3.34:1
+and that even 92% fails. That bound is unreachable: a 16px blur averages the shader's thin bright
+cores away, and the brightest pixel actually produced under the panel on Studio is `rgb(28,31,38)`,
+barely above `--bg-card`. Measured against the real blurred backdrop with the section's own children
+hidden, 86% clears AA in all nine themes, worst case **4.94:1 (daylight, `--text-faint`)**;
+`--text-primary` never drops below 14.9:1.
+Two traps in taking that measurement, both hit: the crop must sit **inside** the panel and the
+**sonner toaster must be hidden** (it is portaled to `body`, so `.results > *` never reaches it) --
+otherwise the "brightest background pixel" is toast text, and every theme reports exactly 1.00:1
+because the sampled colour *is* the text colour. `--text-faint` is the binding token everywhere;
+`check_contrast.py` cannot see any of this, since it validates tokens rather than composed surfaces.
+
+**The blur sits over an animating canvas, and the existing mitigation carries it.** A
+`backdrop-filter` re-blurs whenever its backdrop changes, so the panel is re-blurring every frame the
+shader draws. It needs no separate gate: `WebThreads` already stops its rAF loop while `anyRunning`
+is true, which is exactly when the GPU is busy generating -- during a render the backdrop is static
+and the blur is effectively free.
+
+**`body`'s background is `transparent`, and that is what makes the background visible at all.**
+CSS paints a stacking context in a fixed order: the context's own background, then negative-z-index
+descendants, **then** in-flow block backgrounds. `body` is in-flow, so an opaque
+`body { background: var(--bg-base) }` paints straight over every `-z-10` element beneath it. The
+canvas rendered perfectly and was invisible in all nine themes, and three rounds of shader tuning
+were spent on it before the cause was found -- forcing `z-index: 500` on the container made pixels
+change immediately, which proved the shader was fine and the stacking was not. `html` still carries
+`background: var(--bg-base)` (it already did, for overscroll), and that is step one of the same
+context, i.e. below the canvas -- so the page colour is unchanged everywhere. **Do not put an opaque
+background back on `body`.**
+
+**Light themes paint pigment, not glow, and reuse the dark branch's own coverage.** Additive light
+on a near-white page is invisible; the published component re-derived its own coverage through
+`smoothstep(exp tone map)^2`, which at this shader's energy range collapsed to ~0.0005 alpha and
+rendered nothing on Daylight, Tape and Score -- a failure that hides on white rather than looking
+broken. The light branch now takes the same `clamp(gsum) * uOpacity` the dark branch uses and paints
+a darkened hue instead of a bright one. Both branches output **premultiplied** colour, because the
+renderer is `premultipliedAlpha: true`; returning a straight colour blends too light, which is again
+only obvious on the light themes.
+
+**The intensity numbers are measured, and they were wrong in BOTH directions first.** The published
+defaults (`falloff 0.62 / glow 0.016 / brightness 0.5 / opacity 0.34`) drew bright hairlines straight
+across the voiceover rows -- legible text with a lit wire through it. Damping that by eye then
+overshot into invisibility: measured as the mean per-pixel delta of the page with the canvas shown
+versus hidden, Studio sat at **0.55/255** with 6.5% of pixels changed by 3 or more, which is below
+the threshold of perception and read to the user as "the background isn't there".
+
+The current settings are `glow 0.024 / falloff 0.42 / thickness 1.7 / brightness 0.75 /
+opacity 0.82`, landing at a mean delta of **2.4-3.6/255** across dark and light themes. Two things
+worth keeping:
+- **Lower `falloff` is what makes a wash rather than a filament** -- it widens and softens the glow.
+  Reach for it before brightness when the threads look like wires.
+- **Light mode needs its own multiplier** (`* 0.16` inside the light branch). Dark pigment on a
+  near-white page shifts a pixel far more efficiently than additive glow on near-black: at one shared
+  opacity the dark themes measured 1.2/255 while Daylight was at 10.6 and looked muddy. One opacity
+  cannot serve both.
+- **Measure this with a with/without pixel diff, not by eye and not from a screenshot.** A screenshot
+  of a dark theme was misread as "the background is working" when it was the theme's own colours, and
+  the first-load run of any such probe reports zero because the canvas is not up yet -- reorder the
+  themes before believing a zero.
 
 **The canvas waveform no longer mirrors the palette by hand.** `WaveRibbon.tsx` used to carry three
 hardcoded colours. `resolveWavePalette()` in `theme.ts` now reads them through a one-off probe element:
@@ -992,13 +1202,33 @@ identifiers; they were made consistent deliberately and drift is a bug.
 "Clip" is the sharpest trap: it is right for the input recording and wrong for
 the output. `ClipPlayer` was renamed `VoiceoverPlayer` for exactly this reason.
 
-- **The desktop build binds `127.0.0.1`, not `0.0.0.0`, and that is load-bearing.** `backend/run.py`'s
-  `uvicorn.run` is loopback-only because a wildcard bind makes Windows Defender Firewall pop its "Allow
-  access / **Cancel**" alert the first time backend.exe runs -- and Cancel writes a *permanent Block rule*
-  for that exe path, after which the app can never start again and nothing in the UI can undo it. The
-  desktop build serves the API and the SPA from one origin, so it never needed the wildcard. LAN mode is a
-  different entrypoint (`start_server.bat` passes `--host 0.0.0.0`, on :8000) and is unaffected -- don't
-  "fix" either inconsistency, the bind or the port, by unifying them.
+- **The desktop build now binds `0.0.0.0`, reversing an earlier deliberate loopback-only bind.** This
+  note used to read "binds `127.0.0.1`, not `0.0.0.0`, and that is load-bearing". The requirement
+  changed -- the desktop build has to be reachable from other machines on the LAN -- and the two costs
+  the old note named did not go away, so they are mitigated rather than avoided. `PORT` stays **8731**;
+  `launcher.py` polls the same number and `scripts/check_desktop_port.py` is what stops them drifting.
+  **The firewall hazard is unchanged and is still unrecoverable from inside the app.** A listener on
+  every interface makes Windows Defender Firewall pop its "Allow access / **Cancel**" alert the first
+  time `backend.exe` runs, and Cancel writes a *permanent Block rule for that exe path*, after which the
+  app never starts again and nothing in the UI can undo it. The mitigation is to **pre-authorise the exe
+  before first launch**, from an elevated prompt, so the prompt is never shown and the unrecoverable
+  Cancel is never offered:
+  ```
+  netsh advfirewall firewall add rule name="Homegrown" dir=in ^
+    action=allow program="C:\Homegrown\backend\backend.exe" ^
+    protocol=TCP localport=8731 enable=yes profile=private
+  ```
+  `profile=private` deliberately: this should not be reachable from a public network profile.
+  **The app still has NO AUTHENTICATION, and a wildcard bind is what makes that matter.** `auth.py`'s
+  `get_current_user` returns the constant `"local-user"` for every request, so anyone on the network who
+  reaches :8731 has exactly the owner's rights -- they can create voices, submit jobs, and **permanently
+  delete** voices and voiceovers. Both deletes are irreversible on the server:
+  `DELETE /api/presets/{id}` unlinks the reference clip, and `DELETE /api/history/{id}` unlinks both the
+  `.wav` and the `.mp3`. The client-side Undo windows are client-side only and protect nobody else's
+  mistake. Bind this only on a trusted network. `frontend/index.html`'s `noindex` is not a control here
+  either -- it asks crawlers not to index and stops nobody who has the address.
+  LAN mode remains a separate entrypoint (`start_server.bat`, `--host 0.0.0.0` on :8000); the two ports
+  are still deliberately different and should not be unified.
 - **The desktop build's port is written twice and guarded once.** `PORT` in `backend/run.py` binds it;
   `PORT` in `launcher/launcher.py` polls it. The two are separately frozen exes with no import path
   between them, so `scripts/check_desktop_port.py` (run from `build.sh`'s pre-build checks) is the only

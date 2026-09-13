@@ -5,9 +5,9 @@ import VoicePicker from './VoicePicker'
 import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
 import GenerateButton from './GenerateButton'
-import { MAX_SCRIPT_CHARS } from '../constants'
+import { MAX_SCRIPT_CHARS, UNDO_MS } from '../constants'
 import { presetNameFromFile } from '../format'
-import { PlusIcon } from './Icons'
+import { AlertIcon, CheckIcon, PlusIcon, TrashIcon } from './Icons'
 import { Toaster, toast } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useJobToasts } from '../hooks/useJobToasts'
@@ -18,10 +18,13 @@ import { useTheme } from '../ThemeContext'
 import { themeMode } from '../theme'
 import { useBootStatus } from '../hooks/useBootStatus'
 import { useFileDrop } from '../hooks/useFileDrop'
+import { useFlushOnHide } from '../hooks/useFlushOnHide'
 import { useHotkeys } from '../hooks/useHotkeys'
 import { wakeBackend } from '../wake'
 import BootOverlay from './BootOverlay'
 import Modal from './Modal'
+import UndoCountdown from './UndoCountdown'
+import WebThreads from './WebThreads'
 import {
   ApiError,
   HISTORY_INITIAL_COUNT,
@@ -366,17 +369,110 @@ export default function StudioShell() {
     }
   }
 
-  async function handleDeletePreset(id: string) {
-    try {
-      await deletePreset(id)
-      setPresets((prev) => prev.filter((p) => p.id !== id))
-      setVoiceId((current) => (current === id ? null : current))
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to delete voice')
+  /** Held voice deletes, by preset id: the pending timer and the closure that
+   *  settles it on unload. A ref rather than state -- nothing renders from it,
+   *  and a re-render must not restart a running undo window. */
+  const voiceDeletes = useRef<Map<string, { timer: number; flush: () => void }>>(new Map())
+
+  /** Deleting a voice is DEFERRED behind an Undo toast, the same shape as a
+   *  voiceover delete in HistoryList -- and for the same reason: the server
+   *  route is irreversible. DELETE /api/presets/{id} rewrites presets.json and
+   *  unlinks the reference clip, so there is nothing to restore afterwards. A
+   *  real server-side undo would need a deleted_at flag, a restore route and a
+   *  way to un-unlink a file, which is a lot for a single-user local tool.
+   *
+   *  The voice is hidden immediately and the request held for UNDO_MS. The
+   *  two-step confirm in the dialog STAYS: unlike a plain yes/no it carries the
+   *  "In use -- queued voiceovers will fail" warning, which is information at
+   *  decision time rather than friction.
+   *
+   *  Failure mode, stated so it is not later filed as a bug: close the tab
+   *  inside the undo window and the flush below is what sends the DELETE. It
+   *  needs keepalive, because an ordinary fetch started during unload is
+   *  cancelled with the document -- without it the voice returns on reload.
+   *  Safe direction, real inconsistency. */
+  function handleDeletePreset(id: string) {
+    const doomed = presets.find((p) => p.id === id)
+    if (!doomed) return
+    const index = presets.findIndex((p) => p.id === id)
+    // Captured before the optimistic hide, or the restore below cannot tell
+    // "this voice was selected" from "nothing was selected".
+    const wasSelected = voiceId === id
+
+    setPresets((prev) => prev.filter((p) => p.id !== id))
+    setVoiceId((current) => (current === id ? null : current))
+
+    const settle = async (commit: boolean, unloading = false) => {
+      const held = voiceDeletes.current.get(id)
+      if (held === undefined) return // already settled by the other path
+      window.clearTimeout(held.timer)
+      voiceDeletes.current.delete(id)
+      if (!commit) {
+        // Back at its original position: presets render in list order and a
+        // voice reappearing at the bottom reads as a different voice.
+        setPresets((prev) => {
+          if (prev.some((p) => p.id === id)) return prev
+          const next = [...prev]
+          next.splice(Math.min(index, next.length), 0, doomed)
+          return next
+        })
+        if (wasSelected) setVoiceId(id)
+        return
+      }
+      if (unloading) {
+        void deletePreset(id, { keepalive: true }).catch(() => {})
+        return
+      }
+      try {
+        await deletePreset(id)
+      } catch (e) {
+        // The delete never happened, so put the voice back rather than leaving
+        // the list disagreeing with the server.
+        setPresets((prev) =>
+          prev.some((p) => p.id === id)
+            ? prev
+            : [...prev.slice(0, index), doomed, ...prev.slice(index)],
+        )
+        setError(e instanceof ApiError ? e.message : 'Failed to delete voice')
+      }
     }
+
+    voiceDeletes.current.set(id, {
+      timer: window.setTimeout(() => void settle(true), UNDO_MS),
+      flush: () => void settle(true, true),
+    })
+    toast(`${doomed.name} deleted`, {
+      duration: UNDO_MS,
+      icon: <TrashIcon size={15} />,
+      action: {
+        label: (
+          <span className="inline-flex items-center gap-1.5">
+            Undo
+            <UndoCountdown ms={UNDO_MS} />
+          </span>
+        ),
+        onClick: () => void settle(false),
+      },
+    })
   }
 
-  async function handleDeleteHistory(id: string) {
+  // Settle any held voice delete on the way out. Idempotent by construction:
+  // settle() returns early once its timer has been cleared, so pagehide and
+  // visibilitychange both firing costs nothing.
+  useFlushOnHide(() => {
+    for (const held of [...voiceDeletes.current.values()]) held.flush()
+  })
+
+  async function handleDeleteHistory(id: string, opts?: { unloading?: boolean }) {
+    // The page is going away with a delete still held behind its Undo window.
+    // keepalive so the request outlives the document -- a plain fetch here is
+    // cancelled and the voiceover comes back on the next load -- and skip the
+    // refresh and the error toast, both of which are pointless on a page that
+    // is leaving.
+    if (opts?.unloading) {
+      void deleteHistoryEntry(id, { keepalive: true }).catch(() => {})
+      return
+    }
     try {
       await deleteHistoryEntry(id)
       refreshHistory() // the effect above re-clamps the page if this emptied it
@@ -493,6 +589,11 @@ export default function StudioShell() {
 
   return (
     <div className="flex min-h-svh flex-col wide:h-svh wide:overflow-hidden">
+      {/* First child, and the shell root must stay transform-free: a transform
+          here would become the containing block for this fixed element and
+          create a stacking context around it -- the same pair of effects that
+          once let the search field paint over ThemeSwitch's open menu. */}
+      <WebThreads />
       {/* The wrapper exists only to be a positioning context for the theme
           control. It adds no height -- it contains just the h1, which keeps
           its own padding and hairline -- and it is not a flex row, so the
@@ -738,41 +839,68 @@ export default function StudioShell() {
           failure, so the error row below is never trapped behind it. */}
       {modelStatus === 'checking' && <BootOverlay boot={boot} elapsed={wakeMessage} />}
 
-      {/* Toasts. `theme` is derived from OUR nine-theme id, not left on
-          sonner's default "light": three of the five are dark, and a light
-          toast stack over Booth is the brightest thing on the screen.
-          themeMode() is the same mapping the pre-paint script in index.html
-          uses, so the two cannot disagree.
+      {/* Toasts. `theme` comes from OUR nine-theme id, not sonner's default
+          "light": six of the nine are dark, and a light toast stack over Booth
+          is the brightest thing on the screen. themeMode() is the same mapping
+          the pre-paint script in index.html uses, so the two cannot disagree.
 
-          The surface colours are handed over as CSS variables rather than
-          restyled with a className, because sonner sets them on its own
-          elements -- a class would have to win a specificity fight against
-          its stylesheet on every future version. These four are the documented
-          hooks. They resolve against :root, so they re-theme at runtime along
-          with everything else (see the @theme inline note in index.css).
+          `unstyled` drops sonner's OWN appearance styles, which is what lets
+          these be built from the app's utilities and tokens like every other
+          surface. This replaced a block of CSS variables that existed purely to
+          avoid a specificity fight with sonner's stylesheet -- with the
+          stylesheet out of the picture, classNames are simply the right tool.
+
+          It costs less than it sounds: sonner gates its APPEARANCE on
+          [data-styled='true'], but none of its animation or stacking rules
+          require that attribute. Enter/exit transforms, stacking, swipe to
+          dismiss and height transitions all still work.
 
           richColors is deliberately OFF. It ships its own green and red, which
           would be the only two colours in the app that check_design_tokens.py
           cannot see and therefore the only two that could drift from the
-          palette unnoticed. */}
+          palette unnoticed. Type is carried by the ICON instead -- and only by
+          the icon, because a tinted border makes a routine success look like a
+          warning.
+
+          closeButton is off HERE and switched on per-toast for the two that use
+          duration: Infinity (useErrorToast, and the failure toast in
+          useJobToasts). Everything else dismisses itself, and the undo toasts
+          have an action that is the entire point of them; a second dismiss
+          control beside Undo is noise. Sonner's default also hangs it 6px
+          outside the top-LEFT corner, measured. */}
       <Toaster
         theme={themeMode(theme)}
         position="bottom-right"
-        closeButton
+        gap={10}
+        icons={{
+          success: <CheckIcon size={15} />,
+          error: <AlertIcon size={15} />,
+        }}
         toastOptions={{
-          style: {
-            background: 'var(--bg-card)',
-            border: '1px solid var(--line-strong)',
-            color: 'var(--text-primary)',
+          unstyled: true,
+          classNames: {
+            toast:
+              'flex w-full items-start gap-2.5 rounded-md border border-control bg-surface-card px-3.5 py-3 text-[13px] leading-[1.45] text-ink shadow-(--shadow-menu)',
+            content: 'flex min-w-0 flex-1 flex-col gap-0.5',
+            title: 'text-[13px] font-medium text-ink',
+            // text-muted! -- the important modifier is load-bearing, and this is
+            // the one place `unstyled` does NOT win outright. Sonner gates its
+            // appearance on [data-styled='true'], but
+            // `[data-sonner-toaster][data-sonner-theme='dark'] [data-description]`
+            // carries no such gate, and at three attribute selectors it beats a
+            // single utility class. Measured before this: the description came
+            // out rgb(232,232,232) at 13.4:1 -- brighter than the muted tone it
+            // was meant to be, so the title lost its lead.
+            description: 'text-[12px] leading-[1.45] text-muted!',
+            // mt-px nudges the icon onto the title's optical baseline; the cap
+            // height of 13px text does not start at the top of its line box.
+            icon: 'mt-px flex size-[15px] flex-none items-center justify-center',
+            success: '[&_[data-icon]]:text-green',
+            error: '[&_[data-icon]]:text-danger',
+            actionButton: 'ghost-btn ml-2 h-7 flex-none px-2.5 text-[12px]',
+            closeButton: 'icon-btn ml-1 flex-none self-start',
           },
         }}
-        style={
-          {
-            '--normal-bg': 'var(--bg-card)',
-            '--normal-text': 'var(--text-primary)',
-            '--normal-border': 'var(--line-strong)',
-          } as React.CSSProperties
-        }
       />
 
       {dragging && (

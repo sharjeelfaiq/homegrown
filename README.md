@@ -215,13 +215,24 @@ while it is already running just reopens the tab; it never restarts a backend th
 If startup fails, the loader shows the backend's own error and a **Try again** button, and the backend's
 output is kept at `<install>/storage/backend.log`.
 
-**The desktop build listens on `127.0.0.1:8731` only** (`backend/run.py`) and is *not* reachable from other
-machines. Two deliberate choices there:
+**The desktop build listens on `0.0.0.0:8731`** (`backend/run.py`), so it *is* reachable from other
+machines on the network. That reverses an earlier loopback-only bind; two things come with it:
 
-- **Loopback, not `0.0.0.0`.** A wildcard bind makes Windows Defender Firewall show an "Allow access /
-  Cancel" alert on first run, and Cancel writes a permanent Block rule that leaves the app broken with no
-  way to recover from inside the app. For LAN access use the single-port mode above (`start_server.bat`),
-  which passes `--host 0.0.0.0` itself and is unaffected.
+- **The first run triggers a Windows Defender Firewall prompt, and Cancel is unrecoverable.** Cancel
+  writes a permanent Block rule for that exe path, after which the app never starts again and nothing in
+  the app can undo it. Pre-authorise the exe *before* the first launch, from an elevated prompt, and the
+  prompt never appears:
+
+  ```
+  netsh advfirewall firewall add rule name="Homegrown" dir=in ^
+    action=allow program="C:\Homegrown\backend\backend.exe" ^
+    protocol=TCP localport=8731 enable=yes profile=private
+  ```
+
+- **There is no authentication.** `auth.py`'s `get_current_user` returns a constant user, so anyone who
+  can reach :8731 has the owner's rights: they can create voices, and permanently delete voices and
+  voiceovers (both deletes unlink the underlying files and are irreversible). Run it only on a network
+  you trust.
 - **8731, not 8000.** 8000 belongs to dev (`dev.sh`) and to LAN mode. Sharing it meant the launcher's
   health probe could find a dev uvicorn already listening, conclude Homegrown was running, open the browser
   and never start `backend.exe` — leaving the user on a bare `{"detail": "Not Found"}`. The desktop build
@@ -359,10 +370,8 @@ Only one job runs at a time — one worker thread, one GPU lock.
 The voiceover being generated appears at once as the **first row of the Voiceovers column**, in the slot
 its finished self will occupy and laid out identically, with three swaps: the waveform becomes a progress
 bar (hairline ticks at the chunk boundaries, advancing smoothly between completions rather than jumping),
-the transport becomes a labelled **Cancel**, and the clock reads **elapsed / ~estimated** in amber
-— `1:12 / ~2:30`. The `~` is there because the second number is a guess. If the render runs past it
-the clock keeps counting and the guess stays put rather than being quietly revised; the time turns
-red instead, so an overrun reads as an overrun and not as a stuck widget.
+the transport becomes a labelled **Cancel**, and the clock counts **elapsed** time in amber, with a
+small pulsing dot beside it while work is in flight.
 
 The Generate button stays live throughout, so a second script submitted mid-run is queued rather than
 refused. Queued voiceovers are further rows above the finished ones, in processing order, and are
@@ -375,12 +384,12 @@ Elapsed over a fixed guess, rather than a live countdown: the backend's `eta_s` 
 worth watching. The denominator here is the estimate made once at submission and left alone. The **Generate** button stays a button and keeps its label throughout: progress
 belongs in the Voiceovers column, not on the control you press.
 
-**There is no estimate beside Generate.** One was shown there for a while and was removed: a figure
-quoted before you commit reads as a promise, and this one is a guess. The estimate appears instead
-where it is honest — as the `~2:30` denominator of the running row's clock, beside the elapsed time
-that is actually measuring it. It is `20s + chunks × the median seconds-per-chunk of your last 20
-renders`, wrong by a mean of 20% on this machine's real history against 50% for the character-based
-figure it replaced.
+**The app never predicts how long a render will take.** It reports elapsed time and chunk progress,
+both of which are measured. Two estimators were built and both were retired — the second was accurate
+to a 20% mean error and still ran *over* on 12 of 12 measured jobs, because a median is beaten by half
+of all jobs by construction and chunk resampling makes the tail worse. A number that is always beaten
+teaches you to ignore it, so it is gone rather than tuned. The reasoning and the measurements are in
+`docs/gpu-notes.md`.
 
 **A toast reports each job as it ends** — "Voiceover ready" with the voice name, or a failure toast that
 does not auto-dismiss. Transient errors elsewhere in the app are toasts too. Three notices stay inline
@@ -502,10 +511,9 @@ script -> chunk_text() -> per-chunk generate -> resample if degenerate -> trim e
   one voice on one machine is not a proof of absence. Numbers in `docs/gpu-notes.md`.
 - **No partial delivery.** You get audio when the whole job finishes; progress is chunk-level.
 
-Time estimates are `20s + chunks × median(seconds per chunk)` over the last 20 completed jobs, seeded from
-`history.json` at startup. Median rather than mean, because a resampled chunk or the first job after a
-restart are outliers that drag an average and not a middle. The queue survives a restart (`queue.json`), resuming from the *start* of an
-interrupted job.
+Nothing predicts the duration. `generation_s` and `total_chunks` are still recorded per voiceover, so
+the raw material for an estimate exists, but nothing reads them. The queue survives a restart
+(`queue.json`), resuming from the *start* of an interrupted job.
 
 ---
 

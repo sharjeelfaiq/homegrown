@@ -158,6 +158,23 @@
   }
 }
 
+/* The undo countdown ring, depleting over UNDO_MS.
+   
+   No shorthand in @theme above, unlike the other three: the duration is not a
+   constant here, it is UNDO_MS passed in from TypeScript as an inline
+   animation. Baking 7s into CSS would give the ring its own copy of a number
+   that lives in HistoryList, and the two would drift the first time anyone
+   retuned the undo window.
+   
+   The dasharray is set on the element from the same radius the SVG uses, so
+   this only has to move the offset from 0 to one full circumference
+   (50.265 at r=8). */
+@keyframes undo-sweep {
+  to {
+    stroke-dashoffset: 50.265;
+  }
+}
+
 /* ==== Shared control primitives ========================================
    These four are used at roughly a dozen call sites between them. Written
    as @utility rather than pasted inline at each one: repeating eight
@@ -452,6 +469,44 @@ body {
    desktop still has a Ctrl key, and a large tablet still does not. */
 @custom-variant coarse (@media (pointer: coarse));
 
+/* The Voiceovers column's glass surface.
+   
+   Painted on a PSEUDO-ELEMENT, and both of its properties are load-bearing.
+   
+   `backdrop-filter` makes an element the containing block for every
+   `position: fixed` descendant, and the bulk-action bar is a fixed child of
+   this section (HistoryList.tsx). Putting the blur on .results itself would
+   re-anchor that bar to the section's box instead of the viewport, breaking
+   its bottom-4 anchoring and the x: '-50%' centering that was measured at
+   0.0px -- the same failure ThemeSwitch's root already documents. A
+   pseudo-element has no descendants, so it cannot become anyone's containing
+   block.
+   
+   And being absolutely positioned it costs ZERO layout: the eight-row window,
+   the row height and the list heights at every viewport are untouched, which a
+   wrapper div with padding and a border could not have managed.
+   
+   z-index: -1 puts it behind this section's own content but still above the
+   WebThreads canvas at -10, so the blur has something to blur. */
+@utility results {
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    /* Bleeds past the content box so the panel reads as a card around the
+       column rather than a box clipped to the text. */
+    inset: -12px -14px;
+    z-index: -1;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--line);
+    background: var(--glass-fill);
+    backdrop-filter: blur(16px) saturate(1.06);
+    -webkit-backdrop-filter: blur(16px) saturate(1.06);
+    pointer-events: none;
+  }
+}
+
 @utility result-list {
   flex: 1 1 auto;
   min-height: 0;
@@ -584,7 +639,7 @@ body {
    generating row goes "Queued" (6 chars) to "0:07" (4) to "Cancelling…" (11).
    Hence the fixed width.
 
-   15ch, not a pixel guess: 1ch sign + "12:07 / ~45:33" is 15 characters, and
+   14ch, not a pixel guess: 1ch sign + "12:07 / 45:33" is 14 characters, and
    --font-mono (IBM Plex Mono) is a true monospace, so every glyph -- letters
    and the ellipsis included, not just the tabular digits -- shares one
    advance and ch measures it exactly in this element's own font. The earlier
@@ -597,7 +652,7 @@ body {
    preview. */
 @utility result-time {
   flex: none;
-  width: 15ch;
+  width: 14ch;
   padding: 0;
   font-size: 11px;
   color: var(--text-faint);
@@ -725,22 +780,6 @@ body {
   }
 }
 
-/* Past the estimate. The clock keeps counting and the denominator does NOT
-   move -- a re-projecting denominator was rejected for eta_s (see
-   useElapsed.ts) because it drifts in both directions and tells you nothing,
-   and reintroducing it here would be the same mistake in a new place. So the
-   pair goes `3:10 / ~2:30` and the colour is what says "over", rather than the
-   numbers being massaged until they agree.
-
-   --danger-text rather than --danger: this is a slower render, not a failure,
-   and it shares the tint with is-failed on purpose -- one "something is not
-   going to plan" colour in this column, not two. */
-@utility is-over {
-  & .result-time {
-    color: var(--danger-text);
-  }
-}
-
 /* Terminal and unrecoverable, so it is coloured like every other failure in
    the app rather than getting a state colour of its own -- --danger already
    means "this went wrong" on the error row and the delete button.
@@ -836,7 +875,17 @@ body {
 @layer base {
   body {
     margin: 0;
-    background: var(--bg-base);
+    /* Transparent, NOT --bg-base, and this is load-bearing for the WebThreads
+       background. CSS paints a stacking context in a fixed order: the context's
+       own background, then negative-z-index descendants, THEN in-flow block
+       backgrounds. body is in-flow, so an opaque body background paints over
+       every `-z-10` element beneath it -- the canvas rendered correctly and was
+       invisible, and forcing z-index: 500 on it was what proved the shader was
+       fine and the stacking was not.
+       html still paints var(--bg-base) (see the rule above), which is step one
+       of the same context and therefore below the canvas, so the page colour is
+       unchanged in every theme and the overscroll area still fills. */
+    background: transparent;
     color: var(--text-primary);
     font-family: var(--font-body);
     font-size: 15px;

@@ -70,6 +70,8 @@ export function useJobToasts(queue: QueueEntry[]): void {
         toast.error('Voiceover failed', {
           description: job.error || job.preset_name,
           duration: Infinity,
+          // The only way out of an Infinity toast. Off globally on the Toaster.
+          closeButton: true,
         })
       }
     }

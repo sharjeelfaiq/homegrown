@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { mediaUrl, presetDownloadUrl, type Preset } from '../api'
 import { PADDING_SAFE_MIN_CHARS } from '../constants'
 import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
 import Modal from './Modal'
 import ReferenceUpload from './ReferenceUpload'
@@ -72,6 +74,7 @@ export default function NewVoiceModal({
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const { setActiveAudio, releaseAudio } = useAudioActivity()
   const { runningPresetIds } = useGenerationActivity()
+  const reducedMotion = usePrefersReducedMotion()
 
   // Closing the dialog has to stop the clip too, or it keeps playing behind a
   // dismissed modal with no visible control to stop it.
@@ -113,8 +116,22 @@ export default function NewVoiceModal({
         {presets.length === 0 ? (
           <li className="grid h-full place-items-center text-[13px] text-faint">No voices yet.</li>
         ) : (
-          presets.map((preset) => (
-            <li key={preset.id} className="border-b border-hairline py-1 pl-2 last:border-b-0">
+          <AnimatePresence initial={false}>
+            {presets.map((preset) => (
+            // A create leaves this dialog OPEN on purpose, so the row that
+            // appears is the thing the user is already looking at -- the one
+            // place in the app where a row entrance is unambiguously about
+            // something they just did. Free on layout: voice-list reserves six
+            // row heights with `height`, not `max-height`, so the panel does
+            // not resize either way.
+            <motion.li
+              key={preset.id}
+              initial={reducedMotion ? false : { opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reducedMotion ? undefined : { opacity: 0, height: 0 }}
+              transition={{ duration: reducedMotion ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
+              className="overflow-hidden border-b border-hairline py-1 pl-2 last:border-b-0"
+            >
               <div className="flex min-h-9 items-center justify-between gap-3">
                 <InlineName
                   value={preset.name}
@@ -228,9 +245,10 @@ export default function NewVoiceModal({
                     </button>
                   </span>
                 )}
-              </div>
-            </li>
-          ))
+                </div>
+              </motion.li>
+            ))}
+          </AnimatePresence>
         )}
       </ul>
 

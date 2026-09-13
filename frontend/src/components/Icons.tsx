@@ -63,6 +63,19 @@ export function CheckIcon({ size = 14 }: IconProps) {
   )
 }
 
+/** Error/alert. A circle with a bang rather than the usual triangle: the
+ *  triangle reads as "caution, proceed carefully", and every use of this is
+ *  something that has already failed. */
+export function AlertIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v5.5" strokeLinecap="round" />
+      <path d="M12 16.5h.01" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function PlusIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -92,6 +105,18 @@ export function PauseIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none">
       <path d="M7 5h4v14H7Zm6 0h4v14h-4Z" />
+    </svg>
+  )
+}
+
+/** A stopped generation. A filled square, the transport counterpart to
+ *  PlayIcon and PauseIcon above -- the toast that uses it reports a cancel, so
+ *  it should read from the same vocabulary as the row's own transport rather
+ *  than borrowing the trash can, which means something irreversible here. */
+export function StopIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none">
+      <rect x="6" y="6" width="12" height="12" rx="1.5" />
     </svg>
   )
 }

@@ -109,9 +109,8 @@ Jobs process **one at a time** — single GPU, one worker thread, one lock.
 
 The voiceover being generated appears **immediately as the first row of the Voiceovers column**, laid out
 exactly like the finished row it will become — same editable name, same voice — with three swaps: the
-waveform is a progress bar, the transport is a labelled **Cancel**, and the clock reads
-**elapsed / ~estimated** (`1:12 / ~2:30`) in amber, where a finished row's clock is grey. Run past the
-estimate and the clock turns red and keeps counting — the guess is not revised upward to save face.
+waveform is a progress bar, the transport is a labelled **Cancel**, and the clock counts **elapsed**
+time in amber (a finished row's clock is grey), with a small pulsing dot while work is in flight.
 Download and re-queue are absent until there is something to download.
 
 **You can queue more while one runs.** The Generate button stays live — type another script, change
@@ -121,11 +120,10 @@ and they are **purple** where the one being generated is amber: an empty bar and
 instead of a filling bar and a ticking clock. When the running one finishes, the next promotes in place
 and turns amber. Cancel works on either — cancelling a queued voiceover leaves the running one alone.
 
-Elapsed against a fixed guess, never a live countdown: the backend's `eta_s` re-projects from
-`elapsed / chunks_done` every poll, so it moves in *both* directions as chunks land and watching it
-told you nothing. The `~2:30` beside the clock is the estimate made once, at submission, and left
-alone even when the render overruns it. The **Generate** button just says Generate,
-throughout — the Voiceovers column reports the work, so the button does not need to.
+Elapsed, never a countdown. There was briefly a `~2:30` guess beside the clock and a server-side
+`eta_s` behind it; the guess overran on every job measured and `eta_s` drifted in both directions as
+chunks landed, so both are gone. The **Generate** button just says Generate, throughout — the
+Voiceovers column reports the work, so the button does not need to.
 
 **Cancel** stops a running job after the current chunk, within about a second. On a **running** job it
 asks first — the button becomes `Stop it?` with **Stop** and **Keep going** — because cancelling
@@ -166,11 +164,10 @@ works. If the backend becomes unreachable — it crashed, the machine slept, the
 row with a **Retry** button appears above the script, and any in-flight row **stops its clock** rather
 than counting up against a process that may be gone.
 
-**Generate does not quote you a time.** It used to, and that was removed — a number given before you
-commit reads as a promise, and this one is a guess. You get it once the job is running, as the
-`~2:30` half of the row's clock, where the elapsed time beside it shows how the guess is holding up.
-It is `20s + chunks × the median seconds-per-chunk of your last 20 renders`, wrong by a mean of 20% on
-this machine's real history — the character-based figure it replaced was wrong by 50%.
+**Nothing tells you how long it will take, on purpose.** Two estimators were tried and both were
+retired: the better one was accurate to a 20% mean error and still overran on 12 of 12 measured jobs.
+What you get instead is measured — elapsed time on the running row, and a progress bar with a tick per
+chunk. See `docs/gpu-notes.md` if you want the numbers.
 
 **Each finished or failed job raises a toast** — "Voiceover ready" with the voice name, or a failure toast
 that stays until dismissed. Transient errors elsewhere are toasts too. Three notices stay inline because
@@ -246,11 +243,9 @@ restart.
   reference clip leaves in the context window, and chunks are size-balanced so there is no runt final
   chunk. A chunk whose audio comes out wildly longer or shorter than its text warrants is regenerated.
   See `README.md`'s "How generation works".
-- **Time estimates** are `20s + chunks × median(seconds per chunk)` over the last 20 completed jobs
-  (seeded from `history.json` on restart, so estimates are sane immediately, not just after the first
-  job of a session). Shown only as the denominator of the running row's clock, never before you
-  press Generate. The 20s is a fixed per-job cost — without it every short job under-predicted
-  badly. `/api/estimate` also carries the long-reference-clip `warning`.
+- **Nothing is predicted.** The running row counts elapsed seconds; the bar counts chunks. Both are
+  measured. `/api/estimate` still exists, but only for the chunk count and the long-reference-clip
+  warning.
 - **The queue survives a backend restart** — `queue.json` persists queued/in-flight jobs and resumes them
   (from the start of that job, not mid-chunk) on the next startup.
 - **The waveform** reflects real audio amplitude via the Web Audio API while something plays. Only one

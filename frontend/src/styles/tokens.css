@@ -295,6 +295,38 @@
   --wave-played: var(--accent-2-bright);
   --wave-playhead: color-mix(in srgb, var(--text-primary) 90%, transparent);
 
+  /* ==== Background threads =============================================
+     The three colours the WebThreads shader weaves between. Derived, like
+     --wave-* above and for the same reason: stated here, all nine themes get
+     a correct background with no per-theme block and no new raw value, and a
+     theme added later inherits one automatically.
+
+     They reuse the palette's existing roles rather than inventing a mood:
+     --thread-1 is identity (distinct in all nine themes), --thread-2 is the
+     audio half of the tonal pair, and --thread-3 is the shader's "hot core",
+     mixed into the brightest pixels -- so it has to be the near-white/
+     near-black end of the theme, exactly as --wave-playhead does, or it is
+     invisible on the three light themes.
+
+     Read back through the probe in theme.ts, NOT getPropertyValue: a custom
+     property holding a var() chain comes back unevaluated, which WebGL cannot
+     parse. Same trap the waveform hit. */
+  /* ==== Glass ==========================================================
+     The Voiceovers column's translucent fill, behind a backdrop blur.
+     Derived, so all nine themes get one and a tenth would inherit it.
+
+     The alpha is a READABILITY budget, not a style choice: whatever shows
+     through is whatever the background shader is painting, so the worst case
+     for text contrast is this fill composited over pure white. The percentage
+     below is the highest transparency at which every text token still clears
+     WCAG AA against that worst case, in every theme -- see the measurement in
+     CLAUDE.md. Lower it and the light themes fail first. */
+  --glass-fill: color-mix(in srgb, var(--bg-card) 86%, transparent);
+
+  --thread-1: var(--accent);
+  --thread-2: var(--accent-2-bright);
+  --thread-3: var(--text-primary);
+
   /* ==== Legacy aliases =================================================
      Older rules are written against these names. They are repointed onto
      the palette above rather than deleted, so a retheme lands everywhere at

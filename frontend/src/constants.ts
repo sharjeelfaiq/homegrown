@@ -22,3 +22,11 @@ export const REF_TRIM_SECS = 40
  * already carries, and the voices dialog is the one place a voice can be
  * inspected before it is used. */
 export const PADDING_SAFE_MIN_CHARS = 150
+
+/** How long a destructive action is held behind its Undo toast.
+ *
+ * Shared rather than per-component: two callers defer real work by this figure
+ * (a voiceover delete in HistoryList, a voice delete in StudioShell) and
+ * UndoCountdown draws its depleting ring from the same number. Three copies of
+ * 7000 would drift the first time anyone retuned the window. */
+export const UNDO_MS = 7000
