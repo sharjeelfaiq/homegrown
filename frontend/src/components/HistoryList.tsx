@@ -77,6 +77,10 @@ interface Props {
  * 60,000-character limit into ~750 chunks, so this end of the range is real. */
 const MAX_TICKS = 60
 
+/** Search terms stay intentionally short: unlike scripts, this is a quick
+ * client-side filter that is persisted and restored with the workspace. */
+const MAX_SEARCH_CHARS = 100
+
 /* The two-column layout, and with it the fixed-height scrolling Voiceovers
  * block. Mirrors the `@media (min-width: 1025px)` / `(max-width: 1024px)` pair
  * in index.css -- above it the list scrolls, below it the page does, and the two
@@ -827,7 +831,17 @@ export default function HistoryList({
   // clears it. The knock-on matters -- onSearchActiveChange fires on mount
   // with a restored query, which is what makes the parent load the whole
   // history; filtering only ever sees what has been fetched.
-  const [draft, setDraft] = usePersistedDraft('voiceoverSearch')
+  const [persistedDraft, setPersistedDraft] = usePersistedDraft('voiceoverSearch')
+  // Cap restored drafts too. Keeping the derived value here means an old,
+  // overlong localStorage value can neither render nor filter before the
+  // persistence effect below replaces it with its bounded equivalent.
+  const draft = persistedDraft.slice(0, MAX_SEARCH_CHARS)
+
+  useEffect(() => {
+    if (persistedDraft !== draft) setPersistedDraft(draft)
+  }, [draft, persistedDraft, setPersistedDraft])
+
+  const setDraft = (next: string) => setPersistedDraft(next.slice(0, MAX_SEARCH_CHARS))
   const reducedMotion = usePrefersReducedMotion()
   const searching = draft.trim() !== ''
 
@@ -1474,10 +1488,11 @@ export default function HistoryList({
             type="search"
             aria-keyshortcuts={`${MOD_ARIA}+F`}
             title={`Search voiceovers (${MOD_KEY}+F)`}
-            className="peer h-10 w-full rounded-sm border border-control bg-surface-raised pr-16 pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line coarse:pr-3"
+            className={`voiceover-search peer h-10 w-full rounded-sm border border-control bg-surface-raised ${draft === '' ? 'pr-16' : 'pr-3'} pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line coarse:pr-3`}
             placeholder="Search by name or voice…"
             aria-label="Search voiceovers by name or voice"
             value={draft}
+            maxLength={MAX_SEARCH_CHARS}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               e.stopPropagation()
@@ -1586,7 +1601,7 @@ export default function HistoryList({
       </AnimatePresence>
 
       {shown.length === 0 && active.length === 0 ? (
-        <p className="m-0 py-5 text-[13px] text-faint">
+        <p className="m-0 max-w-full break-all py-5 text-[13px] text-faint wide:min-h-0 wide:flex-1 wide:overflow-y-auto">
           {loading || hasMore
             ? // `hasMore` matters as much as `loading` here. With every fetched
               // row hidden by a pending delete, this branch renders while the
