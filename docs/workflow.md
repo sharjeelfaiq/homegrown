@@ -89,7 +89,7 @@ Style and Stability still exist in the backend and default to `natural`/`balance
 sends them.
 
 **The script is saved as you type** (`localStorage`), so a reload or a closed tab does not lose it.
-The re-queue wand offers an **Undo** when it replaces something you had written.
+The script-preview reuse control offers an **Undo** when it replaces something you had written.
 
 The same is true of everything else you type: the voiceovers **search box** keeps its query, and a
 **name** — a voiceover's or a voice's — is kept even if you reload while still typing it, without
@@ -125,11 +125,12 @@ Elapsed, never a countdown. There was briefly a `~2:30` guess beside the clock a
 chunks landed, so both are gone. The **Generate** button just says Generate, throughout — the
 Voiceovers column reports the work, so the button does not need to.
 
-**Cancel** stops a running job after the current chunk, within about a second. On a **running** job it
-asks first — the button becomes `Stop it?` with **Stop** and **Keep going** — because cancelling
-discards however much of the render is already done. A **queued** job cancels in one click; nothing
-has been spent on it yet. There is no pause: generation is serialised behind one GPU lock, so a
-paused job would stall everything queued behind it.
+**Cancel** stops a running job after the current chunk, within about a second. Clicking Cancel on either
+a **running** or **queued** row reveals compact tick/cross confirmation buttons. Confirming a running
+cancel sends it immediately, because the render cannot be paused and resumed. Confirming a queued cancel
+opens a seven-second **Undo** toast; the queued row remains visible until that timer commits, and Undo
+keeps it queued. There is no pause: generation is serialised behind one GPU lock, so a paused job would
+stall everything queued behind it.
 
 **A voiceover that fails stays on the list.** It turns red, reads `Failed`, and shows the backend's own
 reason in place of the script preview — hover it for the full message. It sorts below anything still
@@ -159,8 +160,9 @@ included. A job you cancel yourself does not linger — you already know it stop
 
 The voice dropdown stays usable while a job runs, so you can line up the next one.
 
-There is no queue list and no reorder control in the UI, although `POST /api/queue/reorder` exists and
-works. If the backend becomes unreachable — it crashed, the machine slept, the wifi dropped — an error
+Queued rows have up/down icon buttons between their status and cancel controls. They change queue order
+through `POST /api/queue/reorder`, with unavailable directions disabled. If the backend becomes unreachable
+— it crashed, the machine slept, the wifi dropped — an error
 row with a **Retry** button appears above the script, and any in-flight row **stops its clock** rather
 than counting up against a process that may be gone.
 
@@ -187,13 +189,13 @@ Finished jobs land in **Voiceovers** in the right-hand column, newest first.
 
 A **search box** sits under the heading, focused by **Ctrl/Cmd+F** — the shortcut is printed inside the
 field so you find it before pressing it. It filters as you type with no delay, keeps its query across
-a reload, and matches a voiceover's
+a reload, is limited to 100 characters, and matches a voiceover's
 **name** and the **voice** that spoke it. It deliberately does **not** search the script: a script runs to
 60,000 characters, so a common word matches nearly everything and the list is not narrowed. The whole
 search runs in the browser, because two of the things it matches are not on the server at all — a custom
 name is a `localStorage` override, and the default `Voiceover 27` comes from the row's position rather
-than being stored. While a search is running the full history is loaded and the in-progress rows are
-hidden, since an unfinished job is not in the history the filter reads.
+than being stored. While a search is running the full history is loaded; live rows are filtered by their
+voice name as well.
 
 The column is a **fixed window showing about eight rows**; the newest 20 load up front and scrolling to the bottom fetches ten
 more. There is no paginator
@@ -210,21 +212,20 @@ Each row is three lines:
    download filename, and the rename persists in `localStorage`. The field hugs its own text. A name typed
    into a row that is still generating survives a reload and carries over to the finished voiceover.
 2. **Play**, the waveform (which doubles as the seek bar — click or arrow-key), a **`0:12 / 1:06`** clock,
-   and the actions at the right, dimmed until you hover the row: **download**, **re-queue** (wand — pulls
-   that script and voice back into the script box), and **delete**. Click the clock's left half to switch
+   and the overflow actions at the right: **download** and **delete**. Click the clock's left half to switch
    it to time remaining (`-0:54`); the total on the right stays put, and the slot is a fixed width so
    nothing beside it shifts.
 3. The first words of the script, and on the right the time it was made — `14:32`, gaining a date
    once it is no longer today, with the full timestamp on hover. A row still generating shows when it
    was **sent**, which is the only indication of how long a queued job has been waiting.
 
-**Click the preview to copy that script** — a toast confirms it. Nothing expands. A copy glyph
-appears on the row as you hover it, and the full text sits in the tooltip. If you want to *edit* an
-old script instead, the re-queue wand pulls it into the compose box and offers an Undo if that
-replaced something you had written.
+**Click the preview to reuse that script and voice.** A wand glyph appears on hover; the action fills the
+compose box and offers Undo if it replaces text you had written. Nothing expands, and the full script
+remains available in the preview's tooltip.
 
-**Deleting is undoable.** The row goes immediately and a toast offers **Undo** for seven seconds; the
-delete is only sent when it expires. Close the tab inside that window and the row returns on reload.
+**Deleting is undoable.** The row stays visible while a toast offers **Undo** for seven seconds; the
+delete is sent only when it expires, then the history refresh removes it. Leaving the page in that
+window commits the delete with a keepalive request.
 
 **Select several** — the checkbox appears on hover, shift-click takes a range, and the checkbox in the
 heading takes everything currently on screen. A floating bar offers **Download** (one `.zip`) and

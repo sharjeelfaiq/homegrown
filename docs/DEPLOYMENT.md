@@ -94,7 +94,7 @@ Every terminal state surfaces as English text via `StudioShell`'s
 - **Transient network blip calling `/api/wake` itself** → not surfaced as an error — treated as "still starting" and retried on the next 3s tick, so a single flaky request doesn't fail the whole flow.
 
 In all error cases, `StudioShell` sets `modelStatus = 'down'` and shows the
-message in a status badge; `handleGenerateAll`'s own `wakeBackend()` call
+message in a status badge; `handleGenerate`'s own `wakeBackend()` call
 (the pre-Generate race guard) additionally surfaces the rejection as a
 user-facing error near the Generate button, and the button reverts from
 "Warming up the voice model..." to its normal disabled/enabled state — it

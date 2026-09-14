@@ -355,8 +355,8 @@ names, the instant you stop editing; and anything still unsaved is flushed when 
 That includes a name typed into a voiceover that is *still generating*: reload mid-render and the
 name is still there, and still lands on the finished voiceover. The script is kept in `localStorage`,
 so closing the tab or refreshing does not lose it — which is also why there is no "are you sure you want to leave" prompt.
-The re-queue wand, which replaces the box with an old script, offers an **Undo** when it overwrites
-something you had written.
+The script-preview reuse control, which replaces the box with an old script and voice, offers an **Undo**
+when it overwrites something you had written.
 
 Keyboard shortcuts: **Ctrl/Cmd+Enter** generates, **/** focuses the script, **Ctrl/Cmd+F** focuses the
 voiceovers search, **Escape** dismisses an error. `/` and `Ctrl+F` are shown as key caps on the controls
@@ -397,10 +397,12 @@ instead, because they describe a *condition* rather than an event and would be w
 still true: the model-down banner (which carries **Retry**), the CPU-fallback notice, and the
 long-reference-clip warning.
 
-**Cancel** stops a running job after the current chunk, within about a second. On a **running** job it
-asks first (`Stop it?` → Stop / Keep going), because a cancel throws away however much of the render
-is already done; a **queued** job cancels in one click, since no GPU time has been spent on it. There
-is no pause — a paused job would hold the GPU lock and stall the whole queue.
+**Cancel** stops a running job after the current chunk, within about a second. Clicking Cancel on either
+a **running** or **queued** row replaces it with compact tick/cross confirmation controls. Confirming a
+running cancel sends it immediately, because an in-flight render cannot be paused and resumed. Confirming
+a queued cancel opens a seven-second **Undo** toast instead; its row remains visible until that timer
+commits the cancellation, and Undo keeps it queued. There is no pause — a paused job would hold the GPU
+lock and stall the whole queue.
 
 A voiceover that **fails** stays visible rather than disappearing: the row turns red, reads `Failed`, and
 carries the backend's own error in place of the script preview, with the full text on hover. It sorts below
@@ -415,8 +417,9 @@ the backend clears them.
 
 The voice dropdown stays usable throughout, so you can line up the next voice while one job runs.
 
-There is no queue list and no reorder control in the UI, though `POST /api/queue/reorder` exists and works
-— see the API table below.
+Queued rows include **up/down** icon controls between their status and cancel controls. They reorder the
+queued jobs through `POST /api/queue/reorder`; the first and last queued rows disable the unavailable
+direction.
 
 ### Themes
 
@@ -439,12 +442,14 @@ like an error message, or a card that does not separate from the page.
 ### Voiceovers
 
 A **search box** sits under the heading, focused by `Ctrl/Cmd+F` (the shortcut is printed inside the
-field). It filters as you type, with no delay, keeps its query across a reload, and matches a
+field). It filters as you type, with no delay, keeps its query across a reload, limits queries to 100
+characters, and matches a
 voiceover's **name** and the **voice** that
 spoke it — not the script, since a 60,000-character script makes any common word match nearly everything.
 It runs entirely in the browser, because two of the things it searches are not on the server at all: a
 custom name is a `localStorage` override, and the default `Voiceover 27` is derived from the row's
-position. While a search is running, the whole history is loaded and the queue rows are hidden.
+position. While a search is running, the whole history is loaded; live rows are filtered by voice name
+just like completed rows.
 
 The adjacent **Filters** button opens a compact popover for voice, browser-local
 date range (today, last 7/30 days, or custom), duration, and generation status.
@@ -470,22 +475,20 @@ Each row is three lines:
    name typed while the voiceover is still generating survives a reload and carries over when it
    lands.
 2. Play, the waveform (which doubles as the seek bar), a `0:12 / 1:06` clock — click its left half to count
-   down the time remaining instead — and the actions at the right, dimmed until you hover the row:
-   download, re-queue (wand — pulls that script and voice back into the script box), and delete. The clock
+   down the time remaining instead — and the overflow actions at the right: download and delete. The clock
    occupies a fixed 14ch so nothing beside it shifts as it ticks.
 3. The first words of the script, and on the right the time it was generated (or, on a row still
    working, sent to generate) — `14:32`, with the date once it is no longer today and the full
    timestamp on hover.
 
-**Click the script preview to copy the whole script**, with a toast to confirm. Nothing opens. The
-row shows the first 80 characters and hovering it reveals a copy glyph; the full text is also in the
-native tooltip. 80 matches what the backend truncates `text_preview` to, so a voiceover does not
-visibly gain characters at the moment it finishes. To *edit* an old script rather than copy it, the re-queue wand pulls it back into the
-compose box (and offers an Undo if that replaced something).
+**Click the script preview to reuse that script and voice.** The preview carries a wand affordance on
+hover and replaces the compose box, offering Undo if it overwrites text. The row shows the first 80
+characters; its full text remains in the native tooltip. 80 matches the backend's `text_preview` cut, so
+a voiceover does not visibly gain characters at the moment it finishes.
 
-**Deleting a voiceover is undoable.** The row disappears at once and a toast offers **Undo** for
-seven seconds; the request is only sent when that expires. One consequence worth knowing: if you
-close the tab inside that window the delete never happens and the row comes back on reload.
+**Deleting a voiceover is undoable.** The row remains visible while the toast offers **Undo** for seven
+seconds; the request is only sent when that expires, then the history refresh removes the row. Leaving
+the page during that window commits the delete with a keepalive request.
 
 **Select rows** with the checkbox that appears on hover, **shift-click** for a range, or use the
 checkbox in the `VOICEOVERS` heading to take everything on screen — with a search running that means

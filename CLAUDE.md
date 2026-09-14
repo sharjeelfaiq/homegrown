@@ -182,16 +182,16 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   satisfies the same requirement *and* stops a failed upload growing the panel, which had been the
   one remaining thing that could shift the fixed-height voices dialog.
 
-- **Deleting a voiceover is DEFERRED on the client, not soft-deleted on the server.** The click hides
-  the row and holds the request for `UNDO_MS` (7s) behind an Undo toast; the backend's
+- **Deleting a voiceover is DEFERRED on the client, not soft-deleted on the server.** The row stays
+  visible while the request is held for `UNDO_MS` (7s) behind an Undo toast; the backend's
   `DELETE /api/history/{id}` is unchanged and still irreversible — it rewrites `history.json` and
   unlinks both the `.wav` and the `.mp3`. A real server-side undo would need a `deleted_at` flag, a
   restore route, a purge policy and a way to un-unlink files, which is a lot for a single-user local
-  tool. **The failure mode, so it is not later found as a bug:** close the tab inside the undo window
-  and the `DELETE` never fires, so the row returns on reload. Safe direction, real inconsistency.
+  tool. Leaving the page inside the Undo window commits the delete with a keepalive request, so the
+  server-side action is not silently lost.
   `removeFileName` is deferred with it, or an Undo would restore the row under its default
-  `Voiceover N` instead of its custom name. Pending ids are filtered **after** numbering, with the
-  search — same trap, same fix.
+  `Voiceover N` instead of its custom name. The history refresh removes the row only after the held
+  delete is committed.
 
 - **Rows animate OUT, not IN -- and the pending rows are the exception.** framer-motion
   (already a dependency) drives all of it; there are no new CSS classes, so
@@ -256,14 +256,16 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   `MAX_SCRIPT_CHARS` silently. Restoring it removes the need for a "Leave site?" prompt guarding
   something already safe. Debounced (400ms) because the naive version serialises the whole script per
   keystroke, and restored in the `useState` initialiser rather than an effect — an effect renders an
-  empty box first, which reads as losing the script and then finding it. The re-queue wand now offers
-  an **Undo** instead of silently overwriting a typed script; a confirm would tax every re-queue to
+  empty box first, which reads as losing the script and then finding it. The script-preview reuse control
+  offers an **Undo** instead of silently overwriting a typed script; a confirm would tax every reuse to
   protect the rare one, and `window.confirm` is already rejected elsewhere in this app.
 
 - **Everything the user types survives an immediate reload, and `useFlushOnHide` is what closes the
   gap in each case.** Four stores, four different holes, one primitive:
   `homegrown-script-draft` and `voiceoverSearch` (`usePersistedDraft`), `historyFileNames` and
   `pendingVoiceoverNames` (`usePersistedRecord`).
+  `voiceoverSearch` is additionally clamped to `MAX_SEARCH_CHARS` (100) on input and restoration, so an
+  old localStorage value cannot render or filter beyond the field's limit.
   **The debounce used to eat the last edit.** `usePersistedDraft`'s timeout cleanup cancelled the
   pending write without performing it, so a reload inside the 400ms window discarded everything typed
   since the previous flush — precisely the case the persistence exists for. It now writes on the way
@@ -302,13 +304,6 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   download. Names are de-duplicated inside the archive (`name (2).mp3`), or two voiceovers called the
   same thing silently overwrite each other and the user gets fewer files than they selected.
 
-- **`navigator.clipboard` DOES NOT EXIST in the deployment this ships in.** It needs a secure
-  context; LAN mode serves the app from `http://<lan-ip>:8000`, which is not one, so it is
-  `undefined` for every device that is not this machine. `useCopyToClipboard` feature-detects and
-  falls back to an off-screen `<textarea>` + `document.execCommand('copy')` — off-screen rather than
-  `display: none`, because an unrendered element cannot be selected and the selection *is* the
-  mechanism. It returns a boolean so the caller never claims a success that did not happen.
-
 - **Selecting rows: `shown`-indexed ranges, `shown`-scoped select-all.** Shift-click fills the range
   between two positions in `shown` (what is on screen after the filter), not in `history` — the same
   indices in the unfiltered array are different voiceovers, verified against the real store. A
@@ -317,46 +312,27 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   but now filtered out stay selected rather than being silently dropped. `indeterminate` is a DOM
   property with no HTML attribute, so it is set through a ref.
 
-- **The script preview COPIES; it does not expand.** It was an accordion for one round — clicking
-  unfolded the full script with a `Copy script` button inside a `max-h-[180px]` scroller. That made
-  the common intent, getting the script out, two clicks and a layout change to reach a button that
-  was always the point. Clicking now copies and raises a toast, and `ChevronIcon` went with the
-  expander rather than being left as an unused export.
-  Two things this restored: **rows are uniform height again** (measured 86.8px for a one-word and a
-  170-character script alike), which the eight-row window
-  (`max-height: calc(8 * var(--result-row-h) + 12px)`) assumes; and `title={entry.text}` is back,
-  since with no in-place reader the native tooltip is the only way to see past `PREVIEW_CHARS`.
-  (That was 96 when this was written and is 80 now — see the one-preview-length note below;
-  the number is stated once, there, so this reads it rather than restating it.)
-  **Copy works in every deployment mode**, unlike *reading* the clipboard: `useCopyToClipboard` falls
-  back to an off-screen `<textarea>` + `execCommand('copy')` where `navigator.clipboard` is absent,
-  which is the case on LAN over plain http.
+- **The script preview REUSES; it does not expand.** It is the direct route to placing that completed
+  voiceover's script and voice back in the composer, with the same Undo protection as any script
+  replacement. The wand affordance appears on hover; `title={entry.text}` remains the in-place way to
+  inspect the full script.
+  `title={entry.text}` is the in-place way to see past `PREVIEW_CHARS`. Every generated and pending
+  row reserves a `min-h-7` action line: the normal Cancel button, queued up/down controls, and
+  tick/cross confirmation controls therefore cannot change row height or shift the fixed window.
+- **Voiceover cancellation intentionally differs by state.** Clicking Cancel on a running or queued row
+  reveals tick/cross icon buttons without changing the reserved action-line height. Confirming a
+  **running** cancellation sends `POST /api/queue/{job_id}/cancel` immediately: there is no resumable
+  model state, and a paused job would monopolise the GPU lock. Confirming a **queued** cancellation
+  starts the `UNDO_MS` toast instead. `pendingCancels` keeps that queued row visible and disables its
+  controls until Undo restores it or the timer commits the request. This is a real Undo because a queued
+  job has not started. Voice and completed-voiceover deletes are likewise deferred, but their row
+  visibility differs: completed voiceovers remain in the list until the commit refresh; voices are
+  hidden and restored at their original position on Undo.
 
-- **Every destructive action confirms AND undoes, and all three undos work the same way: by not
-  sending the request yet.** This note previously read "Cancel confirms; delete undoes. The
-  asymmetry is deliberate" — that asymmetry is gone by request. A voiceover delete, a voice delete
-  and now a **cancel** are all held for `UNDO_MS`; Undo simply cancels the timer.
-  **The obvious build for cancel was written first, measured, and thrown away.** Cancel immediately,
-  and let Undo resubmit through `POST /api/queue/{job_id}/retry` — which looks right, because
-  `retry_job` accepts a `canceled` job and still holds the full script. It does not work.
-  `POST /cancel` only moves the job to `canceling`; the worker reaches `canceled` whenever it next
-  escapes the chunk it is inside, and `retry_job` rejects everything in between. Every Undo pressed
-  inside the toast's own window returned *"Only a failed or canceled job can be retried."* — measured,
-  including with four retries 500ms apart. Widening the retry only trades a broken button for a slow
-  one, and even when it lands it buys a **fresh render of the whole script**, the partial audio having
-  already been discarded.
-  **Holding the cancel instead costs at most `UNDO_MS` of GPU on a job that was already running**, and
-  in exchange Undo means the generation was never interrupted: no resubmission, no lost chunks, no new
-  `job_id`, no new queue position. Verified against the server: `running` during the window, still
-  `running` with `attempt: 1` after Undo, `canceling` only once the window lapsed.
-  **`pendingCancels` is what makes the row disappear on the click**, and it is not optional — the job
-  really is still running, so the 1s queue poll puts the row straight back on the next tick without it.
-  Same shape as `pendingDeletes`, and filtered out of `active` for the same reason.
-  **The two-step confirms both stay**, against the usual argument that a confirm is the alternative to
-  an undo rather than its companion. The voices dialog's confirm is where "In use — queued voiceovers
-  will fail" is shown, which is information at decision time rather than friction; and the cancel
-  confirm is still **only on a running job**, since cancelling a queued one has spent no GPU time and
-  two clicks there would tax the cheap case to protect the expensive one.
+- **Queued rows own their reorder controls.** The up/down icon buttons sit between `.result-time` and
+  the cancel strip. `moveQueuedJob` sends the complete ordered list of queued ids to
+  `POST /api/queue/reorder`; the backend validates that it is exactly the caller's pending jobs and
+  preserves other users' slots. The first/last direction and all buttons during a reorder are disabled.
 
 - **A voice delete is deferred client-side, exactly like a voiceover delete.** `DELETE
   /api/presets/{id}` rewrites `presets.json` **and unlinks the reference clip**, so there is nothing
@@ -475,8 +451,8 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   React removes the element — a detached media element keeps playing in Chrome. So a playing
   voiceover whose row disappeared went on playing with no transport anywhere to stop it, while
   `AudioActivityContext` still held it as the active element and `AudioEngine` stayed attached to a
-  node no longer in the document. Two ways to reach it, both added late: **deleting** a voiceover
-  (the undo-delete hides the row at once) and **typing a search** that filters the playing row out.
+  node no longer in the document. Two ways to reach it are a **committed delete** (after its Undo
+  window) and **typing a search** that filters the playing row out.
   Pause BEFORE release, and let the release be a no-op when another row has already claimed the slot
   — `releaseAudio` ignores a non-current element on purpose, which is how a superseded element's
   late `pause` event is discarded, and the cleanup must not fight that.

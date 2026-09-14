@@ -107,10 +107,10 @@ python scripts/build_splash.py --check
 cd frontend && npm install && npm run lint && cd ..
 ```
 
-`npm run lint` reports **four** pre-existing `react(only-export-components)`
-warnings — one each in `AudioActivityContext.tsx` and
-`GenerationActivityContext.tsx`, and two in `ThemeContext.tsx`. Those are
-expected. Anything else is new.
+`npm run lint` may report `react(only-export-components)` Fast Refresh warnings
+for context/provider modules and `VoiceoverFilters.tsx`. They are existing
+warnings from exporting hooks or helpers alongside components; treat any new
+lint error or warning outside that known class as a build issue.
 
 `npm run build` is the typecheck (`tsc -b && vite build`); step 4 runs it.
 
