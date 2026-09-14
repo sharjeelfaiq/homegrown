@@ -26,7 +26,7 @@ import { wakeBackend } from '../wake'
 import BootOverlay from './BootOverlay'
 import Modal from './Modal'
 import UndoCountdown from './UndoCountdown'
-import WebThreads from './WebThreads'
+import CursorGrid from './CursorGrid'
 import {
   ApiError,
   HISTORY_INITIAL_COUNT,
@@ -648,7 +648,21 @@ export default function StudioShell() {
           here would become the containing block for this fixed element and
           create a stacking context around it -- the same pair of effects that
           once let the search field paint over ThemeSwitch's open menu. */}
-      <WebThreads />
+      <CursorGrid
+        color="var(--accent)"
+        cellSize={70}
+        radius={140}
+        falloff="smooth"
+        holdTime={400}
+        fadeDuration={800}
+        lineWidth={1.2}
+        maxOpacity={0.68}
+        fillOpacity={0.035}
+        gridOpacity={0.055}
+        cellRadius={0}
+        clickPulse
+        pulseSpeed={600}
+      />
       {/* The wrapper exists only to be a positioning context for the theme
           control. It adds no height -- it contains just the h1, which keeps
           its own padding and hairline -- and it is not a flex row, so the
@@ -670,7 +684,7 @@ export default function StudioShell() {
             identity earns its keep. Large text, so the 3:1 non-text bar applies
             rather than 4.5:1; check_palette.py holds every theme's accent above
             that against all three surfaces. */}
-        <h1 className="border-b border-hairline px-(--gutter) py-[25px] text-center leading-none">
+        <h1 className="px-(--gutter) py-[25px] text-center leading-none">
           <ParticleText
             text="HOMEGROWN"
             trigger="hover"

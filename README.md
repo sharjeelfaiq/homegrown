@@ -610,6 +610,17 @@ Environment overrides:
 
 ---
 
+## Interface background
+
+The studio uses a Canvas 2D CursorGrid behind its surfaces. Its static lattice takes its colour from
+each active theme's `--accent`; pointer movement briefly illuminates nearby cells and primary clicks
+emit a pulse, including when the click lands on a control. The canvas is always `pointer-events: none`,
+so it never intercepts the UI, and the same feedback remains available for reduced-motion users.
+
+It caps device-pixel-ratio at 2, redraws on resize, and only keeps an animation frame alive while a
+highlight or pulse is active. Theme updates resolve `var(--accent)` to RGB before Canvas draws, so all
+nine themes update immediately.
+
 ## Known limitations
 
 - **No accounts.** `auth.py`'s `get_current_user` returns the constant `"local-user"`; presets and history

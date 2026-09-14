@@ -526,7 +526,7 @@ body {
    wrapper div with padding and a border could not have managed.
    
    z-index: -1 puts it behind this section's own content but still above the
-   WebThreads canvas at -10, so the blur has something to blur. */
+   CursorGrid canvas at -10, so the blur has something to blur. */
 @utility results {
   position: relative;
 
@@ -1002,13 +1002,12 @@ body {
 @layer base {
   body {
     margin: 0;
-    /* Transparent, NOT --bg-base, and this is load-bearing for the WebThreads
+    /* Transparent, NOT --bg-base, and this is load-bearing for the CursorGrid
        background. CSS paints a stacking context in a fixed order: the context's
        own background, then negative-z-index descendants, THEN in-flow block
        backgrounds. body is in-flow, so an opaque body background paints over
        every `-z-10` element beneath it -- the canvas rendered correctly and was
-       invisible, and forcing z-index: 500 on it was what proved the shader was
-       fine and the stacking was not.
+       invisible; the fixed layer was correct, but painted underneath body.
        html still paints var(--bg-base) (see the rule above), which is step one
        of the same context and therefore below the canvas, so the page colour is
        unchanged in every theme and the overscroll area still fills. */

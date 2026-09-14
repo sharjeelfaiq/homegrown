@@ -748,38 +748,22 @@ preference, or a theme id); the attribute carries the *resolved* theme. Do not r
 source of truth — it cannot tell System-resolving-to-Studio from an explicit Studio. The UI deliberately
 only exposes explicit theme ids even though the model continues to resolve System.
 
-**The animated background is a WebGL shader, and three things keep it from being a liability.**
-`WebThreads.tsx` (adapted from reactbits, `ogl` as its only new dependency -- +51.1 kB raw /
-+16.3 kB gzip) draws woven threads behind the whole app at `fixed inset-0 -z-10`.
+**The background is a Canvas 2D CursorGrid.** `CursorGrid.tsx` sits at `fixed inset-0 -z-10` and
+uses the theme's sole identity token, `var(--accent)`. A probe element resolves that token to an
+actual RGB value before Canvas draws; observing `<html>`'s theme attributes refreshes it immediately
+after a theme switch. Do not reintroduce per-theme grid colours or a separate grid palette.
 
-- **It stops while a voiceover is generating.** This shader and the TTS model share one GPU. The
-  vocoder is already capped to `DECODE_CHUNK_FRAMES=100` because a ~4s kernel tripped Windows' 2s
-  TDR watchdog and killed the CUDA context, and a persistent full-screen fragment shader is exactly
-  the contention that stretches kernel wall-time on a display-attached card. `anyRunning` from
-  `GenerationActivityContext` folds into the same `start()` gate as the IntersectionObserver and
-  `visibilitychange` checks, so the three compose instead of fighting. It holds its last frame; it
-  does not tear the context down.
-- **`pointer-events: none` is load-bearing, not tidiness.** The element covers the viewport, so
-  without it the canvas eats every click in the app. Verified by hit-testing three points: the
-  topmost element is `MAIN`, `H1` and `LI`, never `CANVAS`. That is also why the cursor effect
-  listens on **`window`** rather than on the canvas as the original does -- on a pointer-events:none
-  element those listeners are silently dead.
-- **It owns no colours.** `--thread-1/2/3` are derived in layer 2 of `tokens.css` from `--accent`,
-  `--accent-2-bright` and `--text-primary`, so all nine themes get a correct background with no new
-  raw value and no per-theme block, and a tenth theme would inherit one. They are read back through
-  `resolveThreadPalette()` in `theme.ts` -- **a probe element, not `getPropertyValue`**, which
-  returns the unevaluated `var()` chain that WebGL cannot parse. Same trap the waveform hit.
-  A **separate** probe from `resolveWavePalette` on purpose: widening that one changes the object
-  identity `WaveRibbon`'s `draw` callback depends on, and that dependency is the whole mechanism
-  repainting a *paused* ribbon. The cost is one extra style recalc per theme change, not per frame.
-- `prefers-reduced-motion` paints exactly one frame and never starts the loop -- an infinite rAF is
-  precisely what the `tokens.css` reduced-motion block cannot reach, since it only zeroes
-  `--fast/--base/--slow`. `dpr` is capped at **1.5**, not 2: it is a background, and the shader is
-  fragment-bound with a `pow()` per thread per pixel. A missing WebGL2 context is caught and the app
-  runs without it.
+- The faint lattice is drawn once at rest. A requestAnimationFrame loop runs only while a pointer
+  highlight is fading or a primary-click pulse is expanding, then stops. It deliberately remains
+  interactive under `prefers-reduced-motion`; the interaction is small, direct feedback rather than
+  decorative autoplay. Canvas DPR is capped at 2 and a `ResizeObserver` redraws it after viewport
+  changes.
+- **`pointer-events: none` is load-bearing.** The canvas covers the viewport, so it listens for
+  `pointermove` and `pointerdown` on `window`; controls remain normal hit targets while their hovers
+  and primary clicks still light the grid. Cleanup must cancel the frame, disconnect both observers,
+  and remove both listeners.
 - The shell root must stay **transform-free**, the same rule `ThemeSwitch` already carries: a
-  transform there would become the containing block for this `fixed` element and wrap it in a
-  stacking context.
+  transform would become the containing block for this fixed layer and create a stacking context.
 
 **The Voiceovers column's glass is painted on a PSEUDO-ELEMENT, and that is not a stylistic
 choice.** `backdrop-filter` makes an element the containing block for every `position: fixed`
@@ -794,7 +778,7 @@ it cannot become anyone's containing block. Verified after the change: bulk-bar 
 Being absolutely positioned, it also costs **zero layout**, which a wrapper `<div>` with padding and
 a border could not: row height 91.6px and list heights 716/670/538/470 at viewport 1100/900/768/700
 with `rootOverflow: 0` are all byte-identical to before. `z-index: -1` keeps it behind this
-section's own content but above the WebThreads canvas at `-10`, so the blur has something to blur.
+section's own content but above the CursorGrid canvas at `-10`, so the blur has something to blur.
 
 **`--glass-fill`'s alpha is a readability budget, and the honest worst case had to be measured, not
 assumed.** Compositing the fill over pure white -- the intuitive bound -- says 86% fails at 3.34:1
@@ -809,52 +793,16 @@ otherwise the "brightest background pixel" is toast text, and every theme report
 because the sampled colour *is* the text colour. `--text-faint` is the binding token everywhere;
 `check_contrast.py` cannot see any of this, since it validates tokens rather than composed surfaces.
 
-**The blur sits over an animating canvas, and the existing mitigation carries it.** A
-`backdrop-filter` re-blurs whenever its backdrop changes, so the panel is re-blurring every frame the
-shader draws. It needs no separate gate: `WebThreads` already stops its rAF loop while `anyRunning`
-is true, which is exactly when the GPU is busy generating -- during a render the backdrop is static
-and the blur is effectively free.
+**The blur sits over a mostly static canvas.** `CursorGrid` leaves only its faint lattice at rest and
+runs its short animation loop only for pointer fades and click pulses, keeping backdrop re-blurs brief.
 
 **`body`'s background is `transparent`, and that is what makes the background visible at all.**
 CSS paints a stacking context in a fixed order: the context's own background, then negative-z-index
 descendants, **then** in-flow block backgrounds. `body` is in-flow, so an opaque
-`body { background: var(--bg-base) }` paints straight over every `-z-10` element beneath it. The
-canvas rendered perfectly and was invisible in all nine themes, and three rounds of shader tuning
-were spent on it before the cause was found -- forcing `z-index: 500` on the container made pixels
-change immediately, which proved the shader was fine and the stacking was not. `html` still carries
+`body { background: var(--bg-base) }` paints straight over every `-z-10` element beneath it. `html` still carries
 `background: var(--bg-base)` (it already did, for overscroll), and that is step one of the same
 context, i.e. below the canvas -- so the page colour is unchanged everywhere. **Do not put an opaque
 background back on `body`.**
-
-**Light themes paint pigment, not glow, and reuse the dark branch's own coverage.** Additive light
-on a near-white page is invisible; the published component re-derived its own coverage through
-`smoothstep(exp tone map)^2`, which at this shader's energy range collapsed to ~0.0005 alpha and
-rendered nothing on Daylight, Tape and Score -- a failure that hides on white rather than looking
-broken. The light branch now takes the same `clamp(gsum) * uOpacity` the dark branch uses and paints
-a darkened hue instead of a bright one. Both branches output **premultiplied** colour, because the
-renderer is `premultipliedAlpha: true`; returning a straight colour blends too light, which is again
-only obvious on the light themes.
-
-**The intensity numbers are measured, and they were wrong in BOTH directions first.** The published
-defaults (`falloff 0.62 / glow 0.016 / brightness 0.5 / opacity 0.34`) drew bright hairlines straight
-across the voiceover rows -- legible text with a lit wire through it. Damping that by eye then
-overshot into invisibility: measured as the mean per-pixel delta of the page with the canvas shown
-versus hidden, Studio sat at **0.55/255** with 6.5% of pixels changed by 3 or more, which is below
-the threshold of perception and read to the user as "the background isn't there".
-
-The current settings are `glow 0.024 / falloff 0.42 / thickness 1.7 / brightness 0.75 /
-opacity 0.82`, landing at a mean delta of **2.4-3.6/255** across dark and light themes. Two things
-worth keeping:
-- **Lower `falloff` is what makes a wash rather than a filament** -- it widens and softens the glow.
-  Reach for it before brightness when the threads look like wires.
-- **Light mode needs its own multiplier** (`* 0.16` inside the light branch). Dark pigment on a
-  near-white page shifts a pixel far more efficiently than additive glow on near-black: at one shared
-  opacity the dark themes measured 1.2/255 while Daylight was at 10.6 and looked muddy. One opacity
-  cannot serve both.
-- **Measure this with a with/without pixel diff, not by eye and not from a screenshot.** A screenshot
-  of a dark theme was misread as "the background is working" when it was the theme's own colours, and
-  the first-load run of any such probe reports zero because the canvas is not up yet -- reorder the
-  themes before believing a zero.
 
 **The canvas waveform no longer mirrors the palette by hand.** `WaveRibbon.tsx` used to carry three
 hardcoded colours. `resolveWavePalette()` in `theme.ts` now reads them through a one-off probe element:
