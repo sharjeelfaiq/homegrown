@@ -533,13 +533,13 @@ function PendingRow({
           must stay --result-row-h tall for the eight-row window cap to hold. */}
       <div className="flex min-w-0 items-center gap-2.5">
         {failed || !onReuseScript ? (
-          <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-muted" title={failed ? reason : job.text_preview}>
+          <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-faint" title={failed ? reason : job.text_preview}>
             {failed ? truncate(reason) : previewOf(job.text_preview)}
           </p>
         ) : (
           <button
             type="button"
-            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-muted hover:text-ink"
+            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
             title={job.text_preview}
             aria-label={`Reuse the script of ${nameControl.name || nameControl.placeholder || 'this pending voiceover'}`}
             onClick={onReuseScript}
@@ -662,13 +662,12 @@ function VoiceoverRow({
 
         <div className="result-actions flex flex-none items-center gap-0.5" ref={menuRef}>
           {/* Selection lives in the action strip, rather than reserving a left
-              gutter on every row. It keeps its hover, focus, and selected
-              visibility behaviour while leaving the content edge shared with
-              pending work. */}
+              gutter on every row. It is subtly visible at rest, then brightens
+              on hover, focus, or selection without moving row content. */}
           <input
             type="checkbox"
             className={`size-3.5 flex-none accent-audio transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100 ${
-              selected ? 'opacity-100' : 'opacity-0'
+              selected ? 'opacity-100' : 'opacity-45'
             }`}
             checked={selected}
             // onChange, not onClick, so keyboard selection works too. A native
@@ -698,7 +697,7 @@ function VoiceoverRow({
       <div className="flex min-h-7 min-w-0 items-center gap-2.5">
         <button
           type="button"
-          className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-muted hover:text-ink"
+          className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
           title={entry.text}
           aria-label={`Reuse the script of ${name}`}
           onClick={onRequeue}
