@@ -69,9 +69,14 @@ export function useOptimisticProgress(job: QueueEntry | undefined): number {
         return
       }
 
-      const perChunkMs = current.estimated_s
-        ? (current.estimated_s * 1000) / current.total_chunks
-        : FALLBACK_CHUNK_MS
+      // Always the fallback now. This used to derive a per-chunk duration from
+      // the job's estimate, but the estimate is gone -- it was beaten by 12 of
+      // 12 measured jobs, so deriving a smoothing rate from it was building on
+      // a number that was reliably wrong anyway. The advance stays bounded by
+      // MAX_WITHIN_CHUNK, so a wrong rate can only make the bar creep slower or
+      // stall within the current chunk; it can never cross a boundary and
+      // promise a chunk that has not finished.
+      const perChunkMs = FALLBACK_CHUNK_MS
       const within = Math.min(MAX_WITHIN_CHUNK, (Date.now() - state.startedAt) / perChunkMs)
       const predicted = (current.chunks_done + within) / current.total_chunks
       const ceiling = (current.chunks_done + MAX_WITHIN_CHUNK) / current.total_chunks

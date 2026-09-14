@@ -311,64 +311,20 @@ MIN_REF_TEXT_CHARS_PER_SEC = 3.0
 # ref_text both mis-conditions the clone and eats sequence budget (_seq_budget).
 MAX_REF_TEXT_CHARS_PER_SEC = 22.0
 
-# Time estimation: MEDIAN seconds-per-chunk over the last N completed jobs, plus
-# a fixed per-job overhead. Seeded from history.json on startup so estimates are
-# sane immediately after a restart, not just after the first job.
+# Generation time is REPORTED, never predicted. There was an estimator here --
+# _JOB_OVERHEAD_S + chunks * median(seconds per chunk), scored at 22% mean error
+# against history.json -- and it was retired on 2026-09-13 because a median is
+# beaten by half of all jobs by construction and the measured overrun was worse
+# than that: 12 of 12 jobs on one batch ran over, by 1.2x to 2.5x, none under.
 #
-# This replaced a chars/second model, and the replacement was measured rather
-# than argued. Leave-one-out error over 24 real jobs in this repo's history:
+# Chunk resampling is why the tail is so fat: _chunk_duration_is_sane resamples
+# a degenerate chunk up to CHUNK_ATTEMPTS times, and a median deliberately
+# discards exactly those runs (measured p90 32.4s/chunk against p50 19.3s).
 #
-#     per-character (the old model)            mean  50%   worst  84%
-#     per-chunk, mean                          mean  47%   worst 109%
-#     per-frame (chars x frames_per_char)      mean 135%   worst 278%
-#     per-character keyed by voice             mean  36%   worst 147%
-#     least squares a*frames + b*chunks        mean  26%   worst  77%
-#     overhead + chunks x MEDIAN(sec/chunk)    mean  22%   worst  75%   <- this
-#
-# Where the gain actually comes from, because the obvious story is wrong:
-# per-voice chars/sec looked like it spanned 3.2x (7.27 on a 16.1s clip down to
-# 2.26 on a 40.0s one), which reads as "the estimate is voice-blind". Per CHUNK
-# those same voices are 16.3s and 15.5s and 55.3s -- not ordered by clip length
-# at all, and adding an explicit `a + b*ref_seconds` term made the model WORSE
-# (34% mean, 117% worst). The chars/sec spread was mostly job-length mix: voices
-# used for lots of short scripts look slow per character because the fixed
-# overhead dominates. The overhead term absorbs it; a reference-length term is
-# not justified by this data and should not be added on intuition.
-#
-# Chunk count IS voice-aware by construction -- _seq_budget() sizes chunks from
-# the preset's clip -- but note that with every clip trimmed to REF_TRIM_SECS
-# the budget lands at ELISION_SAFE_CHUNK_CHARS for all of them, so today that
-# awareness is latent and only bites for a voice whose clip forces smaller
-# chunks (created before trimming existed, see _preset_response).
-#
-# Two traps, both found by measuring:
-#
-# - The least-squares fit scores well and is WRONG. Its seconds-per-frame
-#   coefficient is negative at every sample count from n=2 to n=23 -- it claims
-#   more audio makes generation faster. frames and chunks are collinear
-#   (frames ~= chunks x chunk_chars x frames_per_char), so the fit is unstable
-#   and would predict nonsense on a voice with different geometry. Do not
-#   reinstate it.
-# - Plain per-chunk is barely better than per-character (47% vs 50%). Almost all
-#   of the gain comes from the two refinements below, not from the unit change.
-TIMING_WINDOW = 20
-# MEDIAN, not mean -- this is the single biggest lever here: 22% vs 40% mean
-# error on the same samples. A resampled chunk or a cold CUDA-graph run produces
-# an outlier that drags a mean and does not move a median. Do not "simplify"
-# this back to sum()/len().
-#
-# Fixed cost every job pays regardless of length (model load already warm, but
-# stitching, mp3 encode and the first CUDA-graph replay are not free). Without
-# it every short job under-predicted badly: a 122-char job predicted 0.4 min and
-# took 2.5 min. Swept against the real jobs: 0s -> 28%, 15s -> 22%, 20s -> 22%
-# with the best worst case (75%), 30s -> 25%, 50s -> 39%. Flat between 15 and
-# 25, so this is a plateau value rather than a fitted magic number.
-_JOB_OVERHEAD_S = 20.0
-# Until any real sample exists. CHUNK_MAX_CHARS/85s (~9.4 chars/sec) is the
-# original empirical baseline; kept as a chars/second number because with no
-# samples there is nothing chunk-shaped to average, and a fresh install should
-# be no worse off than it was before this change.
-_FALLBACK_CHARS_PER_SEC = CHUNK_MAX_CHARS / 85.0
+# generation_s and total_chunks are still recorded on every history entry, so
+# the raw material survives if anyone wants to try again. The full
+# model-selection table is in docs/gpu-notes.md -- read it before proposing a
+# replacement.
 
 STYLE_INSTRUCTIONS = {
     "natural": None,
@@ -417,10 +373,6 @@ _current_running_job_id: Optional[str] = None
 _queue_event = threading.Event()
 
 _timing_lock = threading.Lock()
-# Seconds per CHUNK, overhead already removed. Most-recent-last, capped at
-# TIMING_WINDOW. Named for its unit on purpose: it held chars/second until
-# 2026-09-12, and a stale reader assuming the old unit would be out by ~30x.
-_chunk_seconds_samples: list[float] = []
 
 
 def _load_json(path: Path) -> list:
@@ -452,81 +404,9 @@ def _find_preset(preset_id: str) -> Optional[dict]:
 
 # ---- Timing estimation ----------------------------------------------------
 
-def _chunk_seconds(generation_s: float, total_chunks: int) -> Optional[float]:
-    """One sample: seconds per chunk with the fixed overhead taken out.
-
-    Floored at 1s rather than allowed to go negative or zero -- a job that
-    finished faster than _JOB_OVERHEAD_S is real (a one-chunk job on a warm
-    graph) and should contribute a small sample, not a nonsensical one.
-    """
-    if generation_s <= 0 or total_chunks <= 0:
-        return None
-    return max(generation_s - _JOB_OVERHEAD_S, 1.0) / total_chunks
 
 
-def _seed_timing_from_history() -> None:
-    """Warm the rolling window from completed jobs, newest first.
 
-    Only entries that carry `total_chunks` are usable. Older entries predate
-    that field and are SKIPPED rather than reconstructed: recomputing a chunk
-    count needs the entry's preset to still exist and to still have the same
-    reference clip, and a wrong count would poison the median -- which is the
-    one statistic this estimator depends on. Fewer, correct samples beat more,
-    guessed ones.
-    """
-    samples = []
-    for entry in _history:  # newest first
-        sample = _chunk_seconds(entry.get("generation_s") or 0, entry.get("total_chunks") or 0)
-        if sample is not None:
-            samples.append(sample)
-        if len(samples) >= TIMING_WINDOW:
-            break
-    with _timing_lock:
-        _chunk_seconds_samples.extend(reversed(samples))  # oldest-of-the-seed-batch first
-
-
-def _seconds_per_chunk() -> Optional[float]:
-    """MEDIAN seconds per chunk, or None when nothing has been measured yet.
-
-    Median rather than mean, and that is the single largest improvement in this
-    estimator -- 22% mean error against 40% for the mean over the same samples.
-    Generation produces outliers by design: a chunk that fails
-    _chunk_duration_is_sane() is resampled (up to CHUNK_ATTEMPTS), and the first
-    job after a restart pays CUDA-graph capture. Both land far from the middle
-    and both drag an average. Do not replace this with sum()/len().
-    """
-    with _timing_lock:
-        if not _chunk_seconds_samples:
-            return None
-        return statistics.median(_chunk_seconds_samples)
-
-
-def _record_timing_sample(generation_s: float, total_chunks: int) -> None:
-    sample = _chunk_seconds(generation_s, total_chunks)
-    if sample is None:
-        return
-    with _timing_lock:
-        _chunk_seconds_samples.append(sample)
-        if len(_chunk_seconds_samples) > TIMING_WINDOW:
-            _chunk_seconds_samples.pop(0)
-
-
-def _estimate_seconds(chunks: int, char_count: int) -> float:
-    """Predicted wall-clock seconds for a job of `chunks` chunks.
-
-    Takes the chunk count, which is what makes this voice-aware: _seq_budget()
-    derives chunk size from the preset's reference clip, so a voice with a long
-    clip chunks smaller, produces more chunks, and is predicted slower -- with
-    nothing here needing to know which voice it is.
-
-    char_count is the fallback path only, used until the first real sample
-    exists. It is the old chars/second model, kept so a fresh install is no
-    worse than it was before.
-    """
-    per_chunk = _seconds_per_chunk()
-    if per_chunk is None or chunks <= 0:
-        return char_count / _FALLBACK_CHARS_PER_SEC
-    return _JOB_OVERHEAD_S + chunks * per_chunk
 
 
 def _ref_profile(preset: dict) -> Optional[tuple[int, float]]:
@@ -781,34 +661,6 @@ def _job_elapsed_seconds_locked(job_id: str) -> Optional[float]:
     return end - started
 
 
-def _job_eta_seconds_locked(job_id: str) -> Optional[float]:
-    job = _jobs[job_id]
-    status = job["status"]
-    if status in ("done", "error", "canceled"):
-        return None
-
-    total = job["total_chunks"] or 1
-    done = job["chunks_done"]
-
-    if status in ("running", "canceling"):
-        # "canceling" still counts as running here -- it's mid-chunk until the
-        # worker's next chunk-boundary check honors it (see _process_job), and
-        # treating it as queued below would recurse into itself via
-        # _current_running_job_id (this same job_id).
-        elapsed = _job_elapsed_seconds_locked(job_id) or 0.0
-        per_chunk = (elapsed / done) if done > 0 else (job["estimated_s"] / total)
-        return max(per_chunk * (total - done), 0.0)
-
-    # queued: wait for the running job to finish + every queued job ahead of this one
-    wait = 0.0
-    if _current_running_job_id is not None:
-        wait += _job_eta_seconds_locked(_current_running_job_id) or 0.0
-    for jid in _pending_job_ids:
-        if jid == job_id:
-            break
-        wait += _jobs[jid]["estimated_s"]
-    return wait + job["estimated_s"]
-
 
 def _persist_queue_locked() -> None:
     """Persist enough to rebuild the queue (queued + in-flight jobs) after a
@@ -831,7 +683,6 @@ def _persist_queue_locked() -> None:
             "style": job["style"],
             "stability": job["stability"],
             "submitted_at": job["submitted_at"],
-            "estimated_s": job["estimated_s"],
         })
     _save_json(QUEUE_FILE, records)
 
@@ -883,7 +734,6 @@ def _restore_queue_on_startup() -> None:
                 "submitted_at": record["submitted_at"],
                 "started_at": None,
                 "finished_at": None,
-                "estimated_s": record["estimated_s"],
             }
             _pending_job_ids.append(job_id)
             restored += 1
@@ -1054,8 +904,6 @@ def _process_job(job_id: str) -> None:
         job_id, audio_url, output_duration_s, generation_s,
     )
 
-    _record_timing_sample(generation_s, job["total_chunks"])
-
     entry = {
         "id": uuid.uuid4().hex,
         "user_id": job["user_id"],
@@ -1068,13 +916,11 @@ def _process_job(job_id: str) -> None:
         "audio_url": audio_url,
         "duration_s": output_duration_s,
         "generation_s": generation_s,
-        # Persisted so _seed_timing_from_history can rebuild the rolling window
-        # after a restart. estimated_s stays beside it because the pair is what
-        # makes this estimator measurable against reality -- it is how the
-        # chars/second model was shown to be wrong on 65% of jobs, and it is the
-        # only way the next change will be measurable too.
+        # Kept although nothing predicts any more: generation_s and
+        # total_chunks are MEASURED facts and are the raw material if an
+        # estimate is ever attempted again. estimated_s is no longer written --
+        # there is nothing to write.
         "total_chunks": job["total_chunks"],
-        "estimated_s": job["estimated_s"],
         "created_at": time.time(),
     }
     with _store_lock:
@@ -1186,7 +1032,6 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Using GPU: %s", _device_reason)
 
-    _seed_timing_from_history()
     boot_status.write(
         STORAGE_DIR,
         boot_status.PHASE_LOADING_MODEL,
@@ -1332,7 +1177,6 @@ def estimate(req: EstimateRequest, user_id: str = Depends(get_current_user)) -> 
     result: dict = {
         # Provisional: with no preset there is no chunk count, so this is the
         # fallback model. Recomputed below once the preset gives a real one.
-        "estimated_s": _estimate_seconds(0, chars),
         "chunks": None,
         "chunk_chars": None,
         "ref_seconds": None,
@@ -1351,9 +1195,6 @@ def estimate(req: EstimateRequest, user_id: str = Depends(get_current_user)) -> 
     result["chunk_chars"] = budget.chunk_chars
     result["chunks"] = len(chunk_text(text, budget.chunk_chars))
     result["ref_seconds"] = facts.ref_seconds
-    # Now that the chunk count is known, re-estimate from it. This is the only
-    # thing that makes the figure respond to the selected voice.
-    result["estimated_s"] = _estimate_seconds(result["chunks"], chars)
 
     # Surface the same condition _compute_seq_budget only writes to the log: a
     # reference long enough to force chunks below the point where this model
@@ -1836,7 +1677,6 @@ class GenerateRequest(BaseModel):
 class GenerateJobStart(BaseModel):
     job_id: str
     total_chunks: int
-    estimated_s: float
     queue_position: int
 
 
@@ -1847,9 +1687,7 @@ class JobStatusResponse(BaseModel):
     audio_url: Optional[str] = None
     sample_rate: Optional[int] = None
     error: Optional[str] = None
-    estimated_s: Optional[float] = None
     elapsed_s: Optional[float] = None
-    eta_s: Optional[float] = None
     queue_position: Optional[int] = None
 
 
@@ -1864,9 +1702,7 @@ class QueueEntry(BaseModel):
     status: str
     chunks_done: int
     total_chunks: int
-    estimated_s: Optional[float] = None
     elapsed_s: Optional[float] = None
-    eta_s: Optional[float] = None
     queue_position: Optional[int] = None
     submitted_at: float
     audio_url: Optional[str] = None
@@ -1889,9 +1725,7 @@ def _job_status_response_locked(job_id: str) -> JobStatusResponse:
         audio_url=job.get("audio_url"),
         sample_rate=job.get("sample_rate"),
         error=job.get("error"),
-        estimated_s=job.get("estimated_s"),
         elapsed_s=_job_elapsed_seconds_locked(job_id),
-        eta_s=_job_eta_seconds_locked(job_id),
         queue_position=_queue_position_locked(job_id),
     )
 
@@ -1907,9 +1741,7 @@ def _queue_entry_locked(job_id: str) -> QueueEntry:
         status=job["status"],
         chunks_done=job["chunks_done"],
         total_chunks=job["total_chunks"],
-        estimated_s=job.get("estimated_s"),
         elapsed_s=_job_elapsed_seconds_locked(job_id),
-        eta_s=_job_eta_seconds_locked(job_id),
         queue_position=_queue_position_locked(job_id),
         submitted_at=job["submitted_at"],
         audio_url=job.get("audio_url"),
@@ -1950,9 +1782,6 @@ def generate(req: GenerateRequest, user_id: str = Depends(get_current_user)) -> 
         )
 
     chunks = chunk_text(text, budget.chunk_chars)
-    # The same count stored as total_chunks below, deliberately: the row's
-    # denominator and its progress bar must agree about how much work there is.
-    estimated_s = _estimate_seconds(len(chunks), len(text))
     job_id = uuid.uuid4().hex
     job = {
         "user_id": user_id,
@@ -1973,14 +1802,13 @@ def generate(req: GenerateRequest, user_id: str = Depends(get_current_user)) -> 
         "submitted_at": time.time(),
         "started_at": None,
         "finished_at": None,
-        "estimated_s": estimated_s,
     }
     with _jobs_lock:
         _enqueue_job_locked(job_id, job)
         position = _queue_position_locked(job_id)
 
     return GenerateJobStart(
-        job_id=job_id, total_chunks=len(chunks), estimated_s=estimated_s, queue_position=position,
+        job_id=job_id, total_chunks=len(chunks), queue_position=position,
     )
 
 

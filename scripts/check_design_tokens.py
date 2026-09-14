@@ -89,8 +89,15 @@ STRICT_TARGETS = {
 # The negative lookahead on the 6-digit form stops an 8-digit #rrggbbaa being
 # read as a 6-digit colour plus junk; the one on the 3-digit form stops it
 # matching the first half of a 6-digit.
-HEX6_RE = re.compile(r"(?:#|%23)([0-9a-fA-F]{6})(?![0-9a-fA-F])")
-HEX3_RE = re.compile(r"(?:#|%23)([0-9a-fA-F]{3})(?![0-9a-fA-F])")
+# The trailing lookahead excludes any identifier character, not just another
+# hex digit. Hex digits alone are not enough: GLSL's `#define` reads as `#def`
+# followed by `i`, which is not a hex digit, so a shader source string was
+# reported as two colours (`#ddeeff`, twice) with no colour anywhere near it.
+# A real colour literal is never immediately followed by a letter, digit or
+# underscore, so this is strictly narrower than the bug it removes -- `#facadeX`
+# and `#defer` stop matching, `#abc;` and `#ff00ff)` still do.
+HEX6_RE = re.compile(r"(?:#|%23)([0-9a-fA-F]{6})(?![0-9a-zA-Z_])")
+HEX3_RE = re.compile(r"(?:#|%23)([0-9a-fA-F]{3})(?![0-9a-zA-Z_])")
 RGB_RE = re.compile(r"rgba?\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})")
 
 # Colours allowed on top of tokens.css. Empty, and worth keeping that way.

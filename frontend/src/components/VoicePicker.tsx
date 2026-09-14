@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { mediaUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
@@ -182,55 +183,63 @@ export default function VoicePicker({
         )}
       </button>
 
-      {open && (
-        <ul
-          className="absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-[280px] list-none overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu)"
-          onKeyDown={onMenuKeyDown}
-        >
-          {presets.map((p) => (
-            <li
-              key={p.id}
-              className="flex min-h-9 items-center gap-1 border-b border-hairline last:border-b-0"
-            >
-              <button
-                type="button"
-                className="voice-menu-pick flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm bg-transparent py-0 pr-1 pl-1.5 text-left text-[13px] text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink aria-[current=true]:text-ink"
-                aria-current={p.id === selectedPresetId}
-                onClick={() => {
-                  onSelect(p.id)
-                  close()
-                  triggerRef.current?.focus()
-                }}
+      {/* Origin top: the menu hangs directly below the control, so it should
+          read as unfolding from it rather than arriving from nowhere. */}
+      <AnimatePresence>
+        {open && (
+          <motion.ul
+            initial={reduced ? false : { opacity: 0, scale: 0.98, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={reduced ? undefined : { opacity: 0, scale: 0.98, y: -4 }}
+            transition={{ duration: reduced ? 0 : 0.14, ease: [0.2, 0, 0, 1] }}
+            className="absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-[280px] list-none origin-top overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu)"
+            onKeyDown={onMenuKeyDown}
+          >
+            {presets.map((p) => (
+              <li
+                key={p.id}
+                className="flex min-h-9 items-center gap-1 border-b border-hairline last:border-b-0"
               >
-                <span className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</span>
-                {runningPresetIds.has(p.id) && (
-                  <span
-                    className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`}
-                    title={`${p.name} is generating`}
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-
-              {/* Audition only. Deleting a voice is destructive and lives in
-                  the Voices dialog, where voices are managed -- it does not
-                  belong on a dropdown you open to pick one. */}
-              <span className="ml-auto flex flex-none items-center gap-0.5">
                 <button
                   type="button"
-                  className="icon-btn"
-                  aria-label={
-                    previewingId === p.id ? `Stop preview of ${p.name}` : `Preview ${p.name}`
-                  }
-                  onClick={() => togglePreview(p)}
+                  className="voice-menu-pick flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm bg-transparent py-0 pr-1 pl-1.5 text-left text-[13px] text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink aria-[current=true]:text-ink"
+                  aria-current={p.id === selectedPresetId}
+                  onClick={() => {
+                    onSelect(p.id)
+                    close()
+                    triggerRef.current?.focus()
+                  }}
                 >
-                  {previewingId === p.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</span>
+                  {runningPresetIds.has(p.id) && (
+                    <span
+                      className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`}
+                      title={`${p.name} is generating`}
+                      aria-hidden="true"
+                    />
+                  )}
                 </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+
+                {/* Audition only. Deleting a voice is destructive and lives in
+                    the Voices dialog, where voices are managed -- it does not
+                    belong on a dropdown you open to pick one. */}
+                <span className="ml-auto flex flex-none items-center gap-0.5">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={
+                      previewingId === p.id ? `Stop preview of ${p.name}` : `Preview ${p.name}`
+                    }
+                    onClick={() => togglePreview(p)}
+                  >
+                    {previewingId === p.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
+                  </button>
+                </span>
+              </li>
+            ))}
+          </motion.ul>
+        )}
+      </AnimatePresence>
 
       {/* crossOrigin is load-bearing, not boilerplate. setActiveAudio routes
           every element through AudioEngine's createMediaElementSource, and in

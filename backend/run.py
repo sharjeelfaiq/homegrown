@@ -173,11 +173,31 @@ if getattr(sys, "frozen", False):
 import uvicorn
 
 if __name__ == "__main__":
-    # Loopback only, deliberately. Binding 0.0.0.0 asks Windows Defender
-    # Firewall for a listener on every interface, which pops the "Allow access
-    # / Cancel" alert on first run -- and Cancel writes a permanent Block rule
-    # that leaves the app broken with no way back from inside the app. The
-    # desktop build serves the API and the SPA from this same origin, so it
-    # never needed the wildcard. LAN deployments use start_server.bat, which
-    # passes --host 0.0.0.0 itself and is unaffected by this.
-    uvicorn.run("main:app", host="127.0.0.1", port=PORT, log_level="info")
+    # Wildcard bind, so the desktop build is reachable from other machines on
+    # the LAN. This reverses an earlier deliberate loopback-only bind; both
+    # costs of the reversal are real and neither is hypothetical.
+    #
+    # 1. FIRST RUN HITS WINDOWS DEFENDER FIREWALL. A listener on every
+    #    interface pops the "Allow access / Cancel" alert, and **Cancel writes
+    #    a permanent Block rule for this exe path** that nothing in the app can
+    #    undo -- after which it never starts again. Pre-authorise the exe
+    #    before first launch, from an elevated prompt:
+    #
+    #      netsh advfirewall firewall add rule name="Homegrown" dir=in ^
+    #        action=allow program="C:\Homegrown\backend\backend.exe" ^
+    #        protocol=TCP localport=8731 enable=yes profile=private
+    #
+    #    A pre-existing allow rule means the prompt never appears, so the
+    #    unrecoverable Cancel is never offered.
+    #
+    # 2. THERE IS NO AUTHENTICATION ANYWHERE IN THIS APP. auth.py's
+    #    get_current_user returns the constant "local-user" for every request,
+    #    so anyone who can reach this port has the same rights the owner does:
+    #    create voices, submit jobs, and permanently delete voices and
+    #    voiceovers (DELETE /api/presets/{id} unlinks the reference clip;
+    #    DELETE /api/history/{id} unlinks both the .wav and the .mp3). Neither
+    #    is recoverable. Bind this only on networks you trust.
+    #
+    # PORT stays 8731: launcher.py polls the same number and
+    # scripts/check_desktop_port.py is what stops the two drifting.
+    uvicorn.run("main:app", host="0.0.0.0", port=PORT, log_level="info")

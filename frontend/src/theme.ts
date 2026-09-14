@@ -158,6 +158,69 @@ export function resolveWavePalette(): WavePalette {
   return palette
 }
 
+/** The three colours the background shader weaves between, as 0..1 RGB.
+ *
+ * A SEPARATE probe from resolveWavePalette rather than three more properties on
+ * that one, deliberately. Widening it changes the object identity that
+ * WaveRibbon's `draw` useCallback depends on, and that dependency is the entire
+ * mechanism repainting a PAUSED ribbon -- nothing else asks for one at rest.
+ * The cost of keeping them apart is one extra style recalc per theme CHANGE,
+ * which is not a per-frame cost and not worth trading that risk for.
+ *
+ * Floats rather than strings because the consumer is a GLSL uniform, and
+ * because a hex literal anywhere under frontend/src fails
+ * scripts/check_design_tokens.py -- the component must not own a colour. */
+export type ThreadRgb = [number, number, number]
+
+export interface ThreadPalette {
+  one: ThreadRgb
+  two: ThreadRgb
+  three: ThreadRgb
+  /** The page behind the threads, for the shader's light-mode branch. */
+  background: ThreadRgb
+}
+
+const THREAD_PROBE_STYLE =
+  'position:absolute;left:-9999px;top:0;width:0;height:0;' +
+  'color:var(--thread-1);' +
+  'outline-color:var(--thread-2);' +
+  'caret-color:var(--thread-3);' +
+  'background-color:var(--bg-base);'
+
+const BLACK: ThreadRgb = [0, 0, 0]
+
+/** `rgb(24, 25, 30)` / `rgba(...)` / `color(srgb ...)` -> 0..1 triple. */
+function toRgb(value: string): ThreadRgb {
+  const nums = value.match(/[\d.]+/g)
+  if (!nums || nums.length < 3) return BLACK
+  const [r, g, b] = nums.slice(0, 3).map(Number)
+  // color() gives 0..1 already; rgb() gives 0..255. Anything above 1 in any
+  // channel means the latter, and a pure 0/0/0 is the same either way.
+  const scale = r > 1 || g > 1 || b > 1 ? 255 : 1
+  return [r / scale, g / scale, b / scale]
+}
+
+export function resolveThreadPalette(): ThreadPalette {
+  const probe = document.createElement('span')
+  probe.setAttribute('style', THREAD_PROBE_STYLE)
+  probe.setAttribute('aria-hidden', 'true')
+  document.body.appendChild(probe)
+  const cs = getComputedStyle(probe)
+  const palette: ThreadPalette = {
+    one: toRgb(cs.color),
+    two: toRgb(cs.outlineColor),
+    three: toRgb(cs.caretColor),
+    background: toRgb(cs.backgroundColor),
+  }
+  probe.remove()
+  return palette
+}
+
+export function sameThreadPalette(a: ThreadPalette, b: ThreadPalette): boolean {
+  const eq = (x: ThreadRgb, y: ThreadRgb) => x[0] === y[0] && x[1] === y[1] && x[2] === y[2]
+  return eq(a.one, b.one) && eq(a.two, b.two) && eq(a.three, b.three) && eq(a.background, b.background)
+}
+
 export function sameWavePalette(a: WavePalette, b: WavePalette): boolean {
   return a.base === b.base && a.played === b.played && a.playhead === b.playhead
 }

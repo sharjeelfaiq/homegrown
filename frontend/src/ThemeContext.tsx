@@ -13,13 +13,16 @@ import {
   applyTheme,
   readStoredChoice,
   resolveTheme,
+  resolveThreadPalette,
   resolveWavePalette,
+  sameThreadPalette,
   sameWavePalette,
   writeStoredChoice,
   STORAGE_KEY,
   isThemeId,
   type ThemeChoice,
   type ThemeId,
+  type ThreadPalette,
   type WavePalette,
 } from './theme'
 
@@ -31,6 +34,9 @@ interface ThemeValue {
   setChoice: (next: ThemeChoice) => void
   /** Resolved canvas colours; see resolveWavePalette in theme.ts. */
   wave: WavePalette
+  /** Resolved background-shader colours; see resolveThreadPalette. Kept a
+   *  separate object from `wave` on purpose -- see the note on that function. */
+  threads: ThreadPalette
 }
 
 const ThemeContext = createContext<ThemeValue | null>(null)
@@ -47,6 +53,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // correct data-theme before React boots, so resolving during this first
   // render is already reading the right theme.
   const [wave, setWave] = useState<WavePalette>(() => resolveWavePalette())
+  const [threads, setThreads] = useState<ThreadPalette>(() => resolveThreadPalette())
 
   useLayoutEffect(() => {
     applyTheme(theme)
@@ -58,6 +65,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // StrictMode's double-invoke would hand every ribbon a fresh object
     // identity and repaint the whole history list twice on mount.
     setWave((prev) => (sameWavePalette(prev, next) ? prev : next))
+    // Same treatment, same reason: a fresh object identity every render would
+    // reupload four uniforms per frame for no change.
+    const nextThreads = resolveThreadPalette()
+    setThreads((prev) => (sameThreadPalette(prev, nextThreads) ? prev : nextThreads))
   }, [theme])
 
   // Two tabs on the same machine -- which the LAN deployment makes ordinary,
@@ -79,8 +90,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ choice, theme, setChoice, wave }),
-    [choice, theme, setChoice, wave],
+    () => ({ choice, theme, setChoice, wave, threads }),
+    [choice, theme, setChoice, wave, threads],
   )
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>

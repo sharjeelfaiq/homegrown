@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   ApiError,
   cancelQueuedJob,
@@ -11,18 +11,21 @@ import {
   type HistoryEntry,
   type QueueEntry,
 } from '../api'
-import { approxDuration, downloadName, formatClock, formatTimeOfDay, formatTimestampFull, timeAgo } from '../format'
+import { downloadName, formatClock, formatTimeOfDay, formatTimestampFull, timeAgo } from '../format'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useElapsed } from '../hooks/useElapsed'
 import { useOptimisticProgress } from '../hooks/useOptimisticProgress'
 import { toast } from 'sonner'
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard'
+import { useFlushOnHide } from '../hooks/useFlushOnHide'
 import { usePersistedDraft } from '../hooks/usePersistedDraft'
 import { usePersistedRecord } from '../hooks/usePersistedRecord'
+import { UNDO_MS } from '../constants'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
+import UndoCountdown from './UndoCountdown'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import { CopyIcon, DownloadIcon, TrashIcon, WandIcon } from './Icons'
+import { CopyIcon, DownloadIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
 
@@ -48,7 +51,7 @@ interface Props {
    * decide whether a finished voiceover may be inserted under the user's eyes
    * or has to be announced instead. */
   onAtTopChange: (atTop: boolean) => void
-  onDelete: (id: string) => void
+  onDelete: (id: string, opts?: { unloading?: boolean }) => void
   onRequeue: (entry: HistoryEntry) => void
   /** Surfaces a failed Retry. Without it an ApiError from the retry endpoint
    * is swallowed and the click looks like it did nothing -- the exact failure
@@ -74,10 +77,6 @@ const MAX_TICKS = 60
  * in index.css -- above it the list scrolls, below it the page does, and the two
  * effects below have to pick their scroll root accordingly. Change all three
  * together; nothing enforces it. */
-/** How long a deleted voiceover can be brought back. Longer than sonner's
- *  4s default because this one is irreversible once it fires: 4s is enough to
- *  notice a toast, not always enough to read it, decide, and move the mouse. */
-const UNDO_MS = 7000
 
 const TWO_COLUMN_QUERY = '(min-width: 1025px)'
 
@@ -94,6 +93,7 @@ const TWO_COLUMN_QUERY = '(min-width: 1025px)'
  * exists to keep /api/queue small at a 1s poll cadence, and every entry
  * carries one. */
 const PREVIEW_CHARS = 80
+
 
 function truncate(text: string, max = PREVIEW_CHARS): string {
   return text.length > max ? `${text.slice(0, max)}…` : text
@@ -271,12 +271,6 @@ function PendingRow({
   // it counted up forever -- which is why only it needs this.
   const progress = useOptimisticProgress(running ? job : undefined)
   const elapsed = useElapsed(job, reachable)
-  // Past the estimate. Gated on `reachable` deliberately: useElapsed FREEZES
-  // when contact is lost, so without this a job whose clock happened to stop
-  // beyond its guess would be tinted as overrunning when what actually
-  // happened is that we stopped being told anything. A frozen clock is a
-  // statement about our knowledge, not about the job.
-  const over = reachable && elapsed != null && job.estimated_s != null && elapsed > job.estimated_s
   const reduced = usePrefersReducedMotion()
 
   const total = job.total_chunks || 0
@@ -300,18 +294,38 @@ function PendingRow({
   const attempt = job.attempt ?? 1
 
   return (
-    <li
+    // Enter AND exit, unlike a VoiceoverRow, which only exits. A pending row
+    // appears because the user just pressed Generate -- never a paginated
+    // append, never the other half of a handoff -- so an entrance here always
+    // marks something they did.
+    //
+    // The exit fade is LOAD-BEARING, and it was removed once on a misreading
+    // before being measured properly. A finishing job does not hand off
+    // atomically: the queue poll drops it and the /api/history refetch adds it,
+    // and those are two independent round trips. Sampled every 100ms across two
+    // real generations -- with the fade, the row count went 14 -> 15 -> 14 and
+    // never dipped; without it, 15 -> 14 with the finished voiceover in NEITHER
+    // list until the refetch landed. So the fade does not create a duplicate, it
+    // covers a seam: for ~160ms the outgoing row is fading over its own finished
+    // row, which reads as a handoff. An empty slot reads as a lost voiceover.
+    //
+    // No height collapse, only opacity -- collapsing would move every row below
+    // it twice, once shut and once open again, for a row that is being replaced
+    // at its own height.
+    <motion.li
+      initial={reduced ? false : { opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={reduced ? undefined : { opacity: 0 }}
+      transition={{ duration: reduced ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
       className={[
         'flex flex-col gap-0.5 border-b border-hairline py-[7px] last:border-b-0',
         queued && 'is-queued',
         failed && 'is-failed',
-        // Exactly ONE of the two, never both. They are single-class utilities
-        // at equal specificity, so a row carrying both would be decided by
-        // emission order in the bundle -- and Tailwind emitted is-over FIRST,
-        // which is the opposite of what the overrun state needs. Making them
-        // mutually exclusive here removes the dependency on that order
-        // entirely rather than betting on it staying put.
-        running && (over ? 'is-over' : 'is-running'),
+        // is-over used to sit beside this, tinting the clock once elapsed
+        // passed the estimate. Both it and the estimate are gone: a prediction
+        // that was beaten by 12 of 12 measured jobs is not worth showing, and
+        // "over" is undefined without one.
+        running && 'is-running',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -368,20 +382,39 @@ function PendingRow({
             the one event worth announcing was the one thing it did not cover.
             useJobToasts now announces completion through sonner's own live
             region. Visual output here is unchanged. */}
-        <span
-          className="mono result-time"
-          title={
-            job.estimated_s == null
-              ? undefined
-              : over
-                ? `Taking longer than the estimate of ${approxDuration(job.estimated_s)}. The estimate is a guess from past renders, not a deadline.`
-                : `Estimated ${approxDuration(job.estimated_s)}, from how long past renders of this many chunks took`
-          }
-        >
-          {/* The same reserved slot TransportTime puts the minus in. Empty
-              here -- there is no remaining to toggle to -- but it keeps this
-              row's digits on the same column as a finished row's. */}
-          <span className="inline-block w-[1ch]" aria-hidden="true" />
+        <span className="mono result-time">
+          {/* The same reserved slot TransportTime puts the minus in, and the
+              only place a working indicator can go without moving anything:
+              it is already 1ch wide and already empty on this row.
+
+              Reusing VoicePicker's busy dot rather than inventing a spinner --
+              one idiom for "this is working", and it is 1.5px of layout that
+              was already allocated. It earns its place while the first chunk
+              renders, when the progress bar is still at zero and a running row
+              would otherwise look identical to a queued one.
+
+              Gated on prefers-reduced-motion: --animate-pulse-soft is a literal
+              1.4s, NOT one of the tokens the reduced-motion block in tokens.css
+              zeroes, so it would otherwise pulse for whole generations. The
+              element stays either way; only the motion goes. */}
+          {/* The gap is on the RUNNING row only, and that is arithmetic rather
+              than taste. `.result-time` is 14ch, and a finished row's
+              "12:07 / 45:33" is 13 characters in a 1ch sign slot -- exactly 14,
+              with nothing spare. Widening the slot unconditionally would push
+              that past the box and into its `overflow: hidden`. A running row
+              shows elapsed only ("0:11"), so it has ~8ch of slack and can
+              afford the 4px without touching the width, the script preview
+              beside it, or the row height. */}
+          <span
+            className={`inline-block w-[1ch] ${running ? 'mr-1' : ''}`}
+            aria-hidden="true"
+          >
+            {running && (
+              <span
+                className={`inline-block size-1.5 rounded-full bg-progress align-middle ${reduced ? '' : 'animate-pulse-soft'}`}
+              />
+            )}
+          </span>
           {failed
             ? attempt > 1
               ? `Failed · try ${attempt}`
@@ -390,9 +423,7 @@ function PendingRow({
               ? 'Cancelling…'
               : elapsed == null
                 ? 'Queued'
-                : job.estimated_s != null
-                  ? `${formatClock(elapsed)} / ~${formatClock(job.estimated_s)}`
-                  : formatClock(elapsed)}
+                : formatClock(elapsed)}
         </span>
 
         <div className="result-actions flex flex-none items-center gap-0.5">
@@ -459,7 +490,7 @@ function PendingRow({
           {formatTimeOfDay(job.submitted_at)}
         </time>
       </div>
-    </li>
+    </motion.li>
   )
 }
 
@@ -478,6 +509,7 @@ function VoiceoverRow({
   selected,
   onToggleSelect,
   onCopy,
+  animateExit,
 }: {
   entry: HistoryEntry
   nameControl: NameControl
@@ -488,12 +520,32 @@ function VoiceoverRow({
   selected: boolean
   onToggleSelect: (shiftKey: boolean) => void
   onCopy: () => void
+  animateExit: boolean
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const created = timeAgo(entry.created_at)
+  const reduced = usePrefersReducedMotion()
 
   return (
-    <li className="group/row flex flex-col gap-0.5 border-b border-hairline py-[7px] last:border-b-0">
+    // EXIT ONLY -- no initial/animate. The three ways a row appears here are a
+    // job completing (which is a handoff from a PendingRow in the same slot, so
+    // an entrance reads as a flicker), a load-more append, and the first paint.
+    // None of those is an event the user caused at that row, so animating them
+    // would be decoration. Leaving is different: it is always a delete, and the
+    // collapse both acknowledges it and stops the rows below snapping upward
+    // while the 7s undo is still open.
+    //
+    // Height is the one layout property this pass animates, and it is bounded
+    // to a single row at a time. Do NOT reach for framer's `layout` prop to do
+    // this instead: up to ~20 WaveRibbon canvases are mounted here and `layout`
+    // measures every one of them each frame.
+    <motion.li
+      layout={false}
+      exit={animateExit && !reduced
+        ? { opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }
+        : undefined}
+      transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
+      className="group/row flex flex-col gap-0.5 overflow-hidden border-b border-hairline py-[7px] last:border-b-0">
       <RowHead
         {...nameControl}
         voiceName={entry.preset_name}
@@ -611,7 +663,7 @@ function VoiceoverRow({
           {formatTimeOfDay(entry.created_at)}
         </time>
       </div>
-    </li>
+    </motion.li>
   )
 }
 
@@ -719,6 +771,12 @@ export default function HistoryList({
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(() => new Set())
   const deleteTimers = useRef(new Map<string, number>())
 
+  /** Jobs whose cancel is held behind an Undo toast. They are still generating
+   *  on the GPU -- this only hides them, so the row reads as stopped while the
+   *  cancel can still be called off. */
+  const [pendingCancels, setPendingCancels] = useState<Set<string>>(() => new Set())
+  const cancelTimers = useRef(new Map<string, { timer: number; flush: () => void }>())
+
   // Timers are cleared, NOT flushed, on unmount. Flushing would turn a
   // navigation into a destructive act the user never confirmed.
   useEffect(() => {
@@ -752,6 +810,7 @@ export default function HistoryList({
   // with a restored query, which is what makes the parent load the whole
   // history; filtering only ever sees what has been fetched.
   const [draft, setDraft] = usePersistedDraft('voiceoverSearch')
+  const reducedMotion = usePrefersReducedMotion()
   const searching = draft.trim() !== ''
 
   // Filtering only sees what has been fetched, so while a search runs the
@@ -788,6 +847,10 @@ export default function HistoryList({
               e.status === 'canceling' ||
               e.status === 'error',
           )
+          // A held cancel is hidden on the strength of the click alone. The
+          // job is still running and the 1s queue poll would otherwise put its
+          // row straight back on the next tick.
+          .filter((e) => !pendingCancels.has(e.job_id))
           .sort((a, b) => Number(a.status === 'error') - Number(b.status === 'error'))
 
   // Numbered FIRST, filtered second, and the order is load-bearing. The
@@ -814,6 +877,11 @@ export default function HistoryList({
   // WHOLE list, so removing rows before numbering would renumber everything
   // beneath a row the user just deleted.
   const visible = numbered.filter(({ entry }) => !pendingDeletes.has(entry.id))
+  // What the heading reports. Held deletes are already off the screen, so they
+  // must already be off the count -- including while the Undo toast is still
+  // up. Clamped, because a pending id whose entry has since gone (deleted in
+  // another tab, say) would otherwise push this negative.
+  const visibleTotal = Math.max(0, total - pendingDeletes.size)
 
   // A selected row that has since been deleted (here or in another tab) must
   // not keep inflating the count or be sent to the zip endpoint.
@@ -863,6 +931,27 @@ export default function HistoryList({
       io?.disconnect()
     }
   }, [hasMore, onLoadMore, history.length, searching])
+
+  // The observer above cannot save us when the list is EMPTY, because the
+  // sentinel it watches lives inside the <ul> and the <ul> is not rendered when
+  // there is nothing to show. That is a real hole, not a theoretical one:
+  // select-all + delete hides every fetched row via pendingDeletes, `shown`
+  // goes to zero, the whole list subtree unmounts, the sentinel goes with it,
+  // and onLoadMore can never fire again -- so a history with more rows on the
+  // server renders as a blank column claiming "No voiceovers yet".
+  //
+  // Deliberately an effect rather than rendering an empty <ul> just to keep the
+  // sentinel alive: above the breakpoint the list IS the scroll root, so a
+  // sentinel with no rows above it sits inside the root's bounds and would
+  // chain-load the entire history at once -- the exact failure the comment
+  // above this describes.
+  //
+  // Terminates on its own. loadMoreHistory() returns early once
+  // loadedRef >= totalRef, and every call that does fetch advances loadedRef.
+  useEffect(() => {
+    if (shown.length > 0 || !hasMore || searching || loading) return
+    onLoadMore()
+  }, [shown.length, hasMore, searching, loading, onLoadMore])
 
   // Whether the reader is at the top decides if a finished voiceover may be
   // inserted above them or has to be announced. Reported up rather than decided
@@ -968,7 +1057,7 @@ export default function HistoryList({
   /** Commit or cancel a held delete. Both paths clear the timer and un-hide
    *  nothing the other has already handled -- `pendingDeletes.delete` is
    *  idempotent and the timer id is dropped either way. */
-  function settleDelete(id: string, commit: boolean) {
+  function settleDelete(id: string, commit: boolean, unloading = false) {
     const timer = deleteTimers.current.get(id)
     if (timer !== undefined) window.clearTimeout(timer)
     deleteTimers.current.delete(id)
@@ -982,8 +1071,44 @@ export default function HistoryList({
     // click time would make an Undo restore the row under its default
     // "Voiceover N" instead of the name the user gave it.
     removeFileName(id)
-    onDelete(id)
+    onDelete(id, unloading ? { unloading: true } : undefined)
   }
+
+  // A held delete must survive the page going away, and the user must be told
+  // before it does.
+  //
+  // Flush: settle every still-pending id on pagehide, with keepalive so the
+  // DELETE outlives the document. Before this, reloading inside the 7s window
+  // discarded the whole batch and every row came back -- which is how a
+  // select-all of 20 rows reappeared intact after a refresh.
+  //
+  // THIS REVERSES THE OLD "safe direction" BEHAVIOUR, deliberately and at the
+  // user's request: leaving the page inside the undo window now COMMITS the
+  // delete instead of cancelling it. That is why the warning below exists.
+  const pendingRef = useRef<Set<string>>(pendingDeletes)
+  pendingRef.current = pendingDeletes
+  useFlushOnHide(() => {
+    for (const id of pendingRef.current) settleDelete(id, true, true)
+    for (const held of [...cancelTimers.current.values()]) held.flush()
+  })
+
+  // beforeunload, which this app otherwise refuses to use -- it produces the
+  // generic "Leave site?" prompt, its text is browser-controlled and cannot say
+  // what is at stake, and registering it disqualifies the page from the
+  // bfcache. It is defensible ONLY because it is scoped: the listener exists
+  // only while a delete is actually held, which is at most UNDO_MS, and in
+  // every other state the app behaves exactly as it did before.
+  useEffect(() => {
+    if (pendingDeletes.size === 0) return
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      // Assigning returnValue is what still triggers the prompt in Chrome;
+      // preventDefault alone is the spec'd way and is not yet enough there.
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [pendingDeletes.size])
 
   /** Toggle one row, or shift-click to fill the range from the last one.
    *
@@ -1098,8 +1223,19 @@ export default function HistoryList({
     const label = ids.length === 1 ? '1 voiceover' : `${ids.length} voiceovers`
     toast(`${label} deleted`, {
       duration: UNDO_MS,
+      // A plain toast has no type and so no icon of its own. ExternalToast
+      // takes one per-toast, which is cheaper than a custom toast component.
+      icon: <TrashIcon size={15} />,
       action: {
-        label: 'Undo',
+        // The label carries the time left as well as the word, so the user can
+        // see how long they have rather than guessing. sonner types `label` as
+        // ReactNode, so this needs no wrapper or custom toast component.
+        label: (
+          <span className="inline-flex items-center gap-1.5">
+            Undo
+            <UndoCountdown ms={UNDO_MS} />
+          </span>
+        ),
         onClick: () => {
           window.clearTimeout(timer)
           for (const id of ids) settleDelete(id, false)
@@ -1114,13 +1250,93 @@ export default function HistoryList({
     deleteTimers.current.set(id, timer)
     toast(`${label} deleted`, {
       duration: UNDO_MS,
-      action: { label: 'Undo', onClick: () => settleDelete(id, false) },
+      // A plain toast has no type and so no icon of its own. ExternalToast
+      // takes one per-toast, which is cheaper than a custom toast component.
+      icon: <TrashIcon size={15} />,
+      action: {
+        label: (
+          <span className="inline-flex items-center gap-1.5">
+            Undo
+            <UndoCountdown ms={UNDO_MS} />
+          </span>
+        ),
+        onClick: () => settleDelete(id, false),
+      },
     })
   }
 
-  async function handleCancel(jobId: string) {
+  /** The CANCEL ITSELF is deferred, so its Undo is a real undo.
+   *
+   *  The obvious build -- cancel now, and let Undo resubmit via
+   *  POST /api/queue/{job_id}/retry -- was written first and measured. It does
+   *  not work, and not for a tuning reason: POST /cancel only moves the job to
+   *  `canceling`, the worker reaches `canceled` whenever it next escapes the
+   *  chunk it is inside, and retry_job rejects anything in between. Every Undo
+   *  pressed inside the toast's own window came back
+   *  "Only a failed or canceled job can be retried." Widening the retry only
+   *  trades a broken button for a slow one, and even when it lands it buys a
+   *  fresh render of the whole script, having thrown away the partial audio.
+   *
+   *  Holding the cancel instead costs at most UNDO_MS of GPU on a job that was
+   *  already running, and in exchange Undo means the generation was never
+   *  interrupted: no resubmission, no lost chunks, no new job_id, no new place
+   *  in the queue. The row is hidden immediately, so it reads as stopped.
+   *
+   *  `pendingCancels` filters the row out of `active`; without it the queue
+   *  poll puts the row straight back on the next tick. */
+  function handleCancel(jobId: string) {
+    setPendingCancels((prev) => new Set(prev).add(jobId))
+    cancelTimers.current.set(jobId, {
+      timer: window.setTimeout(() => void settleCancel(jobId, true), UNDO_MS),
+      flush: () => void settleCancel(jobId, true, true),
+    })
+    toast('Generation stopped', {
+      duration: UNDO_MS,
+      icon: <StopIcon size={15} />,
+      action: {
+        label: (
+          <span className="inline-flex items-center gap-1.5">
+            Undo
+            <UndoCountdown ms={UNDO_MS} />
+          </span>
+        ),
+        onClick: () => void settleCancel(jobId, false),
+      },
+    })
+  }
+
+  /** Settle a held cancel. Idempotent: the timer is the token, so whichever of
+   *  the timer, the Undo and the unload flush gets here first wins and the rest
+   *  return. */
+  async function settleCancel(jobId: string, commit: boolean, unloading = false) {
+    const held = cancelTimers.current.get(jobId)
+    if (held === undefined) return
+    window.clearTimeout(held.timer)
+    cancelTimers.current.delete(jobId)
+    if (!commit) {
+      setPendingCancels((prev) => {
+        const next = new Set(prev)
+        next.delete(jobId)
+        return next
+      })
+      refresh()
+      return
+    }
+    if (unloading) {
+      void cancelQueuedJob(jobId, { keepalive: true }).catch(() => {})
+      return
+    }
     try {
       await cancelQueuedJob(jobId)
+    } catch (e) {
+      // The job is still running, so put the row back rather than leaving a
+      // generation the user cannot see or stop.
+      setPendingCancels((prev) => {
+        const next = new Set(prev)
+        next.delete(jobId)
+        return next
+      })
+      onError(e instanceof ApiError ? e.message : 'Failed to cancel')
     } finally {
       refresh()
     }
@@ -1193,7 +1409,19 @@ export default function HistoryList({
             title={allShownSelected ? 'Deselect all' : 'Select all'}
           />
         )}
-        {total > 0 && <span className="mono order-3 text-[11px]">{total}</span>}
+        {/* The count must drop the moment rows are hidden by a pending delete,
+            or the heading still says 34 while 14 rows are on screen and the
+            deletion looks like it did not happen.
+
+            Display only -- `total` itself is NOT adjusted, because row
+            numbering is `total - i` (see `numbered` above) and shifting it
+            would renumber every surviving voiceover the instant a delete was
+            held, then renumber them all back on Undo.
+
+            Subtracting pendingDeletes rather than counting `shown` keeps this
+            honest under a search: it is the number of voiceovers that exist,
+            not the number currently matching a filter. */}
+        {visibleTotal > 0 && <span className="mono order-3 text-[11px]">{visibleTotal}</span>}
       </h2>
 
       {/* Rendered whenever there is anything to search OR a search is already
@@ -1290,33 +1518,52 @@ export default function HistoryList({
 
           z-100 puts it under the modal backdrop (200) and well under sonner
           (999999999), so a dialog or a toast is never obscured by it. */}
-      {selectedCount > 0 && (
-        <div
-          className="fixed bottom-4 left-1/2 z-100 flex -translate-x-1/2 items-center gap-2 rounded-md border border-control bg-surface-card px-3 py-2 shadow-(--shadow-menu)"
-          role="group"
-          aria-label="Actions for selected voiceovers"
-        >
-          <span className="mono text-[11px] whitespace-nowrap text-muted">{selectedCount} selected</span>
-          <button type="button" className="ghost-btn" disabled={zipping} onClick={handleZipSelected}>
-            {zipping ? 'Zipping…' : 'Download'}
-          </button>
-          <button
-            type="button"
-            className="ghost-btn ghost-btn-danger"
-            onClick={handleDeleteSelected}
+      {/* x: '-50%' rather than the -translate-x-1/2 utility this used to carry.
+          framer writes `transform` inline, which wins over the class outright --
+          keeping the utility means the bar animates its way off centre by half
+          its own width. The centering has to travel with the animation, so it
+          is repeated on initial/animate/exit. */}
+      <AnimatePresence>
+        {selectedCount > 0 && (
+          <motion.div
+            initial={reducedMotion ? false : { opacity: 0, y: 8, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={reducedMotion ? undefined : { opacity: 0, y: 8, x: '-50%' }}
+            transition={{ duration: reducedMotion ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
+            style={{ x: '-50%' }}
+            className="fixed bottom-4 left-1/2 z-100 flex items-center gap-2 rounded-md border border-control bg-surface-card px-3 py-2 shadow-(--shadow-menu)"
+            role="group"
+            aria-label="Actions for selected voiceovers"
           >
-            Delete
-          </button>
-          <button type="button" className="ghost-btn" onClick={() => setSelected(new Set())}>
-            Clear
-          </button>
-        </div>
-      )}
+            <span className="mono text-[11px] whitespace-nowrap text-muted">
+              {selectedCount} selected
+            </span>
+            <button type="button" className="ghost-btn" disabled={zipping} onClick={handleZipSelected}>
+              {zipping ? 'Zipping…' : 'Download'}
+            </button>
+            <button
+              type="button"
+              className="ghost-btn ghost-btn-danger"
+              onClick={handleDeleteSelected}
+            >
+              Delete
+            </button>
+            <button type="button" className="ghost-btn" onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {shown.length === 0 && active.length === 0 ? (
         <p className="m-0 py-5 text-[13px] text-faint">
-          {loading
-            ? 'Loading your voiceovers…'
+          {loading || hasMore
+            ? // `hasMore` matters as much as `loading` here. With every fetched
+              // row hidden by a pending delete, this branch renders while the
+              // effect above is still pulling the next slice -- and telling
+              // someone with voiceovers on the server to go and generate their
+              // first one is simply false.
+              'Loading your voiceovers…'
             : searching
               ? // Distinct from the never-generated-anything copy below. Telling
                 // someone with 40 voiceovers to "pick a voice and press
@@ -1328,56 +1575,71 @@ export default function HistoryList({
       ) : (
         <>
           <ul className="result-list" ref={listRef}>
-            {active.map((job, i) => {
-              // The number this row will keep. /api/queue returns the running
-              // job first and queued jobs in real processing order, so the
-              // running one is the next to land and takes the next number.
-              //
-              // A failed job never becomes a voiceover, so it must not consume
-              // a number -- doing so would both promise one that never arrives
-              // and shift every row beneath it. Count only the rows still
-              // headed for the history, which is why this counts rather than
-              // using the map index. (Failures sort last, so the count is
-              // already complete by the time one is reached.)
-              const failed = job.status === 'error'
-              const pendingBefore = active.slice(0, i).filter((e) => e.status !== 'error').length
-              const number = total + 1 + pendingBefore
-              return (
-                <PendingRow
-                  key={job.job_id}
-                  job={job}
-                  nameControl={nameControlFor(
-                    job.job_id,
-                    number,
-                    pendingNames[job.job_id],
-                    true,
-                    failed ? 'Failed' : undefined,
-                  )}
-                  onCancel={() => (failed ? handleDismiss(job.job_id) : handleCancel(job.job_id))}
-                  onRetry={failed && !gpuFault ? () => handleRetry(job.job_id) : undefined}
-                />
-              )
-            })}
+            {/* initial={false} is load-bearing on both of these: without it
+                every row already on screen animates on mount, so a reload with
+                jobs running replays an entrance for work that started minutes
+                ago. It suppresses the first commit only -- rows arriving later
+                still animate. */}
+            <AnimatePresence initial={false}>
+              {active.map((job, i) => {
+                // The number this row will keep. /api/queue returns the running
+                // job first and queued jobs in real processing order, so the
+                // running one is the next to land and takes the next number.
+                //
+                // A failed job never becomes a voiceover, so it must not consume
+                // a number -- doing so would both promise one that never arrives
+                // and shift every row beneath it. Count only the rows still
+                // headed for the history, which is why this counts rather than
+                // using the map index. (Failures sort last, so the count is
+                // already complete by the time one is reached.)
+                const failed = job.status === 'error'
+                const pendingBefore = active.slice(0, i).filter((e) => e.status !== 'error').length
+                const number = total + 1 + pendingBefore
+                return (
+                  <PendingRow
+                    key={job.job_id}
+                    job={job}
+                    nameControl={nameControlFor(
+                      job.job_id,
+                      number,
+                      pendingNames[job.job_id],
+                      true,
+                      failed ? 'Failed' : undefined,
+                    )}
+                    onCancel={() => (failed ? handleDismiss(job.job_id) : handleCancel(job.job_id))}
+                    onRetry={failed && !gpuFault ? () => handleRetry(job.job_id) : undefined}
+                  />
+                )
+              })}
+            </AnimatePresence>
 
-            {shown.map(({ entry, number, name }, i) => {
-              return (
-                <VoiceoverRow
-                  key={entry.id}
-                  entry={entry}
-                  nameControl={nameControlFor(entry.id, number, entryFileNames[entry.id], false)}
-                  name={name}
-                  downloadHref={downloadUrl(
-                    entry.audio_url,
-                    entryFileNames[entry.id]?.trim() || downloadName(name, entry.created_at),
-                  )}
-                  onRequeue={() => onRequeue(entry)}
-                  onDelete={() => handleDelete(entry.id, name)}
-                  selected={selected.has(entry.id)}
-                  onToggleSelect={(shiftKey) => toggleSelected(entry.id, i, shiftKey)}
-                  onCopy={() => handleCopyScript(entry.text)}
-                />
-              )
-            })}
+            <AnimatePresence initial={false}>
+              {shown.map(({ entry, number, name }, i) => {
+                return (
+                  <VoiceoverRow
+                    key={entry.id}
+                    entry={entry}
+                    nameControl={nameControlFor(entry.id, number, entryFileNames[entry.id], false)}
+                    name={name}
+                    downloadHref={downloadUrl(
+                      entry.audio_url,
+                      entryFileNames[entry.id]?.trim() || downloadName(name, entry.created_at),
+                    )}
+                    onRequeue={() => onRequeue(entry)}
+                    onDelete={() => handleDelete(entry.id, name)}
+                    selected={selected.has(entry.id)}
+                    onToggleSelect={(shiftKey) => toggleSelected(entry.id, i, shiftKey)}
+                    onCopy={() => handleCopyScript(entry.text)}
+                    // Not while searching. A keystroke can filter out a dozen
+                    // rows at once, and a dozen simultaneous height collapses is
+                    // the one place in this column that would feel slow -- the
+                    // filter has to narrow the list on the keystroke.
+                    animateExit={!searching}
+                  />
+                )
+              })}
+            </AnimatePresence>
+
             {/* The trigger for the next slice, and the only "there is more"
                 signal the user gets. Inside the <ul> so it scrolls with the
                 rows and so IntersectionObserver can scope to this list. */}
