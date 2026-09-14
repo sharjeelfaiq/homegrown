@@ -442,6 +442,17 @@ body {
   }
 }
 
+/* The selected voice is a persistent readiness signal, not merely the last
+   value inside a generic dropdown. Keep the treatment quiet enough that
+   Generate remains primary, while making the current choice scannable. */
+@utility voice-picker-trigger {
+  &.is-selected {
+    border-color: var(--audio-line);
+    background: var(--audio-soft);
+    color: var(--text-primary);
+  }
+}
+
 /* A heading whose trailing hairline fills the rest of the line -- the
    "SCRIPT ────" / "VOICEOVERS ────" rule. Used by three headings, and the
    ::after is the whole point of it, so it stays a utility rather than being
@@ -844,6 +855,9 @@ body {
    would not read hue alone. In greyscale a queued row still reads "Queued"
    where a running row has a ticking clock. */
 @utility is-queued {
+  background: var(--queued-soft);
+  box-shadow: inset 2px 0 0 var(--queued-line);
+
   & .result-bar {
     background: var(--queued-soft);
     box-shadow: inset 0 0 0 1px var(--queued-line);
@@ -866,6 +880,9 @@ body {
    Not in is-queued's block: a queued row has no elapsed time to pair with an
    estimate, and is already purple. */
 @utility is-running {
+  background: var(--progress-soft);
+  box-shadow: inset 2px 0 0 var(--progress-line);
+
   & .result-time {
     /* --progress IS a raw token now (tokens.css layer 1, one per theme). It
        was not when this rule was written: the clock used var(--accent) and a
@@ -897,6 +914,13 @@ body {
   & .result-text {
     color: var(--danger-text);
   }
+}
+
+/* Bulk selection needs a row-level signal as well as the small checkbox: the
+   selection context should still be obvious while a reader follows a row. */
+@utility is-selected {
+  background: var(--audio-soft);
+  box-shadow: inset 2px 0 0 var(--audio-line);
 }
 
 /* Collapsed by default. The driver's message is worth keeping -- it is the

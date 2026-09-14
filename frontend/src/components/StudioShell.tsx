@@ -517,7 +517,10 @@ export default function StudioShell() {
     setScript(text)
     setVoiceId(presetId)
     scriptRef.current?.focus()
-    if (!replacing) return
+    if (!replacing) {
+      toast('Script ready to reuse')
+      return
+    }
     toast('Script replaced', {
       description: 'The script you had written was swapped out.',
       action: { label: 'Undo', onClick: () => setScript(previous) },
@@ -815,7 +818,7 @@ export default function StudioShell() {
           <section className="compose-bar flex flex-wrap items-center gap-2">
             <GenerateButton
               disabled={!canGenerate}
-              blockedReason={script.trim().length > 0 ? blockedReason : null}
+              blockedReason={blockedReason}
               busy={submitting}
               warming={warmingUp}
               count={scriptReady ? 1 : 0}

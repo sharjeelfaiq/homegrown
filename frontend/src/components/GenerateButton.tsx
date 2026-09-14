@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { MOD_ARIA, MOD_KEY } from '../keys'
-import { AlertIcon } from './Icons'
+import Kbd from './Kbd'
 
 interface Props {
   disabled: boolean
@@ -53,7 +53,7 @@ export default function GenerateButton({
   // the compose row now, and Generate sits at the left. The slack between
   // them is taken by the wrapper around the voice field in StudioShell.
   return (
-    <section className="flex flex-none items-center gap-1.5">
+    <section className="flex flex-none flex-wrap items-center gap-x-2 gap-y-1">
       {/* Tooltip, not a visible key cap -- unlike the script box and the play
           control, which wear theirs. The button stays a stable action label;
           any missing prerequisite is carried by the adjacent warning icon.
@@ -82,17 +82,10 @@ export default function GenerateButton({
           </motion.span>
         </AnimatePresence>
       </button>
-      {blockedReason && (
-        <span
-          className="flex size-5 flex-none items-center justify-center text-danger"
-          tabIndex={0}
-          role="img"
-          aria-label={blockedReason}
-          title={blockedReason}
-        >
-          <AlertIcon size={15} />
-        </span>
-      )}
+      {blockedReason && <span className="text-[12px] text-muted" role="status">{blockedReason}</span>}
+      <span className="flex items-center gap-1 text-[11px] text-faint coarse:hidden" aria-hidden="true">
+        <Kbd>{`${MOD_KEY}+Enter`}</Kbd><span>to generate</span>
+      </span>
     </section>
   )
 }

@@ -22,12 +22,12 @@ import type { ThreadRgb } from '../theme'
  *    pointer-events: none, so it never receives a mouse event of its own;
  *    listening on it would leave the effect silently dead.
  *
- *  - **It stops while a voiceover is generating.** This shader and the TTS
- *    model share one GPU. The vocoder is already capped to
+ *  - **It throttles while a voiceover is generating.** This shader and the
+ *    TTS model share one GPU. The vocoder is already capped to
  *    DECODE_CHUNK_FRAMES=100 because a ~4s kernel tripped Windows' 2s TDR
- *    watchdog and killed the CUDA context; a persistent full-screen fragment
- *    shader is exactly the contention that stretches kernel wall-time on a
- *    display-attached card. Holding the last frame costs nothing.
+ *    watchdog and killed the CUDA context; rendering the full-screen fragment
+ *    shader at display rate would add avoidable contention. A six-FPS mode
+ *    keeps the background visibly alive without competing continuously.
  *
  *  - **prefers-reduced-motion paints one frame and never starts the loop.**
  *    An infinite rAF is precisely what the tokens.css reduced-motion block
@@ -187,6 +187,10 @@ const SETTINGS = {
  *  fragment-bound, with a pow() per thread per pixel. */
 const MAX_DPR = 1.5
 
+/** Background animation remains visible during generation, but a low cadence
+ * leaves nearly all GPU time to the TTS worker on display-attached cards. */
+const BUSY_FPS = 6
+
 export default function WebThreads() {
   const containerRef = useRef<HTMLDivElement>(null)
   const { threads, theme } = useTheme()
@@ -198,7 +202,7 @@ export default function WebThreads() {
   const live = useRef({ threads, light: themeMode(theme) === 'light', reduced, anyRunning })
   live.current = { threads, light: themeMode(theme) === 'light', reduced, anyRunning }
 
-  const apiRef = useRef<{ setPaused: (p: boolean) => void; sync: () => void } | null>(null)
+  const apiRef = useRef<{ setBusy: (busy: boolean) => void; sync: () => void } | null>(null)
 
   useEffect(() => {
     const container = containerRef.current
@@ -315,19 +319,25 @@ export default function WebThreads() {
     let raf = 0
     let inView = true
     let pageVisible = !document.hidden
-    let paused = live.current.anyRunning
+    let busy = live.current.anyRunning
+    let lastRenderAt = 0
     const t0 = performance.now()
 
     const frame = (t: number) => {
-      program.uniforms.iTime.value = (t - t0) * 0.001
-      current[0] += 0.05 * (target[0] - current[0])
-      current[1] += 0.05 * (target[1] - current[1])
-      currentActive += 0.05 * (targetActive - currentActive)
-      const m = program.uniforms.uMouse.value as Float32Array
-      m[0] = current[0]
-      m[1] = current[1]
-      program.uniforms.uMouseActive.value = currentActive
-      renderer.render({ scene: mesh })
+      // Keep a rAF scheduler so returning to normal speed is immediate, but
+      // skip the expensive shader draw between busy-mode frames.
+      if (!busy || t - lastRenderAt >= 1000 / BUSY_FPS) {
+        program.uniforms.iTime.value = (t - t0) * 0.001
+        current[0] += 0.05 * (target[0] - current[0])
+        current[1] += 0.05 * (target[1] - current[1])
+        currentActive += 0.05 * (targetActive - currentActive)
+        const m = program.uniforms.uMouse.value as Float32Array
+        m[0] = current[0]
+        m[1] = current[1]
+        program.uniforms.uMouseActive.value = currentActive
+        renderer.render({ scene: mesh })
+        lastRenderAt = t
+      }
       raf = requestAnimationFrame(frame)
     }
 
@@ -337,11 +347,10 @@ export default function WebThreads() {
         raf = 0
       }
     }
-    // One gate, three reasons: off-screen, hidden tab, or the GPU is busy
-    // generating. Reduced motion never starts it at all -- setSize() above has
-    // already painted the single frame it gets.
+    // Off-screen and hidden tabs stop entirely. Reduced motion never starts
+    // the loop -- setSize() above has already painted the single frame it gets.
     const start = () => {
-      if (live.current.reduced || paused || !inView || !pageVisible) return
+      if (live.current.reduced || !inView || !pageVisible) return
       if (raf === 0) raf = requestAnimationFrame(frame)
     }
 
@@ -363,14 +372,17 @@ export default function WebThreads() {
     document.addEventListener('visibilitychange', onVisibility)
 
     apiRef.current = {
-      setPaused: (p: boolean) => {
-        paused = p
-        if (p) stop()
+      setBusy: (nextBusy: boolean) => {
+        busy = nextBusy
+        // Draw the first busy/normal frame immediately instead of waiting for
+        // an old throttle interval to expire after the job state changes.
+        lastRenderAt = 0
+        if (live.current.reduced) stop()
         else start()
       },
       sync: () => {
         sync()
-        // A paused or reduced-motion background still has to repaint when the
+        // A stopped or reduced-motion background still has to repaint when the
         // theme changes, or it holds the previous palette until something else
         // happens to start the loop.
         if (raf === 0) renderer.render({ scene: mesh })
@@ -402,7 +414,7 @@ export default function WebThreads() {
   }, [threads, theme])
 
   useEffect(() => {
-    apiRef.current?.setPaused(anyRunning || reduced)
+    apiRef.current?.setBusy(anyRunning)
   }, [anyRunning, reduced])
 
   return (

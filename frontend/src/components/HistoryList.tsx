@@ -342,7 +342,7 @@ function PendingRow({
       exit={reduced ? undefined : { opacity: 0 }}
       transition={{ duration: reduced ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
       className={[
-        'group/row flex border-b border-hairline py-[7px] last:border-b-0',
+        'group/row flex border-b border-hairline px-2 py-[7px] last:border-b-0',
         queued && 'is-queued',
         failed && 'is-failed',
         // is-over used to sit beside this, tinting the clock once elapsed
@@ -360,6 +360,9 @@ function PendingRow({
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
           so the two row kinds line up down the column. */}
       <div className="flex min-h-7 min-w-0 items-center gap-2.5">
+        <span className={`mono flex-none text-[10px] font-medium ${failed ? 'text-danger-text' : queued ? 'text-queued' : 'text-progress'}`}>
+          {failed ? 'Failed' : queued ? 'Queued' : canceling ? 'Cancelling' : 'Generating'}
+        </span>
         {/* Queued work has no progress to report. Its reorder controls and
             status lead this line instead of an empty bar. */}
         {!queued && <div
@@ -446,7 +449,7 @@ function PendingRow({
             : canceling
               ? 'Cancelling…'
               : elapsed == null
-                ? 'Queued'
+                ? ''
                 : formatClock(elapsed)}
         </span>
 
@@ -547,10 +550,7 @@ function PendingRow({
             <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
               {previewOf(job.text_preview)}
             </span>
-            <WandIcon
-              size={12}
-              className="flex-none opacity-0 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100"
-            />
+            <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
           </button>
         )}
         {/* When it was SENT, not when it will finish -- a queued row has no
@@ -637,7 +637,7 @@ function VoiceoverRow({
         ? { opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }
         : undefined}
       transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
-      className={`group/row flex ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline py-[7px] last:border-b-0`}>
+      className={`group/row ${selected ? 'is-selected' : ''} flex ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline py-[7px] last:border-b-0`}>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <RowHead
         {...nameControl}
@@ -677,13 +677,13 @@ function VoiceoverRow({
             }
             aria-label={`Select ${name}`}
           />
-          <div className="row-overflow-action relative flex flex-none opacity-50 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
+          <div className="row-overflow-action relative flex flex-none opacity-70 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
             <button type="button" className="icon-btn" aria-label={`More actions for ${name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="More actions" onClick={() => setMenuOpen((open) => !open)}>
               <MoreIcon size={15} />
             </button>
           {menuOpen && (
               <div className={`voiceover-actions-menu absolute right-0 z-150 min-w-40 rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) ${menuPlacement === 'down' ? 'top-full mt-1' : 'bottom-full mb-1'}`} role="menu">
-                <a href={downloadHref} download className="voiceover-action-item" role="menuitem" onClick={() => setMenuOpen(false)}><DownloadIcon size={14} />Download</a>
+                <a href={downloadHref} download className="voiceover-action-item" role="menuitem" onClick={() => { setMenuOpen(false); toast('Download started') }}><DownloadIcon size={14} />Download</a>
                 <button type="button" className="voiceover-action-item voiceover-action-danger" role="menuitem" onClick={() => { setMenuOpen(false); onDelete() }}><TrashIcon size={14} />Delete</button>
               </div>
           )}
@@ -705,10 +705,7 @@ function VoiceoverRow({
           <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
             {truncate(entry.text)}
           </span>
-          <WandIcon
-            size={12}
-            className="flex-none opacity-0 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100"
-          />
+          <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
         </button>
         {/* Outside the reuse button so the timestamp remains a separate fact. */}
         <time
@@ -889,6 +886,7 @@ export default function HistoryList({
   const setDraft = (next: string) => setPersistedDraft(next.slice(0, MAX_SEARCH_CHARS))
   const reducedMotion = usePrefersReducedMotion()
   const searching = draft.trim() !== ''
+  const filtering = searching || filters.status !== 'all' || filters.presetId !== undefined || filters.createdFrom !== undefined || filters.createdTo !== undefined || filters.durationMin !== undefined || filters.durationMax !== undefined
 
   // Filtering only sees what has been fetched, so while a search runs the
   // parent has to finish loading the history. Without this, a query would
@@ -1563,6 +1561,14 @@ export default function HistoryList({
           )}
           </div>
           <VoiceoverFilters presets={presets} history={history} value={filters} onChange={onFiltersChange} />
+        </div>
+      )}
+      {filtering && (
+        <div className="-mt-1 mb-2 flex shrink-0 items-center gap-2 text-[11px] text-muted" role="status">
+          <span>{shown.length + active.length} result{shown.length + active.length === 1 ? '' : 's'}</span>
+          <button type="button" className="ghost-btn h-6 px-2 text-[11px]" onClick={() => { setDraft(''); onFiltersChange({ status: 'all' }) }}>
+            Clear
+          </button>
         </div>
       )}
 
