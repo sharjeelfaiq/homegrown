@@ -53,7 +53,7 @@ function DockItem({ item, index, mouseX, spring }: {
   return (
     <motion.button
       type="button"
-      className={`dock-item${item.className ? ` ${item.className}` : ''}`}
+      className={['dock-item', item.className].filter(Boolean).join(' ')}
       style={reducedMotion ? { width: ITEM_SIZE, height: ITEM_SIZE } : { width: size, height: size }}
       aria-label={item.label}
       aria-describedby={tooltipVisible ? tooltipId : undefined}
@@ -99,7 +99,7 @@ export default function Dock({ items, children, className = '', spring = DEFAULT
   }
 
   return (
-    <div className={`dock${className ? ` ${className}` : ''}`} role="toolbar" aria-label={ariaLabel}>
+    <div className={['dock', className].filter(Boolean).join(' ')} role="toolbar" aria-label={ariaLabel}>
       {children && <span className="dock-summary">{children}</span>}
       <div
         ref={itemListRef}
