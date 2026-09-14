@@ -25,10 +25,11 @@ import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
 import UndoCountdown from './UndoCountdown'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import { CopyIcon, DownloadIcon, MoreIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
+import { CheckIcon, CopyIcon, DownloadIcon, MoreIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
 import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
+import Dock, { type DockItemData } from './Dock'
 
 interface Props {
   history: HistoryEntry[]
@@ -1554,26 +1555,32 @@ export default function HistoryList({
             exit={reducedMotion ? undefined : { opacity: 0, y: 8, x: '-50%' }}
             transition={{ duration: reducedMotion ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
             style={{ x: '-50%' }}
-            className="fixed bottom-4 left-1/2 z-100 flex items-center gap-2 rounded-md border border-control bg-surface-card px-3 py-2 shadow-(--shadow-menu)"
-            role="group"
-            aria-label="Actions for selected voiceovers"
+            className="fixed bottom-4 left-1/2 z-100"
           >
-            <span className="mono text-[11px] whitespace-nowrap text-muted">
-              {selectedCount} selected
-            </span>
-            <button type="button" className="ghost-btn" disabled={zipping} onClick={handleZipSelected}>
-              {zipping ? 'Zipping…' : 'Download'}
-            </button>
-            <button
-              type="button"
-              className="ghost-btn ghost-btn-danger"
-              onClick={handleDeleteSelected}
+            <Dock
+              aria-label="Actions for selected voiceovers"
+              items={[
+                {
+                  icon: <DownloadIcon size={19} />,
+                  label: zipping ? 'Zipping…' : 'Download',
+                  disabled: zipping,
+                  onClick: handleZipSelected,
+                },
+                {
+                  icon: <TrashIcon size={19} />,
+                  label: 'Delete',
+                  className: 'dock-item-danger',
+                  onClick: handleDeleteSelected,
+                },
+                {
+                  icon: <CheckIcon size={19} />,
+                  label: 'Clear selection',
+                  onClick: () => setSelected(new Set()),
+                },
+              ] satisfies DockItemData[]}
             >
-              Delete
-            </button>
-            <button type="button" className="ghost-btn" onClick={() => setSelected(new Set())}>
-              Clear
-            </button>
+              {selectedCount} selected
+            </Dock>
           </motion.div>
         )}
       </AnimatePresence>
