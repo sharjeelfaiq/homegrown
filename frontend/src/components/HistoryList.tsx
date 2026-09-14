@@ -4,6 +4,7 @@ import {
   ApiError,
   cancelQueuedJob,
   deleteQueueJob,
+  reorderQueue,
   retryQueueJob,
   zipHistory,
   downloadUrl,
@@ -16,7 +17,6 @@ import { useGenerationActivity } from '../GenerationActivityContext'
 import { useElapsed } from '../hooks/useElapsed'
 import { useOptimisticProgress } from '../hooks/useOptimisticProgress'
 import { toast } from 'sonner'
-import { useCopyToClipboard } from '../hooks/useCopyToClipboard'
 import { useFlushOnHide } from '../hooks/useFlushOnHide'
 import { usePersistedDraft } from '../hooks/usePersistedDraft'
 import { usePersistedRecord } from '../hooks/usePersistedRecord'
@@ -25,7 +25,7 @@ import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
 import UndoCountdown from './UndoCountdown'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import { CheckIcon, CopyIcon, DownloadIcon, MoreIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrossIcon, DownloadIcon, MoreIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
 import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
@@ -253,24 +253,32 @@ function PendingRow({
   job,
   nameControl,
   onCancel,
+  cancelPending = false,
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
+  reordering = false,
   onRetry,
 }: {
   job: QueueEntry
   nameControl: NameControl
   onCancel: () => void
+  /** True while the Undo toast still allows this cancellation to be reversed. */
+  cancelPending?: boolean
+  canMoveUp?: boolean
+  canMoveDown?: boolean
+  onMoveUp?: () => void
+  onMoveDown?: () => void
+  reordering?: boolean
   /** Only meaningful on a failed row; undefined elsewhere. */
   onRetry?: () => void
 }) {
   const running = job.status === 'running'
   const canceling = job.status === 'canceling'
-  // Armed only for a RUNNING job. Cancelling a queued one costs nothing --
-  // no GPU time has been spent on it yet -- so making every cancel two clicks
-  // would tax the cheap case to protect the expensive one.
-  //
-  // A confirm rather than the undo-toast used for deleting a voiceover,
-  // because cancel is not undoable in the same sense: the generation stops and
-  // the partial audio is discarded, so "undo" could only mean re-queueing from
-  // scratch and paying the whole render again.
+  // A running render cannot be paused and resumed, so ask before stopping it.
+  // Queued work has spent no GPU time and still gets the reversible toast flow
+  // supplied by HistoryList instead.
   const [confirmingCancel, setConfirmingCancel] = useState(false)
   // Read from context rather than threaded through the map -- PendingRow is a
   // sibling component, not a closure over HistoryList's scope.
@@ -344,7 +352,7 @@ function PendingRow({
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
           so the two row kinds line up down the column. */}
-      <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex min-h-7 min-w-0 items-center gap-2.5">
         {/* One bar for every chunk count. The boundary ticks are a repeating
             gradient driven by --chunks rather than one element per chunk, so
             three chunks and seven hundred cost the same. */}
@@ -436,6 +444,31 @@ function PendingRow({
                 : formatClock(elapsed)}
         </span>
 
+        {queued && (
+          <div className="flex flex-none items-center gap-0.5" aria-label="Reorder queued generation">
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Move queued generation up"
+              title="Move up"
+              disabled={!canMoveUp || reordering || cancelPending}
+              onClick={onMoveUp}
+            >
+              <ArrowUpIcon size={15} />
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Move queued generation down"
+              title="Move down"
+              disabled={!canMoveDown || reordering || cancelPending}
+              onClick={onMoveDown}
+            >
+              <ArrowDownIcon size={15} />
+            </button>
+          </div>
+        )}
+
         <div className="result-actions flex flex-none items-center gap-0.5">
           {/* Retry first: after a failure that was not the script's fault --
               a GPU fault takes out everything queued behind it -- resubmitting
@@ -445,35 +478,36 @@ function PendingRow({
               Retry
             </button>
           )}
-          {confirmingCancel ? (
-            // Inline two-step, matching the voices dialog. window.confirm
-            // blocks the page and looks nothing like the rest of the app.
+          {!failed && confirmingCancel ? (
             <>
-              <span className="mono text-[11px] whitespace-nowrap text-muted">Stop it?</span>
               <button
                 type="button"
-                className="ghost-btn ghost-btn-danger h-6 px-2.5 text-[11px]"
+                className="icon-btn icon-btn-danger"
+                aria-label="Confirm cancellation"
+                title="Cancel generation"
                 onClick={() => {
                   setConfirmingCancel(false)
                   onCancel()
                 }}
               >
-                Stop
+                <CheckIcon size={15} />
               </button>
               <button
                 type="button"
-                className="ghost-btn h-6 px-2.5 text-[11px]"
+                className="icon-btn"
+                aria-label="Keep generation running"
+                title="Keep generating"
                 onClick={() => setConfirmingCancel(false)}
               >
-                Keep going
+                <CrossIcon size={15} />
               </button>
             </>
           ) : (
             <button
               type="button"
               className="ghost-btn ghost-btn-danger h-6 px-2.5 text-[11px]"
-              onClick={() => (running ? setConfirmingCancel(true) : onCancel())}
-              disabled={canceling}
+              onClick={() => (failed ? onCancel() : setConfirmingCancel(true))}
+              disabled={canceling || cancelPending}
             >
               {failed ? 'Dismiss' : 'Cancel'}
             </button>
@@ -518,7 +552,6 @@ function VoiceoverRow({
   onDelete,
   selected,
   onToggleSelect,
-  onCopy,
   animateExit,
   menuPlacement = 'up',
 }: {
@@ -530,7 +563,6 @@ function VoiceoverRow({
   onDelete: () => void
   selected: boolean
   onToggleSelect: (shiftKey: boolean) => void
-  onCopy: () => void
   animateExit: boolean
   menuPlacement?: 'up' | 'down'
 }) {
@@ -624,50 +656,32 @@ function VoiceoverRow({
           {menuOpen && (
             <div className={`voiceover-actions-menu absolute right-0 z-150 min-w-40 rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) ${menuPlacement === 'down' ? 'top-full mt-1' : 'bottom-full mb-1'}`} role="menu">
               <a href={downloadHref} download className="voiceover-action-item" role="menuitem" onClick={() => setMenuOpen(false)}><DownloadIcon size={14} />Download</a>
-              <button type="button" className="voiceover-action-item" role="menuitem" onClick={() => { setMenuOpen(false); onRequeue() }}><WandIcon size={14} />Reuse script</button>
               <button type="button" className="voiceover-action-item voiceover-action-danger" role="menuitem" onClick={() => { setMenuOpen(false); onDelete() }}><TrashIcon size={14} />Delete</button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Click to COPY. It used to unfold the full script in the row, with a
-          Copy button inside the expansion -- which made the common intent (get
-          the script out) two clicks and a layout change to reach a button that
-          was always the point. Nothing opens now.
-
-          The copy glyph appears on hover/focus using the row's existing
-          group/row hooks, the same idiom .result-actions already uses, rather
-          than a second hover convention.
-
-          `title` carries the full script again. It was dropped while the
-          expander existed -- a native tooltip duplicating a proper reader is a
-          worse second copy -- but with the expander gone it is the only way to
-          read past 96 characters in place, and it costs nothing.
-
-          Writing the clipboard works in EVERY deployment mode, unlike reading
-          it: useCopyToClipboard falls back to an off-screen textarea plus
-          execCommand when navigator.clipboard is absent, which is the case on
-          LAN over plain http. */}
-      <div className="flex min-w-0 items-center gap-2.5">
+      {/* The script preview is also the direct route to reusing it. This keeps
+          the common follow-up action beside the text it acts on instead of
+          burying it under the row's overflow menu. */}
+      <div className="flex min-h-7 min-w-0 items-center gap-2.5">
         <button
           type="button"
           className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-muted hover:text-ink"
           title={entry.text}
-          aria-label={`Copy the script of ${name}`}
-          onClick={onCopy}
+          aria-label={`Reuse the script of ${name}`}
+          onClick={onRequeue}
         >
           <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
             {truncate(entry.text)}
           </span>
-          <CopyIcon
+          <WandIcon
             size={12}
             className="flex-none opacity-0 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100"
           />
         </button>
-        {/* Outside the copy button on purpose: clicking the row's script copies
-            the script, and a timestamp inside that target would copy the script
-            too while looking like its own control. */}
+        {/* Outside the reuse button so the timestamp remains a separate fact. */}
         <time
           className="result-stamp mono"
           dateTime={new Date(entry.created_at * 1000).toISOString()}
@@ -758,10 +772,11 @@ export default function HistoryList({
   // Without this flag Enter would commit twice, and Escape would commit the
   // very edit it just discarded.
 
-  // Rows deleted in the UI but NOT yet on the server. A voiceover can be forty
-  // minutes of GPU time and the delete is irreversible server-side -- it
-  // rewrites history.json and unlinks both the .wav and the .mp3 -- so the
-  // click hides the row and the request is held for UNDO_MS.
+  // Rows awaiting their irreversible server-side delete. A voiceover can be
+  // forty minutes of GPU time and the delete rewrites history.json and unlinks
+  // both the .wav and the .mp3, so the request is held for UNDO_MS. The row
+  // remains visible throughout that Undo window; only a committed delete lets
+  // the subsequent history refresh remove it.
   //
   // Deferred on the client rather than soft-deleted on the server: a real
   // undo would need a deleted_at flag, a restore route, a purge policy, and a
@@ -778,18 +793,17 @@ export default function HistoryList({
   // silently do less than the count says.
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [zipping, setZipping] = useState(false)
+  const [reordering, setReordering] = useState(false)
   // Anchor for shift-click ranges. An index into `shown`, NOT into `history`:
   // a range drawn across a filtered list has to select what lies between the
   // two rows the user can see.
   const lastClickedIndex = useRef<number | null>(null)
-  const copy = useCopyToClipboard()
 
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(() => new Set())
   const deleteTimers = useRef(new Map<string, number>())
 
-  /** Jobs whose cancel is held behind an Undo toast. They are still generating
-   *  on the GPU -- this only hides them, so the row reads as stopped while the
-   *  cancel can still be called off. */
+  /** Queued jobs whose cancel is held behind an Undo toast. They remain in
+   *  view until the timer commits their cancellation. */
   const [pendingCancels, setPendingCancels] = useState<Set<string>>(() => new Set())
   const cancelTimers = useRef(new Map<string, { timer: number; flush: () => void }>())
 
@@ -868,6 +882,7 @@ export default function HistoryList({
   // leaving these visible would put rows in a filtered list that the filter
   // never considered, and make the heading's count disagree with what is on
   // screen. Clearing the box brings them straight back.
+  const queuedJobIds = queue.filter((job) => job.status === 'queued').map((job) => job.job_id)
   const active =
     filters.status === 'completed'
       ? []
@@ -881,10 +896,6 @@ export default function HistoryList({
                   : e.status === 'running' || e.status === 'queued' || e.status === 'canceling' || e.status === 'error') &&
               (!searching || e.preset_name.toLowerCase().includes(draft.trim().toLowerCase()) || (pendingNames[e.job_id] ?? '').toLowerCase().includes(draft.trim().toLowerCase())),
           )
-          // A held cancel is hidden on the strength of the click alone. The
-          // job is still running and the 1s queue poll would otherwise put its
-          // row straight back on the next tick.
-          .filter((e) => !pendingCancels.has(e.job_id))
           .sort((a, b) => Number(a.status === 'error') - Number(b.status === 'error'))
 
   // Numbered FIRST, filtered second, and the order is load-bearing. The
@@ -906,16 +917,11 @@ export default function HistoryList({
   // matches nearly everything and the result is a list that has not been
   // narrowed. Names are short, deliberate and the thing people actually
   // remember a voiceover by.
-  // Pending deletes are dropped here, with the search, and for the same
-  // reason they cannot be dropped earlier: `number` is a row's position in the
-  // WHOLE list, so removing rows before numbering would renumber everything
-  // beneath a row the user just deleted.
-  const visible = numbered.filter(({ entry }) => !pendingDeletes.has(entry.id))
-  // What the heading reports. Held deletes are already off the screen, so they
-  // must already be off the count -- including while the Undo toast is still
-  // up. Clamped, because a pending id whose entry has since gone (deleted in
-  // another tab, say) would otherwise push this negative.
-  const visibleTotal = Math.max(0, total - pendingDeletes.size)
+  // A held delete remains on screen until its Undo window ends. Besides making
+  // the deferred action legible, this preserves numbering and the heading
+  // count until the server-side delete has actually been committed.
+  const visible = numbered
+  const visibleTotal = total
 
   // A selected row that has since been deleted (here or in another tab) must
   // not keep inflating the count or be sent to the zip endpoint.
@@ -1189,15 +1195,6 @@ export default function HistoryList({
     lastClickedIndex.current = null
   }
 
-  async function handleCopyScript(text: string) {
-    const ok = await copy(text)
-    // Never claim a success that did not happen. Over LAN the page is not a
-    // secure context, so navigator.clipboard is absent and the execCommand
-    // fallback is what runs -- and it can still be refused.
-    if (ok) toast.success('Script copied')
-    else onError('Could not copy the script. Select the text and copy it manually.')
-  }
-
   async function handleZipSelected() {
     if (selectedCount === 0 || zipping) return
     setZipping(true)
@@ -1299,32 +1296,19 @@ export default function HistoryList({
     })
   }
 
-  /** The CANCEL ITSELF is deferred, so its Undo is a real undo.
-   *
-   *  The obvious build -- cancel now, and let Undo resubmit via
-   *  POST /api/queue/{job_id}/retry -- was written first and measured. It does
-   *  not work, and not for a tuning reason: POST /cancel only moves the job to
-   *  `canceling`, the worker reaches `canceled` whenever it next escapes the
-   *  chunk it is inside, and retry_job rejects anything in between. Every Undo
-   *  pressed inside the toast's own window came back
-   *  "Only a failed or canceled job can be retried." Widening the retry only
-   *  trades a broken button for a slow one, and even when it lands it buys a
-   *  fresh render of the whole script, having thrown away the partial audio.
-   *
-   *  Holding the cancel instead costs at most UNDO_MS of GPU on a job that was
-   *  already running, and in exchange Undo means the generation was never
-   *  interrupted: no resubmission, no lost chunks, no new job_id, no new place
-   *  in the queue. The row is hidden immediately, so it reads as stopped.
-   *
-   *  `pendingCancels` filters the row out of `active`; without it the queue
-   *  poll puts the row straight back on the next tick. */
-  function handleCancel(jobId: string) {
+  /** A queued job has no GPU work to lose, so its cancel is held behind an
+   *  Undo toast. It stays visible until the timer settles, matching a held
+   *  voiceover delete. */
+  function handleQueuedCancel(jobId: string) {
+    // The row remains visible during the hold, so guard a second click from
+    // creating another timer and toast for the same job.
+    if (cancelTimers.current.has(jobId)) return
     setPendingCancels((prev) => new Set(prev).add(jobId))
     cancelTimers.current.set(jobId, {
       timer: window.setTimeout(() => void settleCancel(jobId, true), UNDO_MS),
       flush: () => void settleCancel(jobId, true, true),
     })
-    toast('Generation stopped', {
+    toast('Queued generation canceled', {
       duration: UNDO_MS,
       icon: <StopIcon size={15} />,
       action: {
@@ -1337,6 +1321,42 @@ export default function HistoryList({
         onClick: () => void settleCancel(jobId, false),
       },
     })
+  }
+
+  /** Reorders only the caller's queued jobs. The API preserves every other
+   * user's slots, so this array must contain every queued id owned by this
+   * view, in its intended order. */
+  async function moveQueuedJob(jobId: string, direction: -1 | 1) {
+    if (reordering) return
+    const ids = queue.filter((job) => job.status === 'queued').map((job) => job.job_id)
+    const from = ids.indexOf(jobId)
+    const to = from + direction
+    if (from < 0 || to < 0 || to >= ids.length) return
+
+    const moved = ids[from]
+    ids[from] = ids[to]
+    ids[to] = moved
+    setReordering(true)
+    try {
+      await reorderQueue(ids)
+    } catch (e) {
+      onError(e instanceof ApiError ? e.message : 'Failed to reorder queued generations')
+    } finally {
+      setReordering(false)
+      refresh()
+    }
+  }
+
+  /** A running render cannot be paused and resumed. The inline confirmation
+   *  in PendingRow is therefore the decision point; approval cancels it now. */
+  async function handleRunningCancel(jobId: string) {
+    try {
+      await cancelQueuedJob(jobId)
+    } catch (e) {
+      onError(e instanceof ApiError ? e.message : 'Failed to cancel')
+    } finally {
+      refresh()
+    }
   }
 
   /** Settle a held cancel. Idempotent: the timer is the token, so whichever of
@@ -1443,18 +1463,9 @@ export default function HistoryList({
             title={allShownSelected ? 'Deselect all' : 'Select all'}
           />
         )}
-        {/* The count must drop the moment rows are hidden by a pending delete,
-            or the heading still says 34 while 14 rows are on screen and the
-            deletion looks like it did not happen.
-
-            Display only -- `total` itself is NOT adjusted, because row
-            numbering is `total - i` (see `numbered` above) and shifting it
-            would renumber every surviving voiceover the instant a delete was
-            held, then renumber them all back on Undo.
-
-            Subtracting pendingDeletes rather than counting `shown` keeps this
-            honest under a search: it is the number of voiceovers that exist,
-            not the number currently matching a filter. */}
+        {/* Keep the count aligned with the rows while a delete is held behind
+            its Undo toast. Once the timer commits and the server refreshes,
+            both update together without renumbering the remaining entries. */}
         {visibleTotal > 0 && <span className="mono order-3 text-[11px]">{visibleTotal}</span>}
       </h2>
       <p className="sr-only" role="status">{filters.status === 'active' || filters.status === 'failed' ? `Showing ${filters.status === 'active' ? 'generating and queued' : 'failed'} live voiceovers.` : `Showing ${total} completed voiceover${total === 1 ? '' : 's'}${filters.status === 'completed' ? '.' : ' with live jobs above.'}`}</p>
@@ -1642,6 +1653,7 @@ export default function HistoryList({
                 // using the map index. (Failures sort last, so the count is
                 // already complete by the time one is reached.)
                 const failed = job.status === 'error'
+                const queuedIndex = job.status === 'queued' ? queuedJobIds.indexOf(job.job_id) : -1
                 const pendingBefore = active.slice(0, i).filter((e) => e.status !== 'error').length
                 const number = total + 1 + pendingBefore
                 return (
@@ -1655,7 +1667,19 @@ export default function HistoryList({
                       true,
                       failed ? 'Failed' : undefined,
                     )}
-                    onCancel={() => (failed ? handleDismiss(job.job_id) : handleCancel(job.job_id))}
+                    onCancel={() =>
+                      failed
+                        ? handleDismiss(job.job_id)
+                        : job.status === 'running'
+                          ? handleRunningCancel(job.job_id)
+                          : handleQueuedCancel(job.job_id)
+                    }
+                    cancelPending={pendingCancels.has(job.job_id)}
+                    canMoveUp={queuedIndex > 0}
+                    canMoveDown={queuedIndex >= 0 && queuedIndex < queuedJobIds.length - 1}
+                    onMoveUp={() => void moveQueuedJob(job.job_id, -1)}
+                    onMoveDown={() => void moveQueuedJob(job.job_id, 1)}
+                    reordering={reordering}
                     onRetry={failed && !gpuFault ? () => handleRetry(job.job_id) : undefined}
                   />
                 )
@@ -1678,7 +1702,6 @@ export default function HistoryList({
                     onDelete={() => handleDelete(entry.id, name)}
                     selected={selected.has(entry.id)}
                     onToggleSelect={(shiftKey) => toggleSelected(entry.id, i, shiftKey)}
-                    onCopy={() => handleCopyScript(entry.text)}
                     // Not while searching. A keystroke can filter out a dozen
                     // rows at once, and a dozen simultaneous height collapses is
                     // the one place in this column that would feel slow -- the

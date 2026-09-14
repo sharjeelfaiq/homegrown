@@ -523,15 +523,20 @@ export default function StudioShell() {
     })
   }
 
+  // An id can outlive its voice when it was deleted elsewhere or between
+  // refreshes. Only a currently available preset is valid for generation.
+  const selectedVoice = voiceId == null ? null : presets.find((p) => p.id === voiceId) ?? null
   const scriptReady =
-    script.trim().length > 0 && script.length <= MAX_SCRIPT_CHARS && voiceId != null
+    script.trim().length > 0 && script.length <= MAX_SCRIPT_CHARS && selectedVoice != null
 
   async function handleGenerate() {
-    if (!scriptReady) {
+    if (!scriptReady || selectedVoice == null) {
       setError(
         presets.length === 0
           ? 'Add a voice first — drop a reference clip anywhere on this page.'
-          : 'Write a script and pick a voice.',
+          : selectedVoice == null
+            ? 'Pick a voice before generating.'
+            : 'Write a script before generating.',
       )
       return
     }
@@ -558,12 +563,22 @@ export default function StudioShell() {
 
     setSubmitting(true)
     try {
-      const voiceLanguage = presets.find((p) => p.id === voiceId)?.language || 'English'
-      await startGenerate({ presetId: voiceId as string, text: script, language: voiceLanguage })
+      // `scriptReady` above proves this is a current preset, rather than just
+      // a stale id that would surface the backend's internal preset error.
+      await startGenerate({ presetId: selectedVoice.id, text: script, language: selectedVoice.language })
       setScript('')
       refreshQueue()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to submit')
+      if (
+        e instanceof ApiError &&
+        (e.message.includes('Unknown preset_id') || e.message.includes('Selected voice is unavailable'))
+      ) {
+        setVoiceId(null)
+        refreshPresets()
+        setError('The selected voice is no longer available. Pick a voice before generating.')
+      } else {
+        setError(e instanceof ApiError ? e.message : 'Failed to submit')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -582,7 +597,7 @@ export default function StudioShell() {
         ? 'Waiting for the voice model'
         : presets.length === 0
           ? 'Add a voice first'
-          : voiceId == null
+          : selectedVoice == null
             ? 'Pick a voice'
             : script.length > MAX_SCRIPT_CHARS
               ? 'Script is too long'
@@ -784,7 +799,7 @@ export default function StudioShell() {
           <section className="compose-bar flex flex-wrap items-center gap-2">
             <GenerateButton
               disabled={!canGenerate}
-              blockedReason={blockedReason}
+              blockedReason={script.trim().length > 0 ? blockedReason : null}
               busy={submitting}
               warming={warmingUp}
               count={scriptReady ? 1 : 0}

@@ -1792,7 +1792,7 @@ def generate(req: GenerateRequest, user_id: str = Depends(get_current_user)) -> 
         raise HTTPException(503, "Model not loaded yet")
     preset = _find_preset(req.preset_id)
     if preset is None or preset.get("user_id") != user_id:
-        raise HTTPException(404, "Unknown preset_id -- create a preset first")
+        raise HTTPException(404, "Selected voice is unavailable. Choose a voice before generating.")
     text = req.text.strip()
     if not text:
         raise HTTPException(400, "text is required")

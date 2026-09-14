@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { MOD_ARIA, MOD_KEY } from '../keys'
+import { AlertIcon } from './Icons'
 
 interface Props {
   disabled: boolean
-  /** Why the button is disabled, shown in place of "Generate". A greyed-out
-   * control that says nothing leaves the user guessing what is missing. */
+  /** Why the button is disabled. Shown from the adjacent warning icon so the
+   * control keeps its stable action label. */
   blockedReason?: string | null
   busy: boolean
   /** True while waking the backend, before any job has been submitted. */
@@ -44,22 +45,18 @@ export default function GenerateButton({
     ? 'Starting the voice model…'
     : busy
       ? 'Submitting…'
-      : blockedReason
-        ? blockedReason
-        : count > 1
-          ? `Generate ${count} voiceovers`
-          : 'Generate'
+      : count > 1
+        ? `Generate ${count} voiceovers`
+        : 'Generate'
 
   // flex-none, but no longer ml-auto: the voice controls anchor the right of
   // the compose row now, and Generate sits at the left. The slack between
   // them is taken by the wrapper around the voice field in StudioShell.
   return (
-    <section className="flex flex-none flex-col gap-2.5">
+    <section className="flex flex-none items-center gap-1.5">
       {/* Tooltip, not a visible key cap -- unlike the script box and the play
-          control, which wear theirs. This button already carries the longest
-          and most changeable label in the app (blockedReason substitutes into
-          it, and reads as a whole sentence), so a cap would sit beside text
-          that is sometimes "Generate" and sometimes "Pick a voice first".
+          control, which wear theirs. The button stays a stable action label;
+          any missing prerequisite is carried by the adjacent warning icon.
 
           aria-keyshortcuts is NOT the tooltip text: it takes a fixed
           vocabulary ("Control+Enter"), which is why MOD_ARIA is separate from
@@ -85,6 +82,17 @@ export default function GenerateButton({
           </motion.span>
         </AnimatePresence>
       </button>
+      {blockedReason && (
+        <span
+          className="flex size-5 flex-none items-center justify-center text-danger"
+          tabIndex={0}
+          role="img"
+          aria-label={blockedReason}
+          title={blockedReason}
+        >
+          <AlertIcon size={15} />
+        </span>
+      )}
     </section>
   )
 }
