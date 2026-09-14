@@ -80,7 +80,7 @@ voice.
 
 ## 3. Write a script and generate
 
-One script box, up to 60,000 characters, fixed height — drag the corner grip to resize. A **word count**
+One script box, up to 60,000 characters, fixed at 40% of the visible viewport height (`40svh`). A **word count**
 sits in the bottom-right corner inside the box, not in a row of its own.
 
 The **voice picker** and **✚** sit above the box, at the right. **Generate** sits alone beneath it.
@@ -204,12 +204,16 @@ name is a `localStorage` override, and the default `Voiceover 27` comes from the
 than being stored. While a search is running the full history is loaded; live rows are filtered by their
 voice name as well.
 
-The column is a **fixed window showing about eight rows**; the newest 20 load up front and scrolling to the bottom fetches ten
-more. There is no paginator
-and, on a desktop-width window, no page scroll at all — the list is the only thing that scrolls. Below
+The header's **Voiceover display settings** persist per browser. **Infinite scroll** is the default: the
+column is a **fixed window showing about eight rows**, the newest 20 load up front, and scrolling to the
+bottom fetches ten more. **Paginated display** fetches the complete already-server-filtered history in
+cancellable batches of at most 100 entries, then applies the browser-local name search and shows ten
+completed rows per page. Live, queued, canceling, and failed rows remain above every completed-history
+page. In either mode, on a desktop-width window there is no page scroll at all — the list is the only
+thing that scrolls. Below
 1025px the layout collapses to one column — the composer on top, Voiceovers beneath it — and the page
-scrolls normally instead, with the list growing to fit rather than scrolling inside itself. The script box
-shrinks with the viewport there so it does not bury the history.
+scrolls normally instead, with the list growing to fit rather than scrolling inside itself. The script
+textarea is a fixed 40%-viewport (`40svh`) writing surface with its own vertical scrollbar.
 
 Each row is three lines:
 
@@ -235,7 +239,7 @@ delete is sent only when it expires, then the history refresh removes it. Leavin
 window commits the delete with a keepalive request.
 
 **Select several** — the checkbox appears on hover, shift-click takes a range, and the checkbox in the
-heading takes everything currently on screen. A floating bar offers **Download** (one `.zip`) and
+heading takes everything currently on screen (the current ten-row page in paginated mode). A floating bar offers **Download** (one `.zip`) and
 **Delete** (one Undo for the batch).
 
 A voiceover finishing while you are scrolled down the list does not move you. It is counted instead, and an

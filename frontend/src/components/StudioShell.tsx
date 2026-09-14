@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NewVoiceModal from './NewVoiceModal'
 import ThemeSwitch from './ThemeSwitch'
+import HistoryDisplaySettings from './HistoryDisplaySettings'
 import ParticleText from './ParticleText'
 import VoicePicker from './VoicePicker'
 import ScriptBlock from './ScriptBlock'
@@ -18,6 +19,7 @@ import { useErrorToast } from '../hooks/useErrorToast'
 import Kbd from './Kbd'
 import { useTheme } from '../ThemeContext'
 import { themeMode } from '../theme'
+import { readHistoryDisplayMode, writeHistoryDisplayMode, type HistoryDisplayMode } from '../historyDisplay'
 import { useBootStatus } from '../hooks/useBootStatus'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useFlushOnHide } from '../hooks/useFlushOnHide'
@@ -102,6 +104,8 @@ export default function StudioShell() {
   // all this has to do is make sure the whole history is loaded while a
   // search is on.
   const [searchActive, setSearchActive] = useState(false)
+  const [historyDisplayMode, setHistoryDisplayMode] = useState<HistoryDisplayMode>(readHistoryDisplayMode)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [pendingNew, setPendingNew] = useState(0)
   // Refs, not state: read inside callbacks that must not be rebuilt (and so
   // must not re-arm the IntersectionObserver) every time they change.
@@ -227,10 +231,34 @@ export default function StudioShell() {
     if (!showingHistory) {
       setHistory([])
       setHistoryTotal(0)
+      setHistoryLoading(false)
       loadedRef.current = 0
       totalRef.current = 0
       return
     }
+    if (historyDisplayMode === 'paginated') {
+      setHistoryLoading(true)
+      void (async () => {
+        const entries: HistoryEntry[] = []
+        let offset = 0
+        let total = 0
+        while (!cancelled) {
+          const page = await listHistory(100, offset, serverFilters)
+          total = page.total
+          const known = new Set(entries.map((entry) => entry.id))
+          entries.push(...page.history.filter((entry) => !known.has(entry.id)))
+          offset += page.history.length
+          if (page.history.length === 0 || entries.length >= total) break
+        }
+        if (cancelled) return
+        setHistory(entries)
+        setHistoryTotal(total)
+        loadedRef.current = entries.length
+        totalRef.current = total
+      })().catch(() => {}).finally(() => { if (!cancelled) setHistoryLoading(false) })
+      return () => { cancelled = true }
+    }
+    setHistoryLoading(true)
     const want = searchActive
       ? Math.max(HISTORY_INITIAL_COUNT, totalRef.current)
       : Math.max(HISTORY_INITIAL_COUNT, loadedRef.current)
@@ -243,10 +271,11 @@ export default function StudioShell() {
         totalRef.current = r.total
       })
       .catch(() => {})
+      .finally(() => { if (!cancelled) setHistoryLoading(false) })
     return () => {
       cancelled = true
     }
-  }, [historyNonce, searchActive, serverFilters, showingHistory])
+  }, [historyNonce, historyDisplayMode, searchActive, serverFilters, showingHistory])
 
   // Append the next slice. Stable identity on purpose -- HistoryList uses it as
   // an effect dependency to arm its observer.
@@ -699,7 +728,10 @@ export default function StudioShell() {
             gatherDuration={320}
           />
         </h1>
-        <ThemeSwitch />
+        <div className="absolute inset-y-0 right-(--gutter) z-150 flex items-center gap-1">
+          <HistoryDisplaySettings mode={historyDisplayMode} onChange={(mode) => { setHistoryDisplayMode(mode); writeHistoryDisplayMode(mode) }} />
+          <ThemeSwitch />
+        </div>
       </div>
 
       {/* minmax(0, ...) on BOTH tracks is load-bearing: the voiceover
@@ -855,7 +887,8 @@ export default function StudioShell() {
             onReusePendingScript={handlePendingScriptReuse}
             onError={setError}
             gpuFault={gpuFault != null}
-            loading={modelStatus === 'checking'}
+            loading={modelStatus === 'checking' || historyLoading}
+            displayMode={historyDisplayMode}
           />
         </aside>
       </main>

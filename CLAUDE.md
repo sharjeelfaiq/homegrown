@@ -201,7 +201,8 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   appears are a job completing, a load-more append, and first paint. The first is a
   handoff -- `PendingRow` and `VoiceoverRow` are two `.map()`s in one `<ul>`, and the
   completing job's row is replaced in the same frame, so an entrance there reads as a
-  flicker. The second is pagination. Neither is an event the user caused at that row.
+  flicker. The second is an infinite-scroll append or a page transition. Neither is an
+  event the user caused at that row.
   A **`PendingRow` animates both ways**: it appears only because Generate was pressed.
   **Its exit fade is load-bearing, and was removed once on a misreading before being
   measured properly.** A finishing job does not hand off atomically -- the queue poll
@@ -233,11 +234,11 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   was still 0.86, and 0.0px row/list shift at 700/1024/1440px -- unchanged from before the
   animation existed.
 
-- **Menu transforms go on the MENU, never on `ThemeSwitch`'s root.** The root is the thing
+- **Header-menu transforms go on the MENU, never on a control root.** The root is the thing
   that must stay transform-free (see the `ThemeSwitch` note below for what a transform there
-  breaks). Both menus scale-and-fade from the corner they are anchored to -- theme menu
-  `origin-top-right`, measured `transform-origin: 208px 0px`; voice menu `origin-top`, which
-  hangs directly under its control. Neither menu has `fixed` descendants, so scaling them is
+  breaks). The theme and voiceover-display menus scale-and-fade from `origin-top-right`; the
+  voice-row menu uses `origin-top`, which hangs directly under its control. Neither menu has
+  `fixed` descendants, so scaling them is
   safe. Under `prefers-reduced-motion` the menu appears at opacity 1 / `transform: none` and
   is removed immediately on close -- element kept, motion gone.
 
@@ -263,7 +264,8 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
 - **Everything the user types survives an immediate reload, and `useFlushOnHide` is what closes the
   gap in each case.** Four stores, four different holes, one primitive:
   `homegrown-script-draft` and `voiceoverSearch` (`usePersistedDraft`), `historyFileNames` and
-  `pendingVoiceoverNames` (`usePersistedRecord`).
+  `pendingVoiceoverNames` (`usePersistedRecord`), plus `voiceoverDisplay.v1` (a synchronous,
+  validated browser preference for infinite versus paginated completed-history display).
   `voiceoverSearch` is additionally clamped to `MAX_SEARCH_CHARS` (100) on input and restoration, so an
   old localStorage value cannot render or filter beyond the field's limit.
   **The debounce used to eat the last edit.** `usePersistedDraft`'s timeout cleanup cancelled the
@@ -304,11 +306,12 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   download. Names are de-duplicated inside the archive (`name (2).mp3`), or two voiceovers called the
   same thing silently overwrite each other and the user gets fewer files than they selected.
 
-- **Selecting rows: `shown`-indexed ranges, `shown`-scoped select-all.** Shift-click fills the range
-  between two positions in `shown` (what is on screen after the filter), not in `history` — the same
+- **Selecting rows: visible-row-indexed ranges and select-all.** Shift-click fills the range
+  between two visible positions (the filtered list in infinite mode, the current page in paginated
+  mode), not in `history` — the same
   indices in the unfiltered array are different voiceovers, verified against the real store. A
   shift-range only ever ADDS, or a stray shift-click wipes a carefully built selection. The header
-  checkbox acts on the shown rows only (13 of 23 under a filter, measured), and rows selected earlier
+  checkbox acts on the visible rows only (13 of 23 under a filter, measured), and rows selected earlier
   but now filtered out stay selected rather than being silently dropped. `indeterminate` is a DOM
   property with no HTML attribute, so it is set through a ref.
 
@@ -527,16 +530,17 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   `usePersistedDraft`'s 400ms debounce, which is a different thing: it delays the *save*, not the
   filter, so typing still narrows the list on the keystroke. A restored query boots the column into a
   filtered view, which is safe because the box renders whenever `searching` is true — it cannot vanish
-  and leave a filter with no way to clear it — and `onSearchActiveChange` firing on mount is what
-  makes the parent load the whole history, without which the filter would only see the first page.)
+  and leave a filter with no way to clear it. In infinite mode, `onSearchActiveChange` makes the parent
+  load the whole history; paginated mode already does that before rendering any page.)
   Two consequences that are easy to break:
   **numbering happens BEFORE filtering.** The number is `total - i` over the *whole* list, so
   numbering the filtered array would renumber every row as you typed — "Voiceover 26" becoming
   "Voiceover 3" mid-search, so the name being searched for stops matching itself.
-  And **the parent must finish loading the history while a search runs** (`onSearchActiveChange` →
-  `listHistory(totalRef.current, 0)`), because filtering only sees what was fetched; without it a
-  query over a 200-row history would silently consider the first 20. The load-more sentinel and its
-  `IntersectionObserver` are both switched off while searching for the same reason.
+  And **the parent must finish loading the history while a search runs in infinite mode**
+  (`onSearchActiveChange` → `listHistory(totalRef.current, 0)`), because filtering only sees what was
+  fetched; without it a query over a 200-row history would silently consider the first 20. Paginated
+  mode always loads the complete server-filtered result in <=100-entry batches. The load-more sentinel
+  and its `IntersectionObserver` are both switched off while searching, and never mount in paginated mode.
 
 - **Shortcut caps: `MOD_KEY` is the glyph, `MOD_ARIA` is the attribute, and they are not
   interchangeable.** `aria-keyshortcuts` takes a fixed vocabulary (`Control+Enter`), so it can
@@ -545,8 +549,8 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   keystroke. Placement is deliberately not uniform: Generate is **tooltip-only** (its label
   substitutes `blockedReason` and reads as a sentence), and `/` sits on the Script heading at
   `order-3` past the `section-rule` hairline (inside the box it overlapped line one -- measured,
-  cap 11-29px against a 15-40.5px first line, and the bottom corners belong to the word count, the
-  resize grip and the scrollbar).
+  cap 11-29px against a 15-40.5px first line, and the bottom-right corner belongs to the word count and
+  the scrollbar).
 
 - **`Ctrl/Cmd+F` focuses the voiceovers search, and its `preventDefault` is CONDITIONAL.** Taking
   Ctrl+F from the browser is the one hijack every user would notice, so `onFindInApp` returns a
@@ -600,7 +604,7 @@ position, so failures are re-sorted client-side or they surface *above* the runn
 `total + 1 + i` row numbering must skip them, since a failed job never becomes a voiceover and numbering it
 shifts every row beneath. `canceled` stays excluded — the user stopped it and knows.
 
-The **Voiceovers column is a fixed window, not a paginated list.** `HISTORY_INITIAL_COUNT` (20) fills it
+The **Voiceovers column defaults to a fixed infinite-scroll window.** `HISTORY_INITIAL_COUNT` (20) fills it
 on first paint and `HISTORY_LOAD_MORE_COUNT` (10) is the scroll increment — two constants because the two
 jobs differ: the first batch has to fill the window and absorb the first scrolls, the increment only has to
 arrive before the reader reaches the bottom. `.result-list` is capped at `calc(8 * var(--result-row-h))`
@@ -611,6 +615,12 @@ it:
   array. Deleting an entry shifts every later one up by one, so an offset-based append would silently skip
   a voiceover. Appends de-duplicate by `id` for the same reason — a job finishing between two requests
   shifts the offsets under you.
+- The persisted `voiceoverDisplay.v1` setting may switch to frontend pagination.
+  In that mode `StudioShell` fetches the entire already-server-filtered history
+  in cancellable batches of at most 100 before `HistoryList` applies its
+  client-only name search and slices 10 completed rows per page. Do not reuse
+  the infinite sentinel there; infinite mode remains the legacy incremental
+  behaviour.
 - **Above 1025px the page itself does not scroll** (`.studio` is `height: 100svh; overflow: hidden`, with a
   `min-height: 0` chain down through `.workspace` → `.aside` → `.results` → `.result-list`). The row cap is
   a ceiling, not a height: `flex: 1 1 auto` clamps the list to whatever the aside actually has, so on a

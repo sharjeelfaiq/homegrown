@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import ReactPaginateModule from 'react-paginate'
 import {
   ApiError,
   cancelQueuedJob,
@@ -30,6 +31,15 @@ import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
 import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
 import Dock, { type DockItemData } from './Dock'
+import { type HistoryDisplayMode } from '../historyDisplay'
+
+// react-paginate ships a UMD bundle. Vite resolves that bundle as a namespace
+// object in development, while other bundlers resolve its default directly.
+// Normalize both forms so React always receives the component, never the
+// namespace object (which otherwise unmounts the whole app on paginated mode).
+const ReactPaginate = (
+  ReactPaginateModule as unknown as { default?: typeof ReactPaginateModule }
+).default ?? ReactPaginateModule
 
 interface Props {
   history: HistoryEntry[]
@@ -71,6 +81,8 @@ interface Props {
    * tells a starting-up user to "pick a voice and press Generate", which is
    * advice they cannot act on yet. */
   loading?: boolean
+  /** Infinite is the legacy data/scroll model; paginated pages completed rows locally. */
+  displayMode: HistoryDisplayMode
 }
 
 /** Past this many chunks the boundary ticks fall below ~4px apart and read as
@@ -776,6 +788,7 @@ export default function HistoryList({
   onError,
   gpuFault = false,
   loading = false,
+  displayMode,
 }: Props) {
   const { queue, refresh } = useGenerationActivity()
   const [entryFileNames, setFileName, removeFileName] = usePersistedRecord('historyFileNames')
@@ -873,6 +886,7 @@ export default function HistoryList({
   // with a restored query, which is what makes the parent load the whole
   // history; filtering only ever sees what has been fetched.
   const [persistedDraft, setPersistedDraft] = usePersistedDraft('voiceoverSearch')
+  const [page, setPage] = useState(0)
   // Cap restored drafts too. Keeping the derived value here means an old,
   // overlong localStorage value can neither render nor filter before the
   // persistence effect below replaces it with its bounded equivalent.
@@ -966,6 +980,17 @@ export default function HistoryList({
       )
     : visible
 
+  const pageCount = Math.ceil(shown.length / 10)
+  const pageRows = displayMode === 'paginated' ? shown.slice(page * 10, page * 10 + 10) : shown
+  const shownSignature = useMemo(() => shown.map(({ entry }) => entry.id).join(','), [shown])
+
+  // A changed query/filter/match set must never leave the reader on a now
+  // invalid page. Selection itself deliberately survives page changes.
+  useEffect(() => {
+    setPage(0)
+    lastClickedIndex.current = null
+  }, [displayMode, draft, filters, shownSignature])
+
     // Load the next slice when the end of the list scrolls into view.
   // IntersectionObserver rather than a scroll handler: it fires once per
   // crossing instead of on every frame of a scroll.
@@ -979,7 +1004,7 @@ export default function HistoryList({
   // there, since the page is the scroller.
   useEffect(() => {
     const sentinel = sentinelRef.current
-    if (!sentinel || !hasMore || searching) return
+    if (!sentinel || displayMode !== 'infinite' || !hasMore || searching) return
     const mq = window.matchMedia(TWO_COLUMN_QUERY)
     let io: IntersectionObserver | undefined
     const arm = () => {
@@ -998,7 +1023,7 @@ export default function HistoryList({
       mq.removeEventListener('change', arm)
       io?.disconnect()
     }
-  }, [hasMore, onLoadMore, history.length, searching])
+  }, [displayMode, hasMore, onLoadMore, history.length, searching])
 
   // The observer above cannot save us when the list is EMPTY, because the
   // sentinel it watches lives inside the <ul> and the <ul> is not rendered when
@@ -1017,9 +1042,9 @@ export default function HistoryList({
   // Terminates on its own. loadMoreHistory() returns early once
   // loadedRef >= totalRef, and every call that does fetch advances loadedRef.
   useEffect(() => {
-    if (shown.length > 0 || !hasMore || searching || loading) return
+    if (displayMode !== 'infinite' || shown.length > 0 || !hasMore || searching || loading) return
     onLoadMore()
-  }, [shown.length, hasMore, searching, loading, onLoadMore])
+  }, [displayMode, shown.length, hasMore, searching, loading, onLoadMore])
 
   // Whether the reader is at the top decides if a finished voiceover may be
   // inserted above them or has to be announced. Reported up rather than decided
@@ -1180,7 +1205,7 @@ export default function HistoryList({
 
   /** Toggle one row, or shift-click to fill the range from the last one.
    *
-   * `index` is the row's position in `shown` -- what is on screen after the
+   * `index` is the row's position in `pageRows` -- what is on screen after the
    * search filter -- so a range drawn across a filtered list selects the span
    * the user actually drew, not whatever sits between those two rows in the
    * unfiltered history. */
@@ -1193,7 +1218,7 @@ export default function HistoryList({
         // gesture or a stray shift-click wipes a carefully built selection.
         const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
         for (let i = from; i <= to; i++) {
-          const row = shown[i]
+          const row = pageRows[i]
           if (row) next.add(row.entry.id)
         }
         return next
@@ -1209,7 +1234,7 @@ export default function HistoryList({
    *  claim to have selected rows a search is hiding. Rows already selected but
    *  filtered out stay selected -- clearing them would silently undo work the
    *  user did before they typed a query. */
-  const shownIds = shown.map(({ entry }) => entry.id)
+  const shownIds = pageRows.map(({ entry }) => entry.id)
   const shownSelectedCount = shownIds.filter((id) => selected.has(id)).length
   const allShownSelected = shownIds.length > 0 && shownSelectedCount === shownIds.length
 
@@ -1469,7 +1494,7 @@ export default function HistoryList({
   // 1100/900/768/700, with the root overflowing by 101/233/301px at the last
   // three.
   return (
-    <section className="results mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
+    <div className="mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
       <h2 className="section-rule">
         <span>Voiceovers</span>
         {/* Select-all, in the heading rather than as a new row -- the heading
@@ -1478,7 +1503,7 @@ export default function HistoryList({
             selected earlier but now filtered out stay selected rather than
             being silently dropped. `indeterminate` is a DOM property with no
             HTML attribute, so it can only be set through a ref. */}
-        {shown.length > 0 && (
+        {pageRows.length > 0 && (
           <input
             type="checkbox"
             className="order-2 size-3.5 flex-none accent-audio"
@@ -1571,6 +1596,10 @@ export default function HistoryList({
         </div>
       )}
 
+      {/* The controls intentionally live outside this panel. The list remains
+          in the same flex slot, but the glass starts with voiceover content
+          rather than tinting the heading, select-all checkbox, or search. */}
+      <section className="results flex min-h-0 flex-1 flex-col gap-1">
       {/* Surfaced instead of scrolling the list out from under a reader. */}
       {pendingNew > 0 && (
         <button
@@ -1649,7 +1678,7 @@ export default function HistoryList({
 
       {shown.length === 0 && active.length === 0 ? (
         <p className="m-0 max-w-full break-all py-5 text-[13px] text-faint wide:min-h-0 wide:flex-1 wide:overflow-y-auto">
-          {loading || hasMore
+          {loading || (displayMode === 'infinite' && hasMore)
             ? // `hasMore` matters as much as `loading` here. With every fetched
               // row hidden by a pending delete, this branch renders while the
               // effect above is still pulling the next slice -- and telling
@@ -1724,7 +1753,7 @@ export default function HistoryList({
             </AnimatePresence>
 
             <AnimatePresence initial={false}>
-              {shown.map(({ entry, number, name }, i) => {
+              {pageRows.map(({ entry, number, name }, i) => {
                 return (
                   <VoiceoverRow
                     key={entry.id}
@@ -1753,14 +1782,41 @@ export default function HistoryList({
             {/* The trigger for the next slice, and the only "there is more"
                 signal the user gets. Inside the <ul> so it scrolls with the
                 rows and so IntersectionObserver can scope to this list. */}
-            {hasMore && !searching && (
+            {displayMode === 'infinite' && hasMore && !searching && (
               <li className="py-3.5 text-center text-[11px] text-faint" ref={sentinelRef}>
                 Loading more…
               </li>
             )}
           </ul>
+          {displayMode === 'paginated' && pageCount > 1 && (
+            <nav className="voiceover-pager" aria-label="Voiceover pages">
+              <ReactPaginate
+                pageCount={pageCount}
+                forcePage={page}
+                onPageChange={({ selected: nextPage }) => {
+                  setPage(nextPage)
+                  lastClickedIndex.current = null
+                  listRef.current?.scrollTo({ top: 0 })
+                  listRef.current?.scrollIntoView({ block: 'start' })
+                }}
+                previousLabel="Previous"
+                nextLabel="Next"
+                breakLabel="…"
+                pageRangeDisplayed={3}
+                marginPagesDisplayed={1}
+                containerClassName="voiceover-pager-list"
+                pageClassName="voiceover-pager-page"
+                previousClassName="voiceover-pager-prev"
+                nextClassName="voiceover-pager-next"
+                breakClassName="voiceover-pager-break"
+                activeClassName="is-active"
+                disabledClassName="is-disabled"
+              />
+            </nav>
+          )}
         </>
       )}
-    </section>
+      </section>
+    </div>
   )
 }

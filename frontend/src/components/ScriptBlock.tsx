@@ -60,12 +60,11 @@ export default function ScriptBlock({
     // common interaction in the app and it earns colour at rest, not only
     // during a render.
     <div className="relative rounded-md border border-hairline bg-surface-card transition-[border-color] duration-(--base) ease-(--ease) focus-within:border-audio-line">
-      {/* Fixed height, resized by dragging the corner grip -- not auto-growing.
-          The user sets the working height once and it stays put instead of the
-          page reflowing on every keystroke. */}
+      {/* A stable 40% of the visible page height, not auto-growing or user-resizable.
+          A stable writing surface keeps long scripts from reflowing the page. */}
       <textarea
         ref={textareaRef}
-        className="block h-[clamp(140px,30svh,260px)] min-h-[140px] w-full resize-y overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-9 text-[15px]/[1.7] outline-none placeholder:text-faint"
+        className="block h-[40svh] min-h-[40svh] max-h-[40svh] w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-9 text-[15px]/[1.7] outline-none placeholder:text-faint"
         placeholder="Write what the voice should say…"
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
@@ -90,10 +89,9 @@ export default function ScriptBlock({
               over this same colour, so it matches exactly), because pb-9
               only reserves space at the END of the content -- a script
               scrolled to its middle runs lines straight under this;
-            - `right-6`, not `right-0`. Two things live in that corner: the
-              `resize-y` drag grip the comment above promises, and -- once a
-              script overflows `overflow-y-auto` -- the scrollbar, which is
-              17px on Windows. 16px is not enough for either. */}
+            - `right-6`, not `right-0`: once a script overflows
+              `overflow-y-auto`, Windows gives its scrollbar 17px, so 16px
+              is not enough to keep the count clear of it. */}
       <span
         className={`mono pointer-events-none absolute right-6 bottom-2 rounded-sm bg-surface-card px-1.5 py-0.5 text-[11px] whitespace-nowrap ${
           overLimit ? 'text-danger' : 'text-faint'

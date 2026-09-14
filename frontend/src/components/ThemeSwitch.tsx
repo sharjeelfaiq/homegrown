@@ -134,7 +134,7 @@ export default function ThemeSwitch() {
 
   return (
     <div
-      className="absolute inset-y-0 right-(--gutter) z-150 flex items-center font-body text-[13px]/[1.55] font-normal tracking-normal normal-case text-left"
+      className="relative z-150 flex items-center font-body text-[13px]/[1.55] font-normal tracking-normal normal-case text-left"
       ref={rootRef}
     >
       {/* Borderless, like every other icon button in the app. It briefly had

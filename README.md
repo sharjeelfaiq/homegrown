@@ -345,7 +345,7 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
 
 ### Script
 
-One script box, up to 60,000 characters, fixed height — drag the corner grip to resize it. A word count sits
+One script box, up to 60,000 characters, fixed at 40% of the visible viewport height (`40svh`). A word count sits
 in the bottom-right corner *inside* the box rather than in a row of its own. The **voice dropdown**
 and **✚** sit *above* the box, at the right; **Generate** sits alone below it.
 
@@ -439,6 +439,9 @@ open for browsing. With reduced motion enabled, it becomes an immediate static l
 and **Light** headings. The persisted theme model still understands `system` for existing preferences and
 first-run defaults, but System is intentionally not exposed as a picker choice.
 
+The adjacent borderless **Voiceover display settings** button chooses the persisted completed-history
+view: **Infinite scroll** (the default) or **Paginated display**.
+
 Each theme has its own **identity colour** — the wordmark tells you which one you are in at a
 glance — while the amber "generating" bar means the same thing in all nine, the way the red error
 and purple queued colours do. Those were one colour until recently, which is why eight of the nine
@@ -462,19 +465,25 @@ just like completed rows.
 
 The adjacent **Filters** button opens a compact popover for voice, browser-local
 date range (today, last 7/30 days, or custom), duration, and generation status.
-Voice/date/duration filters are applied by the history API before pagination;
-the name/voice search remains browser-local so it can include custom display
+Voice/date/duration filters are applied by the history API before pagination.
+The header’s display settings persist per browser: **Infinite scroll** is the
+default and retains incremental loading, while **Paginated display** fetches
+the complete filtered history in batches of at most 100 entries so local-name
+search and its 10-item frontend pages are complete and accurate. Live queue
+rows remain above every completed-history page.
+The name/voice search remains browser-local so it can include custom display
 names. Generating, queued, and failed rows are live client-side queue data:
 **All** shows live work above matching completed rows, while active and failed
 views show only their respective live rows.
 
-Every finished job, newest first, in a **fixed window about eight rows tall**. The newest 20 arrive on
-first paint and scrolling to the bottom of that window fetches ten more — there is no paginator, and on a
-desktop-width viewport the page itself does not scroll at all; the list is the only scrolling region. On a
+Every finished job is newest first in a **fixed window about eight rows tall** in infinite mode. The newest
+20 arrive on first paint and scrolling to the bottom fetches ten more. Paginated mode instead shows ten
+completed rows at a time with page controls; active queue rows remain above them. On a desktop-width
+viewport the page itself does not scroll at all; the list is the only scrolling region. On a
 short screen the window renders fewer rows than the cap allows, since it can only use the height the column
 actually has. Below 1025px the layout is one column — composer first, Voiceovers under it — the page
-scrolls normally, and the list grows to fit instead of scrolling inside itself. The script box shrinks with
-the viewport there (`clamp(140px, 30svh, 260px)`) so it does not sit between you and your history.
+scrolls normally, and the list grows to fit instead of scrolling inside itself. The script textarea is a
+fixed 40%-viewport (`40svh`) writing surface with its own vertical scrollbar.
 
 Each row is three lines:
 
@@ -501,7 +510,8 @@ seconds; the request is only sent when that expires, then the history refresh re
 the page during that window commits the delete with a keepalive request.
 
 **Select rows** with the checkbox that appears on hover, **shift-click** for a range, or use the
-checkbox in the `VOICEOVERS` heading to take everything on screen — with a search running that means
+checkbox in the `VOICEOVERS` heading to take everything on screen — in paginated mode, that means the
+current page only; with a search running it means
 the matches, and rows you selected before searching stay selected. A floating bar then offers
 **Download** (all of them as one `.zip`) and **Delete** (one toast, one Undo, for the whole batch).
 
