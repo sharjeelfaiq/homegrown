@@ -353,10 +353,9 @@ function PendingRow({
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
           so the two row kinds line up down the column. */}
       <div className="flex min-h-7 min-w-0 items-center gap-2.5">
-        {/* One bar for every chunk count. The boundary ticks are a repeating
-            gradient driven by --chunks rather than one element per chunk, so
-            three chunks and seven hundred cost the same. */}
-        <div
+        {/* Queued work has no progress to report. Its reorder controls and
+            status lead this line instead of an empty bar. */}
+        {!queued && <div
           className={['result-bar', showTicks && 'has-ticks'].filter(Boolean).join(' ')}
           role="progressbar"
           aria-valuemin={0}
@@ -388,7 +387,7 @@ function PendingRow({
           >
             {running && !reduced && <span className="absolute inset-0 animate-sheen bg-[linear-gradient(90deg,transparent,var(--sheen),transparent)]" aria-hidden="true" />}
           </motion.div>
-        </div>
+        </div>}
 
         {/* Elapsed, never remaining: the backend's eta_s is a rolling
             chars/second average that moves in both directions as chunks land,
@@ -424,7 +423,7 @@ function PendingRow({
               afford the 4px without touching the width, the script preview
               beside it, or the row height. */}
           <span
-            className={`inline-block w-[1ch] ${running ? 'mr-1' : ''}`}
+            className={`${queued ? 'hidden' : 'inline-block'} w-[1ch] ${running ? 'mr-1' : ''}`}
             aria-hidden="true"
           >
             {running && (
@@ -445,7 +444,7 @@ function PendingRow({
         </span>
 
         {queued && (
-          <div className="flex flex-none items-center gap-0.5" aria-label="Reorder queued generation">
+          <div className="order-first flex flex-none items-center gap-0.5" aria-label="Reorder queued generation">
             <button
               type="button"
               className="icon-btn"
@@ -468,6 +467,11 @@ function PendingRow({
             </button>
           </div>
         )}
+
+        {/* The progress bar normally supplies this flexible space and keeps
+            Cancel on the right edge. Queued rows intentionally have no bar,
+            so retain only its layout role here. */}
+        {queued && <div className="min-w-0 flex-1" aria-hidden="true" />}
 
         <div className="result-actions flex flex-none items-center gap-0.5">
           {/* Retry first: after a failure that was not the script's fault --
