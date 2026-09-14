@@ -1,6 +1,15 @@
 GPU / CLOUD RECOMMENDATION — Homegrown (Qwen3-TTS-12Hz-0.6B)
 ======================================================================
 
+UI NOTE (current)
+----------------------------------------
+The GPU/render path remains independent of the Generate control's presentation.
+Generate is a 40px semantic button with unchanged Ctrl/Cmd+Enter activation;
+its optional pointer-local WebGL specular layer has a CSS fallback and is off
+for disabled or reduced-motion states. Confirm an actual generation on target
+hardware after UI changes: queueing, progress, completion, audio output, and
+the browser console are the meaningful integration checks.
+
 CURRENT SETUP (baseline for comparison)
 ----------------------------------------
 - GTX 960, 4GB VRAM, bfloat16, sdpa attention (no flash-attn installed)

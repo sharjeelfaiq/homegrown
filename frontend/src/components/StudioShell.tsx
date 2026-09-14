@@ -803,18 +803,11 @@ export default function StudioShell() {
               GenerateButton stays a button throughout -- progress now lives in
               the Voiceovers column, as the first row, where the finished
               voiceover will land. */}
-          {/* NO ESTIMATE BESIDE GENERATE, deliberately. It was rendered here
-              for a while ("Generation will take about 25 min") and has been
-              removed: a figure quoted before you commit reads as a promise,
-              and this one is a guess with ~20% mean error (see
-              _estimate_seconds). It now appears only where it is honest --
-              as the denominator of the running row's clock, next to the
-              elapsed time that is actually measuring it, marked `~`.
-
-              /api/estimate is still fetched on the same 400ms debounce and is
-              still used: `warning` below is the long-reference-clip notice,
-              and the backend puts the same estimate on the job so the row can
-              show it. Nothing extra is requested for this. */}
+          {/* No duration estimate beside Generate or in a running row. A number
+              quoted before submission reads as a promise, and measured elapsed
+              time plus chunk progress are more honest. /api/estimate remains
+              on the 400ms debounce solely for exact chunking and the
+              long-reference-clip warning rendered above. */}
           <section className="compose-bar flex flex-wrap items-center gap-2">
             <GenerateButton
               disabled={!canGenerate}

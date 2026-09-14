@@ -1,0 +1,70 @@
+.specular-button {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+/* CSS is the dependable presentation path. The OGL canvas above it refines
+   the same highlight where a browser keeps transparent WebGL compositing
+   enabled; this fallback makes the button legible on every compositor. */
+.specular-button::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  opacity: 0;
+  background: radial-gradient(
+    72px circle at var(--specular-x, 50%) var(--specular-y, 50%),
+    color-mix(in srgb, var(--btn-invert-fg) 34%, transparent),
+    transparent 72%
+  );
+  transition: opacity var(--fast) var(--ease);
+}
+
+.specular-button--active::before {
+  opacity: 1;
+}
+
+.specular-button__canvas {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.9;
+}
+
+.specular-button__canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.specular-button__content {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.specular-button:disabled::before {
+  display: none;
+}
+
+.specular-button:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.specular-button:disabled .specular-button__canvas {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .specular-button__canvas {
+    display: none;
+  }
+}

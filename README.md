@@ -363,6 +363,13 @@ voiceovers search, **Escape** dismisses an error. `/` and `Ctrl+F` are shown as 
 they drive; Generate shows its shortcut on hover. There is no Space shortcut — it was removed, because
 binding a bare Space globally means taking over page scrolling everywhere outside a text field.
 
+**Generate remains a semantic 40px button.** Its action and shortcut do not change: it says
+**Generate** (or `Generate N voiceovers` for a batch), **Starting the voice model…** during the
+pre-submit wake check, and **Submitting…** while the request is sent. Disabled controls do not show the
+effect. On an enabled control, a pointer-local, theme-aware specular highlight follows the pointer; it is
+suppressed for reduced motion. CSS still paints the same highlight if a browser cannot transparently
+composite the optional WebGL layer, so WebGL is never required for a usable control.
+
 ### While it generates
 
 Only one job runs at a time — one worker thread, one GPU lock.
@@ -379,10 +386,8 @@ refused. Queued voiceovers are further rows above the finished ones, in processi
 ticking clock, so the difference survives greyscale as well as colour. Each promotes in place when its
 turn comes.
 
-Elapsed over a fixed guess, rather than a live countdown: the backend's `eta_s` re-projects from
-`elapsed / chunks_done` on every poll, so it moves in *both* directions as chunks land and is not
-worth watching. The denominator here is the estimate made once at submission and left alone. The **Generate** button stays a button and keeps its label throughout: progress
-belongs in the Voiceovers column, not on the control you press.
+The **Generate** control stays an action rather than a progress panel: queue and render progress belong
+in the Voiceovers column, not on the control that submits another job.
 
 **The app never predicts how long a render will take.** It reports elapsed time and chunk progress,
 both of which are measured. Two estimators were built and both were retired — the second was accurate
@@ -537,13 +542,13 @@ All routes are under `/api`, and every request is the same single local user.
 |---|---|---|
 | GET | `/api/health` | `model_loaded`, `sample_rate`, `device`, `device_reason`, `gpu_fault` |
 | GET | `/api/languages` | Languages the loaded model supports |
-| POST | `/api/estimate` | `{text, preset_id}` → `estimated_s`, `chunks`, `chunk_chars`, `ref_seconds`, `warning`. POST, and the whole script, because chunk count depends on sentence boundaries *and* on the voice |
+| POST | `/api/estimate` | `{text, preset_id}` → `chunks`, `chunk_chars`, `ref_seconds`, `warning`. POST, and the whole script, because chunk count depends on sentence boundaries *and* on the voice; it does not predict duration |
 | GET | `/api/presets` | List voice presets |
 | POST | `/api/presets` | Create one (multipart: `audio`, `name`, `ref_text`, `language`, `tag`) → also returns `ref_seconds` and `trimmed_from_seconds` |
 | PATCH | `/api/presets/{id}` | Rename one (`{name}`). Does not touch `preset_name` on existing history entries |
 | GET | `/api/presets/{id}/download` | The voice's reference clip, named after the voice |
 | DELETE | `/api/presets/{id}` | Delete a preset and its reference clip |
-| POST | `/api/generate` | Queue a job → `{job_id, total_chunks, estimated_s, queue_position}` |
+| POST | `/api/generate` | Queue a job → `{job_id, total_chunks, queue_position}` |
 | GET | `/api/jobs/{id}` | One job's status |
 | GET | `/api/queue` | The queue, in real processing order |
 | GET | `/api/queue/{id}/script` | Complete script and preset ID for an explicit pending-script reuse |

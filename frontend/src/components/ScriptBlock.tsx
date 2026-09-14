@@ -22,11 +22,10 @@ export default function ScriptBlock({
 }: Props) {
   const overLimit = text.length > MAX_SCRIPT_CHARS
 
-  // The estimate is not displayed HERE, but it is displayed. onEstimate feeds
-  // StudioShell, which renders `warning` as the long-reference-clip notice and
-  // `estimated_s`/`chunks` beside Generate. (For a long time only `warning`
-  // was used and the rest was discarded, which is why this comment used to say
-  // so.) Deleting this request removes both.
+  // The estimate is not displayed. onEstimate feeds StudioShell's
+  // long-reference-clip warning; the backend calculation also keeps the
+  // generated job's chunk count aligned with the pre-flight result. Deleting
+  // this request removes the warning path.
   useEffect(() => {
     if (text.trim().length === 0 || overLimit) {
       onEstimate?.(null)
@@ -77,10 +76,9 @@ export default function ScriptBlock({
       />
 
 
-      {/* Word count only. The chunk count, character counter and time estimate
-          all still exist -- the estimate request above is unchanged, because
-          StudioShell renders its `warning` field as the long-reference-clip
-          notice -- they simply are not shown here any more.
+      {/* Word count only. Chunking is still calculated by the request above so
+          StudioShell can render its long-reference-clip warning, but no time
+          estimate or chunk count is shown here.
 
           Overlaid on the textarea rather than given a row of its own: a
           30px bordered strip for six characters was the widest thing in the

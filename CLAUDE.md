@@ -1061,6 +1061,16 @@ below for why one wrong click there is unrecoverable.
   with a reason.
 - **`/api/queue` sorts by real position in `_pending_job_ids`**, not `_jobs` insertion order; reorder only
   splices the requesting user's own jobs so a shared FIFO can't be jumped.
+- **`SpecularButton` is presentation around a real button, not a new control.** `GenerateButton` supplies
+  the semantic `type`, disabled state, click handler and `aria-keyshortcuts`; `SpecularButton` forwards
+  them to its native `<button>`, keeps the 40px `generate-btn` geometry, and puts its canvas below the
+  content. Resolve `--btn-invert-fg` through `tokenColour()`'s temporary CSS probe — computed custom
+  properties preserve authored `var()` text. The OGL canvas is optional: CSS `::before` is the compositor
+  fallback, the canvas and fallback must never intercept pointers, and disabled controls hide both.
+  Do not run the effect for reduced motion, hidden documents, or offscreen controls; it observes resize,
+  viewport visibility and theme changes, and cleanup must cancel the frame, disconnect observers/listeners,
+  remove CSS pointer properties, lose the WebGL context, and remove the canvas. Keep the effect
+  pointer-local and layout-neutral.
 - **Doc hierarchy.** `README.md` (setup, features, troubleshooting) and this file are the maintained docs
   and stay at the repo root; all other prose lives under `docs/`. `docs/workflow.md` covers day-to-day
   usage and was rewritten against the current UI; `docs/BUILD.md` is the build procedure;
@@ -1072,9 +1082,9 @@ below for why one wrong click there is unrecoverable.
   written relative to the repo root.
 - **Two things the UI does not do, despite appearances.** `startGenerate()` sends only
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
-  `natural`/`balanced`). **The estimate is no longer among them** -- `estimated_s` and `chunks` now
-  reach the running row's clock as its `~guess` denominator -- **not** beside Generate, where a figure
-  quoted before committing reads as a promise rather than the ~20%-error guess it is. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
+  `natural`/`balanced`). **Nothing predicts duration.** `/api/estimate` is still fetched on a 400ms
+  debounce for exact chunking and the long-reference warning, but neither it nor `/api/generate` returns
+  `estimated_s`; the running row reports measured elapsed time and chunk progress only. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
   this machine, so wiring Stability up would buy nothing — see `docs/gpu-notes.md`. Style is untested. And `is_builtin` is dead weight: the backend hardcodes it `False`
   (`main.py`), no "Studio Voices" gallery section exists in the frontend any more, and
   `NewVoiceModal` no longer filters on it -- the field survives only in `Preset` on both sides.

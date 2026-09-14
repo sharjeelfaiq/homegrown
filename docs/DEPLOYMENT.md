@@ -97,7 +97,7 @@ In all error cases, `StudioShell` sets `modelStatus = 'down'` and shows the
 message in a status badge; `handleGenerate`'s own `wakeBackend()` call
 (the pre-Generate race guard) additionally surfaces the rejection as a
 user-facing error near the Generate button, and the button reverts from
-"Warming up the voice model..." to its normal disabled/enabled state — it
+"Starting the voice model…" to its normal disabled/enabled state — it
 never gets stuck showing "Warming up" forever.
 
 ## Confirmed: in-flight/queued jobs block auto-stop

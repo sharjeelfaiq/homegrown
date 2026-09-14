@@ -1189,7 +1189,7 @@ def estimate(req: EstimateRequest, user_id: str = Depends(get_current_user)) -> 
 
     preset = _find_preset(req.preset_id) if req.preset_id else None
     if preset is None or preset.get("user_id") != user_id:
-        return result  # no preset: time estimate only, chunking is unknowable
+        return result  # no preset: chunking is unknowable
 
     facts = _ref_facts(preset)
     budget = facts.budget

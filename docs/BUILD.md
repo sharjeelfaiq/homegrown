@@ -224,6 +224,14 @@ Expect, in order:
      protocol=TCP localport=8731 enable=yes profile=private
    ```
 5. The loader redirects to the app once the model has loaded.
+6. In the Studio, verify Generate is 40px high; check its normal, starting, and submitting labels plus
+   the adjacent blocked-state reason, and use Ctrl/Cmd+Enter when it is ready. In each theme, move the pointer over the enabled
+   button and confirm the specular highlight stays within the button without moving layout. It must be
+   absent while disabled or when reduced motion is enabled.
+
+This is manual UI QA: the build gates validate source and generated assets, not GPU generation or browser
+WebGL/compositing paths. Before release, generate a voiceover on the target GPU and confirm queueing,
+progress, completion, audio playback, and a clean browser console.
 
 Then confirm the listener is on every interface:
 
@@ -297,8 +305,8 @@ means deleting the folder.
 |---|---|
 | `frontend/dist is missing` during step 5 | Step 4 was skipped |
 | Loader never appears | Stale launcher exe — re-run step 5 |
-| Firewall prompt on first run | Stale `backend.exe`; `run.py` must bind `127.0.0.1` |
+| Firewall prompt on first run | Expected when `backend.exe` binds `0.0.0.0:8731`; allow it only on a trusted private network |
 | App works locally, dead on LAN | `frontend/.env.local` survived step 3 and set `VITE_BACKEND_URL`. `start_server.bat` catches this before serving; the frozen build does not, so check the bundle |
-| Chunk count missing under the script box | Backend predates the `POST /api/estimate` change — rebuild |
+| Long-reference warning is missing | Backend predates the `POST /api/estimate` chunking check — rebuild |
 | PyInstaller runs out of disk | `TMP`/`TEMP` not redirected in step 5 |
 | `No matching distribution` for torch | `--extra-index-url` header in `requirements.txt` was bypassed |

@@ -103,6 +103,11 @@ Generate shows its shortcut on hover. **There is no Space shortcut** — it used
 voiceover and was removed, since binding a bare Space globally means taking over page scrolling
 everywhere outside a text field.
 
+Generate is still a real 40px button, including when the label changes to **Starting the voice model…**
+or **Submitting…**. `Ctrl/Cmd+Enter` activates it whenever it is ready. Its enabled state has a
+pointer-local specular highlight that follows the pointer in every theme; disabled and reduced-motion
+states omit it. The normal CSS highlight remains if transparent WebGL compositing is unavailable.
+
 ## 4. Watch it run
 
 Jobs process **one at a time** — single GPU, one worker thread, one lock.

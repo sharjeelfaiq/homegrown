@@ -399,9 +399,8 @@ function PendingRow({
           </motion.div>
         </div>}
 
-        {/* Elapsed, never remaining: the backend's eta_s is a rolling
-            chars/second average that moves in both directions as chunks land,
-            so watching it told the user nothing. Same slot the finished row
+        {/* Elapsed, never remaining: duration predictions were removed because
+            they varied too much to be a trustworthy clock. Same slot the finished row
             puts its clock in, so the two line up. */}
         {/* NOT aria-live. It was polite-live until the job-completion toast
             existed, which meant a screen reader read a new elapsed time every

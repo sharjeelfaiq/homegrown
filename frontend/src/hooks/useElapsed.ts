@@ -17,9 +17,8 @@ import type { QueueEntry } from '../api'
  * `live` freezes the readout at its last real value instead. A stopped clock
  * is honest about not knowing; a running one is a claim.
  *
- * Deliberately elapsed and not an estimate: `eta_s` comes from a rolling
- * chars/second average and moves in both directions as chunks land, which is
- * exactly what made it useless to watch.
+ * Deliberately elapsed and not an estimate: duration predictions were removed
+ * because they varied too much to be a useful promise.
  *
  * Null until the job actually starts -- a queued job has no elapsed time yet,
  * and showing 0:00 for it would read as "running, but stuck".

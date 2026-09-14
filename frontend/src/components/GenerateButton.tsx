@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
+import SpecularButton from './SpecularButton'
 
 interface Props {
   disabled: boolean
@@ -62,13 +63,14 @@ export default function GenerateButton({
           vocabulary ("Control+Enter"), which is why MOD_ARIA is separate from
           the display glyph in MOD_KEY. Assistive tech announces the shortcut
           from that attribute, so nothing is lost by the cap being absent. */}
-      <button
+      <SpecularButton
         type="button"
         className="generate-btn"
         disabled={disabled}
         onClick={onClick}
         aria-keyshortcuts={`${MOD_ARIA}+Enter`}
         title={`Generate (${MOD_KEY}+Enter)`}
+        reducedMotion={reduced}
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
@@ -81,7 +83,7 @@ export default function GenerateButton({
             {label}
           </motion.span>
         </AnimatePresence>
-      </button>
+      </SpecularButton>
       {blockedReason && <span className="text-[12px] text-muted" role="status">{blockedReason}</span>}
       <span className="flex items-center gap-1 text-[11px] text-faint coarse:hidden" aria-hidden="true">
         <Kbd>{`${MOD_KEY}+Enter`}</Kbd><span>to generate</span>
