@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import math
 import os
 import re
 import statistics
@@ -1538,6 +1539,11 @@ HISTORY_PAGE_MAX = 100
 def list_history(
     limit: int = 20,
     offset: int = 0,
+    preset_id: Optional[str] = None,
+    created_from: Optional[float] = None,
+    created_to: Optional[float] = None,
+    duration_min: Optional[float] = None,
+    duration_max: Optional[float] = None,
     user_id: str = Depends(get_current_user),
 ):
     """One page of this user's generations, newest first.
@@ -1562,8 +1568,38 @@ def list_history(
     """
     limit = max(1, min(limit, HISTORY_PAGE_MAX))
     offset = max(0, offset)
+    numeric = (created_from, created_to, duration_min, duration_max)
+    if any(value is not None and not math.isfinite(value) for value in numeric):
+        raise HTTPException(422, "History filter values must be finite numbers")
+    if created_from is not None and created_to is not None and created_from > created_to:
+        raise HTTPException(422, "created_from must not be later than created_to")
+    if duration_min is not None and duration_max is not None and duration_min > duration_max:
+        raise HTTPException(422, "duration_min must not exceed duration_max")
+
+    # Authorise before filtering. Retaining the index lets a filtered page
+    # carry its stable global Voiceover N number without a client-side full
+    # history request.
     mine = [h for h in _history if h.get("user_id") == user_id]
-    return {"history": mine[offset : offset + limit], "total": len(mine)}
+    filtered: list[tuple[int, dict]] = []
+    for index, entry in enumerate(mine):
+        if preset_id is not None and entry.get("preset_id") != preset_id:
+            continue
+        if created_from is not None and entry.get("created_at", 0) < created_from:
+            continue
+        if created_to is not None and entry.get("created_at", 0) > created_to:
+            continue
+        if duration_min is not None and entry.get("duration_s", 0) < duration_min:
+            continue
+        if duration_max is not None and entry.get("duration_s", 0) > duration_max:
+            continue
+        filtered.append((index, entry))
+    page = filtered[offset : offset + limit]
+    is_filtered = preset_id is not None or any(value is not None for value in numeric)
+    history = [
+        ({**entry, "history_number": len(mine) - index} if is_filtered else entry)
+        for index, entry in page
+    ]
+    return {"history": history, "total": len(filtered)}
 
 
 class HistoryZipRequest(BaseModel):

@@ -446,6 +446,14 @@ It runs entirely in the browser, because two of the things it searches are not o
 custom name is a `localStorage` override, and the default `Voiceover 27` is derived from the row's
 position. While a search is running, the whole history is loaded and the queue rows are hidden.
 
+The adjacent **Filters** button opens a compact popover for voice, browser-local
+date range (today, last 7/30 days, or custom), duration, and generation status.
+Voice/date/duration filters are applied by the history API before pagination;
+the name/voice search remains browser-local so it can include custom display
+names. Generating, queued, and failed rows are live client-side queue data:
+**All** shows live work above matching completed rows, while active and failed
+views show only their respective live rows.
+
 Every finished job, newest first, in a **fixed window about eight rows tall**. The newest 20 arrive on
 first paint and scrolling to the bottom of that window fetches ten more — there is no paginator, and on a
 desktop-width viewport the page itself does not scroll at all; the list is the only scrolling region. On a
@@ -538,7 +546,7 @@ All routes are under `/api`, and every request is the same single local user.
 | POST | `/api/queue/{id}/retry` | Resubmit a failed job's own script → same shape as `/api/generate` |
 | DELETE | `/api/queue/{id}` | Dismiss a **canceled or failed** job. Finished ones are deleted through `/api/history` |
 | POST | `/api/queue/reorder` | Reorder queued jobs |
-| GET | `/api/history` | Completed voiceovers. No `q` — search is client-side, see below |
+| GET | `/api/history` | Completed voiceovers. Optional `preset_id`, `created_from`, `created_to`, `duration_min`, and `duration_max` filter before pagination. No `q` — search is client-side |
 | POST | `/api/history/zip` | Several voiceovers as one `.zip` (`{ids, names}`). `names` carries the display names, which the server has never seen |
 | DELETE | `/api/history/{id}` | Delete an entry and its audio |
 | GET | `/api/download/{filename}?name=` | Download with a chosen filename |

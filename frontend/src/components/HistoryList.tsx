@@ -25,12 +25,16 @@ import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
 import UndoCountdown from './UndoCountdown'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import { CopyIcon, DownloadIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
+import { CopyIcon, DownloadIcon, MoreIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
+import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
 
 interface Props {
   history: HistoryEntry[]
+  presets: import('../api').Preset[]
+  filters: VoiceoverFilterState
+  onFiltersChange: (filters: VoiceoverFilterState) => void
   total: number
   /** Focused (and selected) by the Ctrl/Cmd+F shortcut, which is bound in
    *  StudioShell -- the same arrangement as the script box and "/". */
@@ -142,6 +146,7 @@ function RowHead({
         ariaLabel={placeholder ?? `Name of voiceover ${number}`}
         title={nameTitle}
         onCommit={onCommitRename}
+        className="result-name voiceover-name"
       />
 
       <span className="mono ml-auto max-w-[55%] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-faint" title={`Voice: ${voiceName}`}>
@@ -510,6 +515,7 @@ function VoiceoverRow({
   onToggleSelect,
   onCopy,
   animateExit,
+  menuPlacement = 'up',
 }: {
   entry: HistoryEntry
   nameControl: NameControl
@@ -521,10 +527,29 @@ function VoiceoverRow({
   onToggleSelect: (shiftKey: boolean) => void
   onCopy: () => void
   animateExit: boolean
+  menuPlacement?: 'up' | 'down'
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const created = timeAgo(entry.created_at)
   const reduced = usePrefersReducedMotion()
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [menuOpen])
 
   return (
     // EXIT ONLY -- no initial/animate. The three ways a row appears here are a
@@ -545,7 +570,7 @@ function VoiceoverRow({
         ? { opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }
         : undefined}
       transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
-      className="group/row flex flex-col gap-0.5 overflow-hidden border-b border-hairline py-[7px] last:border-b-0">
+      className={`group/row flex flex-col gap-0.5 ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline py-[7px] last:border-b-0`}>
       <RowHead
         {...nameControl}
         voiceName={entry.preset_name}
@@ -587,34 +612,17 @@ function VoiceoverRow({
 
         <TransportTime audioRef={audioRef} fallbackDurationS={entry.duration_s} />
 
-        <div className="result-actions flex flex-none items-center gap-0.5 opacity-50 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
-          <a
-            href={downloadHref}
-            download
-            className="icon-btn"
-            aria-label={`Download ${name}`}
-            title="Download"
-          >
-            <DownloadIcon size={14} />
-          </a>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={`Reuse ${name} script`}
-            title="Reuse this script"
-            onClick={onRequeue}
-          >
-            <WandIcon size={14} />
+        <div className="result-actions relative flex flex-none items-center gap-0.5 opacity-50 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100" ref={menuRef}>
+          <button type="button" className="icon-btn" aria-label={`More actions for ${name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="More actions" onClick={() => setMenuOpen((open) => !open)}>
+            <MoreIcon size={15} />
           </button>
-          <button
-            type="button"
-            className="icon-btn icon-btn-danger"
-            aria-label={`Delete ${name}`}
-            title="Delete"
-            onClick={onDelete}
-          >
-            <TrashIcon size={14} />
-          </button>
+          {menuOpen && (
+            <div className={`voiceover-actions-menu absolute right-0 z-150 min-w-40 rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) ${menuPlacement === 'down' ? 'top-full mt-1' : 'bottom-full mb-1'}`} role="menu">
+              <a href={downloadHref} download className="voiceover-action-item" role="menuitem" onClick={() => setMenuOpen(false)}><DownloadIcon size={14} />Download</a>
+              <button type="button" className="voiceover-action-item" role="menuitem" onClick={() => { setMenuOpen(false); onRequeue() }}><WandIcon size={14} />Reuse script</button>
+              <button type="button" className="voiceover-action-item voiceover-action-danger" role="menuitem" onClick={() => { setMenuOpen(false); onDelete() }}><TrashIcon size={14} />Delete</button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -706,6 +714,9 @@ function VoiceoverRow({
  * Delete any of them and the thing it hooks stops happening, silently. */
 export default function HistoryList({
   history,
+  presets,
+  filters,
+  onFiltersChange,
   total,
   searchRef,
   onSearchActiveChange,
@@ -790,6 +801,12 @@ export default function HistoryList({
   const listRef = useRef<HTMLUListElement>(null)
   const sentinelRef = useRef<HTMLLIElement>(null)
 
+  useEffect(() => {
+    setSelected(new Set())
+    lastClickedIndex.current = null
+    listRef.current?.scrollTo({ top: 0 })
+  }, [filters])
+
   // The search is CLIENT-SIDE and undebounced, so it filters on the keystroke.
   //
   // It has to be. Two of the three things it searches do not exist on the
@@ -837,15 +854,17 @@ export default function HistoryList({
   // never considered, and make the heading's count disagree with what is on
   // screen. Clearing the box brings them straight back.
   const active =
-    searching
+    filters.status === 'completed'
       ? []
       : queue
           .filter(
             (e) =>
-              e.status === 'running' ||
-              e.status === 'queued' ||
-              e.status === 'canceling' ||
-              e.status === 'error',
+              (filters.status === 'failed'
+                ? e.status === 'error'
+                : filters.status === 'active'
+                  ? e.status === 'running' || e.status === 'queued' || e.status === 'canceling'
+                  : e.status === 'running' || e.status === 'queued' || e.status === 'canceling' || e.status === 'error') &&
+              (!searching || e.preset_name.toLowerCase().includes(draft.trim().toLowerCase()) || (pendingNames[e.job_id] ?? '').toLowerCase().includes(draft.trim().toLowerCase())),
           )
           // A held cancel is hidden on the strength of the click alone. The
           // job is still running and the 1s queue poll would otherwise put its
@@ -859,7 +878,7 @@ export default function HistoryList({
   // search narrowed it -- "Voiceover 26" would become "Voiceover 3" while you
   // typed, and the name you were searching for would stop matching itself.
   const numbered = history.map((entry, i) => {
-    const number = total - i
+    const number = entry.history_number ?? total - i
     return {
       entry,
       number,
@@ -1423,10 +1442,11 @@ export default function HistoryList({
             not the number currently matching a filter. */}
         {visibleTotal > 0 && <span className="mono order-3 text-[11px]">{visibleTotal}</span>}
       </h2>
+      <p className="sr-only" role="status">{filters.status === 'active' || filters.status === 'failed' ? `Showing ${filters.status === 'active' ? 'generating and queued' : 'failed'} live voiceovers.` : `Showing ${total} completed voiceover${total === 1 ? '' : 's'}${filters.status === 'completed' ? '.' : ' with live jobs above.'}`}</p>
 
-      {/* Rendered whenever there is anything to search OR a search is already
-          running -- the second half matters, or the box vanishes the moment a
-          query matches nothing and there is no way to clear it.
+      {/* Keep the controls mounted even for an empty history. This is important
+          when a persisted filter or search hides every row: the user must
+          still have a visible way to clear it and recover the list.
 
           type="search", not "text": it gets the native clear affordance and
           the right on-screen keyboard, and Escape clears it for free. The
@@ -1435,7 +1455,7 @@ export default function HistoryList({
           typing a search would fire shortcuts. isTyping() already covers
           INPUT, but Escape is NOT gated by it and would clear the composer's
           error banner behind the column. */}
-      {(total > 0 || searching || history.length > 0) && (
+      {(
         <div
           // shrink-0 is the whole reason the height works. .results is a flex
           // column with a CONSTRAINED height above 1025px (wide:h-full), and a
@@ -1445,8 +1465,9 @@ export default function HistoryList({
           // separate increases to the h-* utility changed the emitted CSS and
           // nothing on screen. .result-list is flex: 1 1 auto and takes the
           // space instead.
-          className="relative mb-2 shrink-0"
+          className="mb-2 flex shrink-0 gap-2"
         >
+          <div className="relative min-w-0 flex-1">
           <input
             ref={searchRef}
             type="search"
@@ -1482,6 +1503,8 @@ export default function HistoryList({
               {`${MOD_KEY}+F`}
             </Kbd>
           )}
+          </div>
+          <VoiceoverFilters presets={presets} history={history} value={filters} onChange={onFiltersChange} />
         </div>
       )}
 
@@ -1570,7 +1593,11 @@ export default function HistoryList({
                 // Generate" because their search missed reads as the app having
                 // lost their work.
                 `No voiceovers match “${draft.trim()}”.`
-              : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
+              : filters.status === 'active'
+                ? 'No generating or queued voiceovers.'
+                : filters.status === 'failed'
+                  ? 'No failed voiceovers.'
+                  : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
         </p>
       ) : (
         <>
@@ -1635,6 +1662,7 @@ export default function HistoryList({
                     // the one place in this column that would feel slow -- the
                     // filter has to narrow the list on the keystroke.
                     animateExit={!searching}
+                    menuPlacement={i === 0 ? 'down' : 'up'}
                   />
                 )
               })}

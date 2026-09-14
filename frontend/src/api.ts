@@ -49,6 +49,16 @@ export interface HistoryEntry {
   duration_s: number
   generation_s: number | null
   created_at: number
+  /** Present on structured-filter pages to preserve positional display names. */
+  history_number?: number
+}
+
+export interface HistoryFilters {
+  presetId?: string
+  createdFrom?: number
+  createdTo?: number
+  durationMin?: number
+  durationMax?: number
 }
 
 export interface GenerateJobStart {
@@ -239,8 +249,15 @@ export const HISTORY_LOAD_MORE_COUNT = 10
 export function listHistory(
   limit: number = HISTORY_INITIAL_COUNT,
   offset = 0,
+  filters: HistoryFilters = {},
 ): Promise<HistoryPage> {
-  return authFetch(apiUrl(`/api/history?limit=${limit}&offset=${offset}`)).then(
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (filters.presetId) query.set('preset_id', filters.presetId)
+  if (filters.createdFrom !== undefined) query.set('created_from', String(filters.createdFrom))
+  if (filters.createdTo !== undefined) query.set('created_to', String(filters.createdTo))
+  if (filters.durationMin !== undefined) query.set('duration_min', String(filters.durationMin))
+  if (filters.durationMax !== undefined) query.set('duration_max', String(filters.durationMax))
+  return authFetch(apiUrl(`/api/history?${query}`)).then(
     parseOrThrow<HistoryPage>,
   )
 }

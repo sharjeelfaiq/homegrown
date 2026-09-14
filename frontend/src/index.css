@@ -328,6 +328,27 @@ html {
   background: var(--bg-base);
 }
 
+/* Native option popovers otherwise use the browser's default light palette,
+   even when the app is on a dark theme. `color-scheme: inherit` follows the
+   active theme token on <html>; explicit option colours cover Chromium's
+   popup implementation and keep the text readable in every palette. */
+.history-filter-select {
+  color: var(--text-primary);
+  background-color: var(--bg-raised);
+  color-scheme: inherit;
+}
+
+.history-filter-select option,
+.history-filter-select optgroup {
+  color: var(--text-primary);
+  background-color: var(--bg-raised);
+}
+
+.history-filter-select:focus-visible {
+  outline: 2px solid var(--line-focus);
+  outline-offset: 2px;
+}
+
 body {
   margin: 0;
   font-family: var(--font-body);
@@ -577,15 +598,87 @@ body {
 
    Only `background` and `border-color` change on focus -- neither takes part
    in layout. NEVER add a border-width or padding change here. */
+@utility inline-name-shell {
+  position: relative;
+  display: inline-flex;
+  margin-left: 4px;
+  min-width: 0;
+  max-width: 64%;
+  align-items: center;
+}
+
+@utility inline-name-pencil {
+  position: absolute;
+  z-index: 1;
+  left: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-faint);
+  pointer-events: auto;
+  opacity: 1;
+  transition: opacity var(--fast) var(--ease), color var(--fast) var(--ease);
+
+  .inline-name-shell:focus-within & {
+    opacity: 0;
+  }
+}
+
+.inline-name-shell:hover .inline-name-pencil {
+  color: var(--text-muted);
+}
+
+.inline-name-shell:has(.voiceover-name) {
+  max-width: 76%;
+}
+
+.voiceover-name {
+  max-width: 76%;
+}
+
+.voiceover-actions-menu {
+  color: var(--text-primary);
+}
+
+.voiceover-action-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 12px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.voiceover-action-item:hover,
+.voiceover-action-item:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.voiceover-action-danger {
+  color: var(--danger-text);
+}
+
 @utility result-name {
   /* Width comes from the `size` attribute, which React sets from the value.
      flex: 0 1 auto lets it shrink under pressure but never stretch;
      max-width is what stops a very long name shoving the voice off the row. */
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 60%;
+  max-width: 64%;
   height: 26px;
   padding: 0 6px;
+  padding-left: 24px;
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 500;

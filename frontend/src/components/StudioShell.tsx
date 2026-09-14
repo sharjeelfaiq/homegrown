@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NewVoiceModal from './NewVoiceModal'
 import ThemeSwitch from './ThemeSwitch'
 import VoicePicker from './VoicePicker'
 import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
+import { restoreVoiceoverFilters, type VoiceoverFilterState } from './VoiceoverFilters'
 import GenerateButton from './GenerateButton'
 import { MAX_SCRIPT_CHARS, UNDO_MS } from '../constants'
 import { presetNameFromFile } from '../format'
@@ -39,6 +40,7 @@ import {
   startGenerate,
   type Estimate,
   type HistoryEntry,
+  type HistoryFilters,
   type Preset,
 } from '../api'
 
@@ -92,6 +94,7 @@ export default function StudioShell() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyNonce, setHistoryNonce] = useState(0)
+  const [historyFilters, setHistoryFilters] = useState<VoiceoverFilterState>(restoreVoiceoverFilters)
   // Not the query text -- just whether one is running. Filtering is
   // client-side (HistoryList searches names the server has never seen), so
   // all this has to do is make sure the whole history is loaded while a
@@ -104,6 +107,16 @@ export default function StudioShell() {
   const totalRef = useRef(0)
   const loadingMoreRef = useRef(false)
   const atTopRef = useRef(true)
+  const serverFilters = useMemo<HistoryFilters>(() => ({
+    presetId: historyFilters.presetId, createdFrom: historyFilters.createdFrom,
+    createdTo: historyFilters.createdTo, durationMin: historyFilters.durationMin,
+    durationMax: historyFilters.durationMax,
+  }), [historyFilters])
+  const showingHistory = historyFilters.status === 'all' || historyFilters.status === 'completed'
+
+  useEffect(() => {
+    try { localStorage.setItem('voiceoverFilters.v1', JSON.stringify(historyFilters)) } catch { /* storage is optional */ }
+  }, [historyFilters])
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -209,10 +222,17 @@ export default function StudioShell() {
   // only start after that has returned anyway.
   useEffect(() => {
     let cancelled = false
+    if (!showingHistory) {
+      setHistory([])
+      setHistoryTotal(0)
+      loadedRef.current = 0
+      totalRef.current = 0
+      return
+    }
     const want = searchActive
       ? Math.max(HISTORY_INITIAL_COUNT, totalRef.current)
       : Math.max(HISTORY_INITIAL_COUNT, loadedRef.current)
-    listHistory(want, 0)
+    listHistory(want, 0, serverFilters)
       .then((r) => {
         if (cancelled) return
         setHistory(r.history)
@@ -224,14 +244,14 @@ export default function StudioShell() {
     return () => {
       cancelled = true
     }
-  }, [historyNonce, searchActive])
+  }, [historyNonce, searchActive, serverFilters, showingHistory])
 
   // Append the next slice. Stable identity on purpose -- HistoryList uses it as
   // an effect dependency to arm its observer.
   const loadMoreHistory = useCallback(() => {
     if (loadingMoreRef.current || loadedRef.current >= totalRef.current) return
     loadingMoreRef.current = true
-    listHistory(HISTORY_LOAD_MORE_COUNT, loadedRef.current)
+    listHistory(HISTORY_LOAD_MORE_COUNT, loadedRef.current, serverFilters)
       .then((r) => {
         setHistoryTotal(r.total)
         totalRef.current = r.total
@@ -249,7 +269,7 @@ export default function StudioShell() {
       .finally(() => {
         loadingMoreRef.current = false
       })
-  }, [])
+  }, [serverFilters])
 
   // A finished job must not scroll the list out from under a reader. At the top
   // the new voiceover belongs there anyway, so refresh in place; scrolled down,
@@ -765,6 +785,9 @@ export default function StudioShell() {
         <aside className="min-w-0 wide:h-full wide:min-h-0">
           <HistoryList
             history={history}
+            presets={presets}
+            filters={historyFilters}
+            onFiltersChange={setHistoryFilters}
             searchRef={searchRef}
             onSearchActiveChange={setSearchActive}
             total={historyTotal}

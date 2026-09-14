@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFlushOnHide } from '../hooks/useFlushOnHide'
+import { PencilIcon } from './Icons'
 
 interface Props {
   /** The name to show when not being edited. */
@@ -72,6 +73,7 @@ export default function InlineName({
   minChars = 8,
   className = 'result-name',
 }: Props) {
+  const inputRef = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState(value)
   const [editing, setEditing] = useState(false)
   const skipBlurCommit = useRef(false)
@@ -101,9 +103,26 @@ export default function InlineName({
   const shown = editing ? draft : value
 
   return (
-    <input
-      type="text"
-      className={className}
+    <span className="inline-name-shell">
+      <button
+        type="button"
+        className="inline-name-pencil"
+        aria-label={`Edit ${ariaLabel}`}
+        title="Edit name"
+        tabIndex={-1}
+        onMouseDown={(event) => {
+          // Keep the input focused; otherwise clicking the affordance would
+          // commit the draft before the edit interaction begins.
+          event.preventDefault()
+          inputRef.current?.focus()
+        }}
+      >
+        <PencilIcon size={12} />
+      </button>
+      <input
+        ref={inputRef}
+        type="text"
+        className={className}
       spellCheck={false}
       size={Math.max(minChars, shown.length + 1)}
       aria-label={ariaLabel}
@@ -138,6 +157,7 @@ export default function InlineName({
           e.currentTarget.blur()
         }
       }}
-    />
+      />
+    </span>
   )
 }
