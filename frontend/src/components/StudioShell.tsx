@@ -35,6 +35,7 @@ import {
   deleteHistoryEntry,
   deletePreset,
   getHealth,
+  getQueueScript,
   listHistory,
   listPresets,
   renamePreset,
@@ -505,22 +506,37 @@ export default function StudioShell() {
   // No setLanguage here any more: selecting the voice already determines the
   // language, so restoring the entry's own would just duplicate it -- and would
   // be wrong if the voice has since been recreated in another language.
-  function handleRequeue(entry: HistoryEntry) {
+  function reuseScript(text: string, presetId: string) {
     // The wand replaces the script box wholesale, which silently threw away
     // anything typed there. Offered as an undo rather than a confirm: a
     // confirm taxes every re-queue to protect the rare one, and window.confirm
     // blocks the page and looks nothing like the rest of the app -- the same
     // reasoning that made voice deletion an inline two-step.
     const previous = script
-    const replacing = previous.trim() !== '' && previous !== entry.text
-    setScript(entry.text)
-    setVoiceId(entry.preset_id)
+    const replacing = previous.trim() !== '' && previous !== text
+    setScript(text)
+    setVoiceId(presetId)
     scriptRef.current?.focus()
     if (!replacing) return
     toast('Script replaced', {
       description: 'The script you had written was swapped out.',
       action: { label: 'Undo', onClick: () => setScript(previous) },
     })
+  }
+
+  function handleRequeue(entry: HistoryEntry) {
+    reuseScript(entry.text, entry.preset_id)
+  }
+
+  async function handlePendingScriptReuse(jobId: string) {
+    try {
+      // Do not touch the composer until the authenticated request succeeds:
+      // a job might have disappeared or belong to somebody else by click time.
+      const pendingScript = await getQueueScript(jobId)
+      reuseScript(pendingScript.text, pendingScript.preset_id)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Failed to load pending script')
+    }
   }
 
   // An id can outlive its voice when it was deleted elsewhere or between
@@ -826,6 +842,7 @@ export default function StudioShell() {
             onAtTopChange={handleAtTopChange}
             onDelete={handleDeleteHistory}
             onRequeue={handleRequeue}
+            onReusePendingScript={handlePendingScriptReuse}
             onError={setError}
             gpuFault={gpuFault != null}
             loading={modelStatus === 'checking'}

@@ -99,6 +99,14 @@ export interface QueueEntry {
   attempt?: number
 }
 
+/** The complete script is deliberately fetched only when someone asks to
+ * reuse a pending generation. Queue polling carries text_preview instead so
+ * long scripts do not travel on every one-second refresh. */
+export interface QueueScript {
+  text: string
+  preset_id: string
+}
+
 export interface ApiErrorBody {
   detail: string
 }
@@ -368,6 +376,10 @@ export async function zipHistory(
 
 export function listQueue(): Promise<{ queue: QueueEntry[] }> {
   return authFetch(apiUrl('/api/queue')).then(parseOrThrow<{ queue: QueueEntry[] }>)
+}
+
+export function getQueueScript(jobId: string): Promise<QueueScript> {
+  return authFetch(apiUrl(`/api/queue/${jobId}/script`)).then(parseOrThrow<QueueScript>)
 }
 
 export function cancelQueuedJob(

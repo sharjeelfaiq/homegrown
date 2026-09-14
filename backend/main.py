@@ -1748,6 +1748,12 @@ class QueueEntry(BaseModel):
     attempt: int = 1
 
 
+class QueueScriptResponse(BaseModel):
+    """The full script for an explicitly requested pending-job reuse."""
+    text: str
+    preset_id: str
+
+
 class ReorderRequest(BaseModel):
     job_ids: list[str]
 
@@ -1870,6 +1876,22 @@ def list_queue(user_id: str = Depends(get_current_user)) -> dict:
         # their relative order via the stable sort's shared key).
         entries.sort(key=lambda e: e.queue_position if e.queue_position is not None else -1)
     return {"queue": entries}
+
+
+@app.get("/api/queue/{job_id}/script")
+def get_queue_script(
+    job_id: str, user_id: str = Depends(get_current_user)
+) -> QueueScriptResponse:
+    """Return a pending job's complete script only on an explicit reuse click.
+
+    The queue poll intentionally exposes text_preview only: sending complete
+    scripts for every active job once per second is needless bandwidth.
+    """
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None or job.get("user_id") != user_id:
+            raise HTTPException(404, "Unknown job_id")
+        return QueueScriptResponse(text=job["text"], preset_id=job["preset_id"])
 
 
 @app.post("/api/queue/{job_id}/cancel")

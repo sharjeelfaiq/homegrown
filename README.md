@@ -375,7 +375,7 @@ small pulsing dot beside it while work is in flight.
 
 The Generate button stays live throughout, so a second script submitted mid-run is queued rather than
 refused. Queued voiceovers are further rows above the finished ones, in processing order, and are
-**purple** rather than amber — an empty bar and the word `Queued` in place of a filling bar and a
+**purple** rather than amber — reorder controls and the word `Queued` in place of a progress bar and a
 ticking clock, so the difference survives greyscale as well as colour. Each promotes in place when its
 turn comes.
 
@@ -482,9 +482,10 @@ Each row is three lines:
    timestamp on hover.
 
 **Click the script preview to reuse that script and voice.** The preview carries a wand affordance on
-hover and replaces the compose box, offering Undo if it overwrites text. The row shows the first 80
-characters; its full text remains in the native tooltip. 80 matches the backend's `text_preview` cut, so
-a voiceover does not visibly gain characters at the moment it finishes.
+hover and replaces the compose box, offering Undo if it overwrites text. Pending scripts are fetched in
+full only after that click; their rows still carry just the first 80 characters in queue polls. 80 matches
+the backend's `text_preview` cut, so a voiceover does not visibly gain characters at the moment it
+finishes.
 
 **Deleting a voiceover is undoable.** The row remains visible while the toast offers **Undo** for seven
 seconds; the request is only sent when that expires, then the history refresh removes the row. Leaving
@@ -545,6 +546,7 @@ All routes are under `/api`, and every request is the same single local user.
 | POST | `/api/generate` | Queue a job → `{job_id, total_chunks, estimated_s, queue_position}` |
 | GET | `/api/jobs/{id}` | One job's status |
 | GET | `/api/queue` | The queue, in real processing order |
+| GET | `/api/queue/{id}/script` | Complete script and preset ID for an explicit pending-script reuse |
 | POST | `/api/queue/{id}/cancel` | Cancel a queued or running job |
 | POST | `/api/queue/{id}/retry` | Resubmit a failed job's own script → same shape as `/api/generate` |
 | DELETE | `/api/queue/{id}` | Dismiss a **canceled or failed** job. Finished ones are deleted through `/api/history` |

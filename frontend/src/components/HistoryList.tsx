@@ -58,6 +58,8 @@ interface Props {
   onAtTopChange: (atTop: boolean) => void
   onDelete: (id: string, opts?: { unloading?: boolean }) => void
   onRequeue: (entry: HistoryEntry) => void
+  /** Fetches and restores a pending job's full script on demand. */
+  onReusePendingScript: (jobId: string) => void
   /** Surfaces a failed Retry. Without it an ApiError from the retry endpoint
    * is swallowed and the click looks like it did nothing -- the exact failure
    * mode this whole row state exists to remove. */
@@ -247,8 +249,9 @@ function TransportTime({
  * hold that lock and stall every other queued job. Cancel is the honest
  * control, and it lands at the next chunk boundary (~1s).
  *
- * Download and "reuse this script" are absent for the obvious reason -- there
- * is nothing to download yet, and the script is still in flight. */
+ * Download is absent because there is nothing to download yet. Pending scripts
+ * can be reused, but their complete text is fetched only after the wand click
+ * so the one-second queue poll remains small. */
 function PendingRow({
   job,
   nameControl,
@@ -260,6 +263,7 @@ function PendingRow({
   onMoveDown,
   reordering = false,
   onRetry,
+  onReuseScript,
 }: {
   job: QueueEntry
   nameControl: NameControl
@@ -273,6 +277,8 @@ function PendingRow({
   reordering?: boolean
   /** Only meaningful on a failed row; undefined elsewhere. */
   onRetry?: () => void
+  /** Present for running, canceling, and queued jobs; failed jobs omit it. */
+  onReuseScript?: () => void
 }) {
   const running = job.status === 'running'
   const canceling = job.status === 'canceling'
@@ -336,7 +342,7 @@ function PendingRow({
       exit={reduced ? undefined : { opacity: 0 }}
       transition={{ duration: reduced ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
       className={[
-        'flex flex-col gap-0.5 border-b border-hairline py-[7px] last:border-b-0',
+        'group/row flex border-b border-hairline py-[7px] last:border-b-0',
         queued && 'is-queued',
         failed && 'is-failed',
         // is-over used to sit beside this, tinting the clock once elapsed
@@ -348,6 +354,7 @@ function PendingRow({
         .filter(Boolean)
         .join(' ')}
     >
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <RowHead {...nameControl} voiceName={job.preset_name} nameTitle="Click to rename" />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
@@ -525,9 +532,27 @@ function PendingRow({
           timestamp's width; it does NOT get a line of its own, because the row
           must stay --result-row-h tall for the eight-row window cap to hold. */}
       <div className="flex min-w-0 items-center gap-2.5">
-        <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-muted" title={failed ? reason : job.text_preview}>
-          {failed ? truncate(reason) : previewOf(job.text_preview)}
-        </p>
+        {failed || !onReuseScript ? (
+          <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-muted" title={failed ? reason : job.text_preview}>
+            {failed ? truncate(reason) : previewOf(job.text_preview)}
+          </p>
+        ) : (
+          <button
+            type="button"
+            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-muted hover:text-ink"
+            title={job.text_preview}
+            aria-label={`Reuse the script of ${nameControl.name || nameControl.placeholder || 'this pending voiceover'}`}
+            onClick={onReuseScript}
+          >
+            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+              {previewOf(job.text_preview)}
+            </span>
+            <WandIcon
+              size={12}
+              className="flex-none opacity-0 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+            />
+          </button>
+        )}
         {/* When it was SENT, not when it will finish -- a queued row has no
             other indication of how long it has been waiting. */}
         <time
@@ -537,6 +562,7 @@ function PendingRow({
         >
           {formatTimeOfDay(job.submitted_at)}
         </time>
+      </div>
       </div>
     </motion.li>
   )
@@ -611,7 +637,8 @@ function VoiceoverRow({
         ? { opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }
         : undefined}
       transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
-      className={`group/row flex flex-col gap-0.5 ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline py-[7px] last:border-b-0`}>
+      className={`group/row flex ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline py-[7px] last:border-b-0`}>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <RowHead
         {...nameControl}
         voiceName={entry.preset_name}
@@ -623,26 +650,6 @@ function VoiceoverRow({
           have the last line to itself and the row get shorter. The player is
           the flexible element, so the icon strip is never pushed off. */}
       <div className="flex min-w-0 items-center gap-2.5">
-        {/* Ahead of the transport rather than at the row's edge: it lines up
-            with the play buttons down the column, so the checkboxes read as
-            one strip instead of a second ragged column. Dimmed until the row
-            is hovered or the box is checked, matching .result-actions -- a
-            column of eight permanently visible checkboxes was the thing this
-            list was pared back to avoid. */}
-        <input
-          type="checkbox"
-          className={`size-3.5 flex-none accent-audio transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100 ${
-            selected ? 'opacity-100' : 'opacity-0'
-          }`}
-          checked={selected}
-          // onChange, not onClick, so the keyboard (space) works. shiftKey is
-          // read off the native event: a click-driven change carries it, a
-          // keyboard one does not, which is the correct behaviour either way.
-          onChange={(e) =>
-            onToggleSelect('shiftKey' in e.nativeEvent && (e.nativeEvent as MouseEvent).shiftKey)
-          }
-          aria-label={`Select ${name}`}
-        />
         <VoiceoverPlayer
           src={mediaUrl(entry.audio_url)}
           durationS={entry.duration_s}
@@ -653,16 +660,35 @@ function VoiceoverRow({
 
         <TransportTime audioRef={audioRef} fallbackDurationS={entry.duration_s} />
 
-        <div className="result-actions relative flex flex-none items-center gap-0.5 opacity-50 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100" ref={menuRef}>
-          <button type="button" className="icon-btn" aria-label={`More actions for ${name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="More actions" onClick={() => setMenuOpen((open) => !open)}>
-            <MoreIcon size={15} />
-          </button>
+        <div className="result-actions flex flex-none items-center gap-0.5" ref={menuRef}>
+          {/* Selection lives in the action strip, rather than reserving a left
+              gutter on every row. It keeps its hover, focus, and selected
+              visibility behaviour while leaving the content edge shared with
+              pending work. */}
+          <input
+            type="checkbox"
+            className={`size-3.5 flex-none accent-audio transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100 ${
+              selected ? 'opacity-100' : 'opacity-0'
+            }`}
+            checked={selected}
+            // onChange, not onClick, so keyboard selection works too. A native
+            // click carries shiftKey; a keyboard change correctly does not.
+            onChange={(e) =>
+              onToggleSelect('shiftKey' in e.nativeEvent && (e.nativeEvent as MouseEvent).shiftKey)
+            }
+            aria-label={`Select ${name}`}
+          />
+          <div className="row-overflow-action relative flex flex-none opacity-50 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
+            <button type="button" className="icon-btn" aria-label={`More actions for ${name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="More actions" onClick={() => setMenuOpen((open) => !open)}>
+              <MoreIcon size={15} />
+            </button>
           {menuOpen && (
-            <div className={`voiceover-actions-menu absolute right-0 z-150 min-w-40 rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) ${menuPlacement === 'down' ? 'top-full mt-1' : 'bottom-full mb-1'}`} role="menu">
-              <a href={downloadHref} download className="voiceover-action-item" role="menuitem" onClick={() => setMenuOpen(false)}><DownloadIcon size={14} />Download</a>
-              <button type="button" className="voiceover-action-item voiceover-action-danger" role="menuitem" onClick={() => { setMenuOpen(false); onDelete() }}><TrashIcon size={14} />Delete</button>
-            </div>
+              <div className={`voiceover-actions-menu absolute right-0 z-150 min-w-40 rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) ${menuPlacement === 'down' ? 'top-full mt-1' : 'bottom-full mb-1'}`} role="menu">
+                <a href={downloadHref} download className="voiceover-action-item" role="menuitem" onClick={() => setMenuOpen(false)}><DownloadIcon size={14} />Download</a>
+                <button type="button" className="voiceover-action-item voiceover-action-danger" role="menuitem" onClick={() => { setMenuOpen(false); onDelete() }}><TrashIcon size={14} />Delete</button>
+              </div>
           )}
+          </div>
         </div>
       </div>
 
@@ -693,6 +719,7 @@ function VoiceoverRow({
         >
           {formatTimeOfDay(entry.created_at)}
         </time>
+      </div>
       </div>
     </motion.li>
   )
@@ -750,6 +777,7 @@ export default function HistoryList({
   onAtTopChange,
   onDelete,
   onRequeue,
+  onReusePendingScript,
   onError,
   gpuFault = false,
   loading = false,
@@ -1685,6 +1713,7 @@ export default function HistoryList({
                     onMoveDown={() => void moveQueuedJob(job.job_id, 1)}
                     reordering={reordering}
                     onRetry={failed && !gpuFault ? () => handleRetry(job.job_id) : undefined}
+                    onReuseScript={!failed ? () => onReusePendingScript(job.job_id) : undefined}
                   />
                 )
               })}

@@ -111,13 +111,15 @@ The voiceover being generated appears **immediately as the first row of the Voic
 exactly like the finished row it will become — same editable name, same voice — with three swaps: the
 waveform is a progress bar, the transport is a labelled **Cancel**, and the clock counts **elapsed**
 time in amber (a finished row's clock is grey), with a small pulsing dot while work is in flight.
-Download and re-queue are absent until there is something to download.
+Download is absent until there is something to download. The script preview's
+wand is available on running, cancelling, and queued rows, so you can reuse
+that work without waiting for it to finish.
 
 **You can queue more while one runs.** The Generate button stays live — type another script, change
 the voice if you want, press it again, and the new voiceover joins the queue rather than being refused.
 Queued voiceovers appear as further rows above the finished ones, in the order they will be processed,
-and they are **purple** where the one being generated is amber: an empty bar and the word `Queued`
-instead of a filling bar and a ticking clock. When the running one finishes, the next promotes in place
+and they are **purple** where the one being generated is amber: reorder controls and the word `Queued`
+instead of a progress bar and a ticking clock. When the running one finishes, the next promotes in place
 and turns amber. Cancel works on either — cancelling a queued voiceover leaves the running one alone.
 
 Elapsed, never a countdown. There was briefly a `~2:30` guess beside the clock and a server-side
@@ -220,8 +222,8 @@ Each row is three lines:
    was **sent**, which is the only indication of how long a queued job has been waiting.
 
 **Click the preview to reuse that script and voice.** A wand glyph appears on hover; the action fills the
-compose box and offers Undo if it replaces text you had written. Nothing expands, and the full script
-remains available in the preview's tooltip.
+compose box and offers Undo if it replaces text you had written. On a pending row the full script is
+fetched only after that click, so long scripts do not bloat queue polling.
 
 **Deleting is undoable.** The row stays visible while a toast offers **Undo** for seven seconds; the
 delete is sent only when it expires, then the history refresh removes it. Leaving the page in that

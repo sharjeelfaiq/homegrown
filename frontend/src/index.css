@@ -836,14 +836,13 @@ body {
 /* A queued row is the same row in a different colour -- amber means the GPU
    is working on it, purple means it is waiting its turn.
 
-   The colour goes on the TRACK and the label, not on the bar fill: a queued
-   job is at 0%, so the fill has no width to carry it. The inset box-shadow is
-   a border that costs no layout, which matters because --result-row-h and the
-   8-row window cap assume every row is exactly the same height.
+   Queued rows deliberately have no progress track: their reorder buttons and
+   `Queued` label occupy that line instead. The label carries the state colour
+   without pretending that work has started.
 
    Colour is not the only signal, and deliberately so -- roughly 1 in 12 men
-   would not read hue alone. In greyscale a queued row still has an empty,
-   sheen-less bar and reads "Queued" where a running row has a ticking clock. */
+   would not read hue alone. In greyscale a queued row still reads "Queued"
+   where a running row has a ticking clock. */
 @utility is-queued {
   & .result-bar {
     background: var(--queued-soft);
@@ -946,6 +945,10 @@ body {
      small window on a desktop still has a mouse. */
   @media (hover: none) {
     opacity: 1;
+
+    & .row-overflow-action {
+      opacity: 1;
+    }
   }
 
   @media (pointer: coarse) {
