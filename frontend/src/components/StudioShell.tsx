@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NewVoiceModal from './NewVoiceModal'
 import ThemeSwitch from './ThemeSwitch'
+import ParticleText from './ParticleText'
 import VoicePicker from './VoicePicker'
 import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
@@ -635,8 +636,20 @@ export default function StudioShell() {
             identity earns its keep. Large text, so the 3:1 non-text bar applies
             rather than 4.5:1; check_palette.py holds every theme's accent above
             that against all three surfaces. */}
-        <h1 className="border-b border-hairline px-(--gutter) py-[30px] text-center font-display text-[26px]/none font-semibold tracking-[0.1em] uppercase text-accent">
-          Homegrown
+        <h1 className="border-b border-hairline px-(--gutter) py-[25px] text-center leading-none">
+          <ParticleText
+            text="HOMEGROWN"
+            trigger="hover"
+            fontSize="clamp(1.7rem, 5vw, 2.2rem)"
+            fontWeight={600}
+            fontFamily="var(--font-display)"
+            particleColor="var(--accent)"
+            highlightColor="var(--accent-2-bright)"
+            particleSize={1.2}
+            density={3}
+            scatter={14}
+            gatherDuration={320}
+          />
         </h1>
         <ThemeSwitch />
       </div>
