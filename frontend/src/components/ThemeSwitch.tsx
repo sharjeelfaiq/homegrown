@@ -18,8 +18,8 @@ interface MenuPos {
   right: number
 }
 
-/** Theme picker, in the header. A menu rather than a two-state toggle because
- * there are nine themes plus System, and a toggle has nowhere to put them.
+/** Theme picker, in the header. A wheel rather than a two-state toggle because
+ * there are nine explicit themes, and a toggle has nowhere to put them.
  *
  * NO TRANSFORM ON THE ROOT, and that is load-bearing twice over. It used to
  * centre itself with `top-1/2 -translate-y-1/2`, and a transform does two
@@ -37,11 +37,10 @@ interface MenuPos {
  * root puts the whole switch above <main> rather than relying on the menu to
  * win a fight it could not reach.
  *
- * Modelled on VoicePicker: same pointerdown-to-close, same Escape handling,
- * same arrow-key walk. Two things differ deliberately -- the roles are
- * menu/menuitemradio rather than VoicePicker's listbox-over-a-role-less-list,
- * and focus moves into the menu on open. A menu button that opens a menu and
- * leaves focus behind is a keyboard dead end. */
+ * Modelled on VoicePicker: same pointerdown-to-close and Escape handling.
+ * Focus moves into the active picker on open; the animated wheel owns its
+ * listbox/option and arrow-key semantics. A picker that opens and leaves focus
+ * behind is a keyboard dead end. */
 export default function ThemeSwitch() {
   const { choice, theme, setChoice } = useTheme()
   const reduced = usePrefersReducedMotion()

@@ -428,12 +428,16 @@ direction.
 
 ### Themes
 
-Nine, in the picker at the top right: six dark — **Studio** (charcoal and cyan), **Greenroom** (deep
+Nine explicit choices appear in the picker at the top right: six dark — **Studio** (charcoal and cyan), **Greenroom** (deep
 green and jade), **Booth** (near-black, on air), **Marquee** (violet, magenta and cyan), **Vinyl**
 (warm black and gold), **Tide** (midnight navy and teal) — and three light — **Daylight** (neutral),
-**Tape** (warm paper and rust), **Score** (paper white, high contrast). **System** follows your OS.
+**Tape** (warm paper and rust), **Score** (paper white, high contrast).
 
-The picker groups them under **Dark** and **Light** headings.
+The default picker is a compact, right-curving option wheel. It supports mouse wheel/trackpad input,
+dragging, clicking, and Arrow keys; a theme is applied only after the wheel settles, and the picker stays
+open for browsing. With reduced motion enabled, it becomes an immediate static list grouped under **Dark**
+and **Light** headings. The persisted theme model still understands `system` for existing preferences and
+first-run defaults, but System is intentionally not exposed as a picker choice.
 
 Each theme has its own **identity colour** — the wordmark tells you which one you are in at a
 glance — while the amber "generating" bar means the same thing in all nine, the way the red error

@@ -703,24 +703,18 @@ never eyeballed.
   as muddy brown. Only text needs 4.5:1; a bar or badge is non-text at 3:1. Daylight and score also
   had to darken `--bg-base` to separate the card — **which means the `index.html` mirror changed
   too**, the drift `check_design_tokens.py` watches for.
-- **The theme menu groups by mode.** Six dark and three light in one flat list meant reading every
-  hint to tell which was which. `role="group"` with an `aria-label`, not a bare heading: the outer
-  list is `role="menu"`, whose only valid children are menuitems and groups, so a decorative `<li>`
-  heading would be announced as an empty item.
+**The default theme picker is `OptionWheel`, not a scrolling menu.** It presents the nine explicit
+themes in a compact right-curving `role="listbox"`; its children are `role="option"`. The wheel owns
+Arrow-key movement, supports pointer dragging, clicking, and a native non-passive `wheel` listener that
+prevents page scrolling while it is operated. It only calls `onChange` after its 160ms settle delay, and
+continued input cancels stale notifications. Keep its rAF and timer cleanup intact. The fixed menu root
+is still necessary: `ThemeSwitch` closes when an *outside* scroller moves, but ignores events that begin
+inside its own menu.
 
-**The theme menu is capped and scrolls.** `max-h-[min(60svh,332px)]` with `overflow-y: auto` and
-`scrollbar-gutter: stable`, the same shape as `result-list` and `voice-list`. It was uncapped when
-there were five themes; at nine the content is 570px, which ran off the bottom of a 605px viewport.
-
-**Making it scrollable immediately broke it, and the cause is worth knowing.** `ThemeSwitch` closes
-the menu on scroll — it is `position: fixed`, so a scroll underneath would leave it floating away
-from its trigger — and that listener is registered in the **capture** phase, which sees scroll events
-from *every* element. Harmless while the menu was too short to scroll; the moment it had
-`overflow-y`, dragging its scrollbar or wheeling over it closed the menu, and every theme past the
-seventh was unreachable. The listener now ignores events whose target is inside the menu.
-**Dropping capture is not the fix**: `scroll` does not bubble, and capture is exactly what lets one
-listener cover both scrollers (the page below 1025px, the results list above it) without naming
-either.
+**Reduced motion deliberately has a different presentation.** `ThemeSwitch` renders the same nine themes
+as an immediate, static accessible list grouped under Dark and Light headings; it does not mount the
+wheel. The visible picker offers only explicit themes. `ThemeChoice` retains `system` to resolve old
+stored preferences and the first-run default, but System is not a selectable row.
 
 **`@theme inline` is load-bearing.** A plain `@theme` copies the token's *value* into each utility at build
 time, freezing the palette on Studio. `inline` emits `var(--bg-card)` instead, which is the only reason
@@ -749,9 +743,10 @@ cannot be React: `Modal.tsx` portals to `document.body` (outside `#root`), and i
 stylesheets arrive through the JS module graph, so the first frame has no CSS at all — hence the five
 inlined per-theme backgrounds in that same `<head>`. The script and `src/theme.ts` are a deliberate
 hand-mirror (a blocking script cannot import a module and stay blocking); `check_design_tokens.py` scans
-`index.html` for exactly that reason. localStorage carries the *choice* (`'system'` or a theme id); the
-attribute carries the *resolved* theme. Do not read the attribute as the source of truth — it cannot tell
-System-resolving-to-Studio from an explicit Studio.
+`index.html` for exactly that reason. localStorage carries the *choice* (`'system'` for an existing/default
+preference, or a theme id); the attribute carries the *resolved* theme. Do not read the attribute as the
+source of truth — it cannot tell System-resolving-to-Studio from an explicit Studio. The UI deliberately
+only exposes explicit theme ids even though the model continues to resolve System.
 
 **The animated background is a WebGL shader, and three things keep it from being a liability.**
 `WebThreads.tsx` (adapted from reactbits, `ogl` as its only new dependency -- +51.1 kB raw /
