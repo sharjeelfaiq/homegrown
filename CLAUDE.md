@@ -344,9 +344,21 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   lands at the next chunk boundary (~1s); the hold adds `UNDO_MS` on top, so someone cancelling to get a
   different script running waits longer. The trade is that the only irreversible control in this column
   stops being irreversible.
-  **The row does not change during the hold**, and that is the point: `cancelPending` disables Cancel and
-  nothing else — no red, no frozen bar — because nothing has been sent and Undo must read as reversible.
-  The red-and-freeze treatment arrives afterwards, off the backend's own `canceling` status.
+  **The row turns red the moment the tick is clicked**, and this reverses what was written here first —
+  that `cancelPending` should disable Cancel and nothing else, because nothing had been sent yet and
+  Undo must read as reversible. The call went the other way: the red is the feedback that the tick
+  registered, and the Undo toast counting down beside it is what carries the reversibility. A row that
+  stayed amber for seven seconds after the tick read as a click that did nothing.
+  So `showCanceling = canceling || cancelPending` drives the tint, the bar fill and `.result-time`,
+  while `canceling` alone — which arrives only once the request is actually sent — still drives the
+  **freeze**. The bar therefore keeps advancing in red through the window, which is honest: the job is
+  still generating. Undo clears `cancelPending` and the row returns to amber (or to purple, for a
+  queued row: `is-canceling` is written after `is-queued`, so it wins on source order while it applies
+  and gives the colour back when it stops).
+  Measured in a real browser: **Undo** — tick 1.21s, red by 2.4s with the bar still climbing, Undo
+  2.42s, amber again by 3.9s, bar on to 136px, 0 requests sent. **Commit** — tick 1.02s, red from
+  1.5s and held through all 14 samples to 8.0s, `POST cancel` at 8.02s (tick + 7.01s), bar frozen at
+  32px from 8.0s to 11.0s, row gone at 11.5s.
   **A job can FINISH inside its own undo window**, which is the one hazard holding a *running* cancel
   introduces and is not hypothetical on a short script. Committing then would post a cancel at a job
   already in history, and the Undo button would go on offering to undo an event that can no longer

@@ -151,9 +151,9 @@ a **running** or **queued** row reveals compact tick/cross confirmation buttons,
 one opens a seven-second **Undo** toast rather than acting at once.
 
 Nothing is paused during those seven seconds — the voiceover carries on generating exactly as it was,
-the bar keeps filling, and the only visible change is that Cancel is greyed out. Undo puts it straight
-back; there is nothing to restore. When the timer runs out the cancellation is sent, and only then does
-the row turn red and freeze. If the voiceover happens to *finish* inside the window, the hold is
+the bar keeps filling. The row does turn **red** immediately, so you can see the tick registered, and
+Cancel greys out. Undo puts it straight back to amber; there is nothing to restore. When the timer runs
+out the cancellation is sent, and only then does the bar freeze where it got to. If the voiceover happens to *finish* inside the window, the hold is
 released on its own and nothing is sent.
 
 The trade-off, so it is not a surprise: confirming no longer frees the GPU immediately, so if you are

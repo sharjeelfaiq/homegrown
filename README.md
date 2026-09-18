@@ -408,8 +408,9 @@ long-reference-clip warning.
 **Cancel** stops a running job after the current chunk, within about a second. Clicking Cancel on either
 a **running** or **queued** row replaces it with compact tick/cross confirmation controls, and confirming
 either opens a seven-second **Undo** toast rather than acting at once. Nothing is paused meanwhile: the
-voiceover keeps generating, the bar keeps filling, and only Cancel greys out. Undo puts it back with
-nothing to restore; letting the timer run sends the cancellation, and the row turns red and freezes then.
+voiceover keeps generating and the bar keeps filling — but the row turns **red** straight away, so the
+tick visibly registers, and Cancel greys out. Undo puts it back to amber with nothing to restore;
+letting the timer run sends the cancellation, and the bar freezes then.
 A voiceover that finishes inside the window releases the hold by itself. The cost is that confirming no
 longer frees the GPU straight away — if you are cancelling to start something else, you wait those seven
 seconds. There is still no pause — a paused job would hold the GPU lock and stall the whole queue.
