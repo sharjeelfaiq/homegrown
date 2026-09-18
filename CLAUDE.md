@@ -329,7 +329,9 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
 - **The script preview REUSES; it does not expand.** It is the direct route to placing that completed
   voiceover's script and voice back in the composer, with the same Undo protection as any script
   replacement. The wand affordance appears on hover; `title={entry.text}` remains the in-place way to
-  inspect the full script.
+  inspect the full script. **On a PENDING row the control is disabled** — there is no voiceover to
+  reuse yet — which is why `onReusePendingScript` and `GET /api/queue/{id}/script` are currently
+  unreachable from the UI.
   `title={entry.text}` is the in-place way to see past `PREVIEW_CHARS`. Every generated and pending
   row reserves a `min-h-7` action line: the normal Cancel button, queued up/down controls, and
   tick/cross confirmation controls therefore cannot change row height or shift the fixed window.

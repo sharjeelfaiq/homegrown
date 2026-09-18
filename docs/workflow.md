@@ -120,19 +120,19 @@ labelled **Cancel**, and the play button is there in its usual place but **greye
 nothing to play yet. A generating row reports no time at all: no elapsed counter, no estimate. Its
 script preview's **Reuse** is greyed out for the same reason, and becomes available when the voiceover
 lands. The row carries no `Generating` or `Cancelling`
-word: the filling amber bar already says the GPU is working, and a cancellation shows as a disabled
-**Cancel**. `Queued` is still spelled out, because a queued row has no bar at all.
+word: the filling amber bar already says the GPU is working, and a cancellation turns the row red and
+greys out **Cancel**. `Queued` is still spelled out, because a queued row has no bar at all.
 
-**Cancelling a voiceover stops the row where it is and turns it red.** The progress bar freezes at the
-chunk it had actually finished — it does not reset, and it does not keep creeping — the dot stops
-pulsing, and the amber row tint, bar and clock all switch to the same red used for a failure. The job
-is genuinely still running until the current chunk ends, so the bar holds at the chunk it reached
-rather than resetting. When the backend drops it, the row **slides out to the right** rather than fading in place: a cancelled
-voiceover is not replaced by anything, and a quiet fade there reads as the row having been lost. A
-*completing* row still fades, because that one is being replaced by its own finished self.
-Download is absent until there is something to download. The script preview's
-wand is available on running, cancelling, and queued rows, so you can reuse
-that work without waiting for it to finish.
+**Cancelling a voiceover turns the row red, then stops it where it is.** The two happen at different
+moments and that is deliberate. The row goes red the instant you confirm, so the click visibly lands,
+but the job is genuinely still generating during the undo window and the bar goes on filling — in red.
+Once the window closes and the cancellation is actually sent, the bar **freezes** at the chunk it had
+finished: it does not reset, and it does not keep creeping. When the backend drops the row it
+**slides out to the right** rather than fading in place, because a cancelled voiceover is not replaced
+by anything and a quiet fade there reads as the row having been lost. A *completing* row still fades,
+since that one is being replaced by its own finished self.
+Download is absent until there is something to download, and the script preview's **Reuse** is greyed
+out for the same reason — both become available when the voiceover lands.
 
 **You can queue more while one runs.** The Generate button stays live — type another script, change
 the voice if you want, press it again, and the new voiceover joins the queue rather than being refused.
@@ -252,8 +252,10 @@ Each row is three lines:
    was **sent**, which is the only indication of how long a queued job has been waiting.
 
 **Click the preview to reuse that script and voice.** A wand glyph appears on hover; the action fills the
-compose box and offers Undo if it replaces text you had written. On a pending row the full script is
-fetched only after that click, so long scripts do not bloat queue polling.
+compose box and offers Undo if it replaces text you had written. It is **greyed out on a row that is
+still generating** — there is nothing to reuse until the voiceover exists — and becomes live when the
+row lands. Queue polls carry only the first 80 characters either way, so long scripts never ride the
+one-second refresh.
 
 **Deleting is undoable.** The row stays visible while a toast offers **Undo** for seven seconds; the
 delete is sent only when it expires, then the history refresh removes it. Leaving the page in that
