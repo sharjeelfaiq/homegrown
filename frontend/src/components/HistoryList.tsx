@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useIsPresent } from 'framer-motion'
 import ReactPaginateModule from 'react-paginate'
 import {
   ApiError,
@@ -15,7 +15,6 @@ import {
 } from '../api'
 import { downloadName, formatClock, formatTimeOfDay, formatTimestampFull, timeAgo } from '../format'
 import { useGenerationActivity } from '../GenerationActivityContext'
-import { useElapsed } from '../hooks/useElapsed'
 import { useOptimisticProgress } from '../hooks/useOptimisticProgress'
 import { toast } from 'sonner'
 import { useFlushOnHide } from '../hooks/useFlushOnHide'
@@ -26,7 +25,7 @@ import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
 import UndoCountdown from './UndoCountdown'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrossIcon, DownloadIcon, MoreIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrossIcon, DownloadIcon, MoreIcon, PlayIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
 import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
@@ -261,9 +260,11 @@ function TransportTime({
  * hold that lock and stall every other queued job. Cancel is the honest
  * control, and it lands at the next chunk boundary (~1s).
  *
- * Download is absent because there is nothing to download yet. Pending scripts
- * can be reused, but their complete text is fetched only after the wand click
- * so the one-second queue poll remains small. */
+ * Download is absent because there is nothing to download yet, and Reuse is
+ * present but DISABLED for the same reason -- the script preview's control only
+ * becomes live once the row is a voiceover. The fetch behind it (the complete
+ * text, pulled on demand rather than on every one-second queue poll) is
+ * therefore currently unreachable; see onReuseScript below. */
 function PendingRow({
   job,
   nameControl,
@@ -295,18 +296,24 @@ function PendingRow({
   const running = job.status === 'running'
   const canceling = job.status === 'canceling'
   // A running render cannot be paused and resumed, so ask before stopping it.
-  // Queued work has spent no GPU time and still gets the reversible toast flow
-  // supplied by HistoryList instead.
+  // The tick does not stop the GPU on the spot, though: it starts the same
+  // UNDO_MS hold a queued cancellation gets (see holdCancel). Nothing is
+  // paused during that window -- the job carries on generating exactly as it
+  // was -- so an Undo needs no state restored, and the row stays amber and
+  // ticking until the hold commits.
   const [confirmingCancel, setConfirmingCancel] = useState(false)
-  // Read from context rather than threaded through the map -- PendingRow is a
-  // sibling component, not a closure over HistoryList's scope.
-  const { reachable } = useGenerationActivity()
-  // useOptimisticProgress is deliberately NOT frozen: it is self-bounding, it
-  // never crosses the next chunk boundary, so with a dead backend it stalls
-  // within one chunk instead of running away. The clock had no such bound --
-  // it counted up forever -- which is why only it needs this.
-  const progress = useOptimisticProgress(running ? job : undefined)
-  const elapsed = useElapsed(job, reachable)
+  // useOptimisticProgress is self-bounding: it never crosses the next chunk
+  // boundary, so with a dead backend it stalls within one chunk instead of
+  // running away. That is why it needs no liveness flag. The elapsed clock DID
+  // need one -- its advance was local and unbounded, so a dead backend counted
+  // up forever -- and that whole apparatus (useElapsed, the `reachable` read
+  // here) went with the clock.
+  // `canceling` is passed in too, or the hook resets to 0 the moment the
+  // status flips and the bar -- which is supposed to FREEZE where it is --
+  // animates back to the left edge instead. useOptimisticProgress already
+  // stops advancing on `canceling` (it clamps to chunks_done/total_chunks), so
+  // handing it the job is what holds the width at the last committed chunk.
+  const progress = useOptimisticProgress(running || canceling ? job : undefined)
   const reduced = usePrefersReducedMotion()
 
   const total = job.total_chunks || 0
@@ -316,8 +323,8 @@ function PendingRow({
 
   // Queued is the only state that gets its own colour. `canceling` deliberately
   // does not: the job is still running until the current chunk ends, so
-  // painting it as "not started" would be a lie -- the row already says
-  // "Cancelling…".
+  // painting it as "not started" would be a lie. The row no longer says
+  // "Cancelling…" either -- the disabled Cancel button carries that.
   const queued = job.status === 'queued'
   // Terminal and unrecoverable. The row stays so the failure is visible, but
   // everything that implies work in progress -- the sheen, the elapsed clock,
@@ -328,6 +335,34 @@ function PendingRow({
   // instantly on every attempt looks like a button that does nothing. The
   // count is the proof that something happened.
   const attempt = job.attempt ?? 1
+  // Why this row will leave, decided while it is still mounted -- framer reads
+  // the LAST rendered props on unmount, and `canceled` never appears in
+  // /api/queue, so there is no render in which the row knows it has already
+  // gone. `canceling` covers the running path (the backend reports it until the
+  // current chunk ends); `cancelPending` covers the queued path, whose request
+  // is held behind the Undo toast and fires only when that window closes.
+  //
+  // cancelPending selects the EXIT but deliberately not the colour: during the
+  // hold nothing has been sent and Undo must still read as reversible, so a row
+  // that turned red mid-countdown would be claiming a cancellation that has not
+  // happened. It only ever takes effect at unmount, which is after the commit.
+  //
+  // It is qualified by `queued`, and that qualification is load-bearing now
+  // that a RUNNING cancel is held too. A queued job leaves the queue the
+  // instant its cancel commits, still reporting `queued`, so nothing but this
+  // flag can identify it. A running job cannot be read that way: it leaves the
+  // queue for two different reasons -- it was cancelled, or it simply FINISHED
+  // inside the seven seconds -- and the last render looks identical either way.
+  // So the running path relies on `canceling` instead, which the backend
+  // reports once the request has actually been sent. A job that completes
+  // mid-hold therefore keeps the completion fade, which is what covers the
+  // handoff seam.
+  const leavingCancelled = canceling || (cancelPending && queued)
+  // False for exactly as long as AnimatePresence is holding this row on screen
+  // after React has removed it. Paired with leavingCancelled it is the one bit
+  // the content needs: "you are on your way out, and it was a cancellation".
+  const present = useIsPresent()
+  const sliding = !present && leavingCancelled && !reduced
 
   return (
     // Enter AND exit, unlike a VoiceoverRow, which only exits. A pending row
@@ -348,15 +383,54 @@ function PendingRow({
     // No height collapse, only opacity -- collapsing would move every row below
     // it twice, once shut and once open again, for a row that is being replaced
     // at its own height.
+    //
+    // A CANCELLED row leaves differently, and the two exits must not be
+    // unified. A completing job is a handoff and has to be covered; a cancelled
+    // one is not replaced by anything, so the same quiet fade reads as the row
+    // having been dropped rather than stopped. It slides out to the right
+    // instead -- the one exit in this column that says "removed" rather than
+    // "became something else".
+    //
+    // The slide is on the row's CONTENT, not on the <li>, and the <li> carries
+    // overflow-hidden to clip it. Translating the <li> itself would have had to
+    // be clipped by .result-list, whose overflow-y is `auto` above the
+    // breakpoint and deliberately `visible` below it -- an overflow-x there
+    // would either add a horizontal scrollbar or turn the mobile list back into
+    // the nested scroll region its own comment forbids.
+    //
+    // The content learns it is leaving through useIsPresent, NOT through a
+    // framer variant label, and that is a correction rather than a preference.
+    // The label version (parent `exit="slide"`, child `variants={{slide}}`) was
+    // built first and measured: the child applied translateX(100%) as a static
+    // jump, the <li>'s own opacity never left 1, and because the parent's exit
+    // animation therefore never completed, AnimatePresence kept the row mounted
+    // FOREVER -- 259 consecutive samples of a row that had already left the
+    // queue, translated off its own edge and still in the DOM. Plain objects on
+    // both elements have no such coupling: the <li>'s opacity drives the
+    // presence completion, the content's x is an ordinary `animate`.
     <motion.li
       initial={reduced ? false : { opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={reduced ? undefined : { opacity: 0 }}
+      exit={
+        reduced
+          ? undefined
+          : { opacity: 0, transition: { duration: leavingCancelled ? 0.22 : 0.16 } }
+      }
       transition={{ duration: reduced ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
       className={[
-        'group/row flex border-b border-hairline px-2 py-[7px] last:border-b-0',
+        // No px-2, and its absence is load-bearing: VoiceoverRow has none
+        // either, and .result-list already supplies 8px of side padding. The
+        // extra padding here inset this row 8px on BOTH sides, which is exactly
+        // how far the progress track sat inside a finished row's waveform --
+        // measured in the real app at dL +8.0 / dR -8.1 while a synthetic
+        // harness (which gave both rows px-2) reported 0.0 and hid it.
+        'group/row flex overflow-hidden border-b border-hairline py-[7px] last:border-b-0',
         queued && 'is-queued',
         failed && 'is-failed',
+        // Mutually exclusive with is-running by construction -- `running` and
+        // `canceling` are different statuses -- so the amber tint, the amber
+        // bar fill and the amber clock all hand over to --danger at once.
+        canceling && 'is-canceling',
         // is-over used to sit beside this, tinting the clock once elapsed
         // passed the estimate. Both it and the estimate are gone: a prediction
         // that was beaten by 12 of 12 measured jobs is not worth showing, and
@@ -366,18 +440,56 @@ function PendingRow({
         .filter(Boolean)
         .join(' ')}
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <motion.div
+        className="flex min-w-0 flex-1 flex-col gap-0.5"
+        animate={{ x: sliding ? '100%' : 0 }}
+        transition={{ duration: reduced || !sliding ? 0 : 0.22, ease: [0.2, 0, 0, 1] }}
+      >
       <RowHead {...nameControl} voiceName={job.preset_name} nameTitle="Click to rename" />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
           so the two row kinds line up down the column. */}
       <div className="flex min-h-7 min-w-0 items-center gap-2.5">
-        <span className={`mono flex-none text-[10px] font-medium ${failed ? 'text-danger-text' : queued ? 'text-queued' : 'text-progress'}`}>
-          {failed ? 'Failed' : queued ? 'Queued' : canceling ? 'Cancelling' : 'Generating'}
-        </span>
+        {/* Queued is the only state that still spells itself out, because it is
+            the only one with nothing else to say: no bar, no moving clock.
+            "Generating" and "Cancelling" are gone -- an amber bar that is
+            filling, beside a pulsing dot and a ticking clock, already says the
+            GPU is working, and the word was the one thing on this line whose
+            width changed as the state did. "Failed" is not repeated here
+            either; `.result-time` renders it (with the attempt count). */}
+        {queued && (
+          <span className="mono flex-none text-[10px] font-medium text-queued">Queued</span>
+        )}
         {/* Queued work has no progress to report. Its reorder controls and
-            status lead this line instead of an empty bar. */}
-        {!queued && <div
+            status lead this line instead of an empty bar.
+
+            Everything else gets the bar inside a wrapper that MIRRORS
+            VoiceoverPlayer's own box -- same `flex min-w-0 flex-1 items-center
+            gap-2`, led by an element carrying the play button's exact classes.
+            That is what makes the bar start and end on the same two pixels as a
+            finished row's waveform, and it stays true if those classes ever
+            change, which a hardcoded 32px spacer would not. The right edge is
+            held by `.result-actions`' shared min-width.
+
+            That leading box held nothing but air while the row carried an
+            elapsed clock, then briefly held a percentage ring. It now holds the
+            REAL control, disabled: the same play button, with the same classes
+            and the same glyph, that this row will own the moment it becomes a
+            voiceover. A second reading of the percentage was redundant beside
+            the track; an empty box was a hole where a control belongs. Disabled
+            says the right thing -- there is nothing to play YET -- and
+            `icon-btn:disabled` already dims it, so no new style. */}
+        {!queued && <div className="flex min-w-0 flex-1 items-center gap-2">
+        <button
+          type="button"
+          className="icon-btn size-6 flex-none border-none bg-transparent text-muted"
+          disabled
+          aria-label="Not ready to play yet"
+          title="Not ready to play yet"
+        >
+          <PlayIcon size={16} />
+        </button>
+        <div
           className={['result-bar', showTicks && 'has-ticks'].filter(Boolean).join(' ')}
           role="progressbar"
           aria-valuemin={0}
@@ -401,67 +513,43 @@ function PendingRow({
           }
           style={{ '--chunks': total || 1 } as CSSProperties}
         >
+          {/* `result-bar-fill` rather than the bg-progress utility: the fill's
+              colour is a property of the ROW's state, and a utility class here
+              could not be overridden by `is-canceling` without an !important
+              fight. Width holds during `canceling` for the same reason the hook
+              is still fed the job -- `running ? progress : 0` sent a cancelled
+              bar sliding back to zero, which reads as work undone rather than
+              work stopped. */}
           <motion.div
-            className="relative h-full overflow-hidden rounded-sm bg-progress"
+            className="result-bar-fill relative h-full overflow-hidden rounded-sm"
             initial={false}
-            animate={{ width: `${running ? progress : 0}%` }}
+            animate={{ width: `${running || canceling ? progress : 0}%` }}
             transition={reduced ? { duration: 0 } : { duration: 0.5, ease: [0.2, 0, 0, 1] }}
           >
             {running && !reduced && <span className="absolute inset-0 animate-sheen bg-[linear-gradient(90deg,transparent,var(--sheen),transparent)]" aria-hidden="true" />}
           </motion.div>
+        </div>
         </div>}
 
-        {/* Elapsed, never remaining: duration predictions were removed because
-            they varied too much to be a trustworthy clock. Same slot the finished row
-            puts its clock in, so the two line up. */}
-        {/* NOT aria-live. It was polite-live until the job-completion toast
-            existed, which meant a screen reader read a new elapsed time every
-            second for the whole render and said nothing when it finished --
-            the one event worth announcing was the one thing it did not cover.
-            useJobToasts now announces completion through sonner's own live
-            region. Visual output here is unchanged. */}
+        {/* No elapsed clock any more -- the ring in the leading box reports
+            progress instead, and nothing on a generating row reports time.
+            (`generation_s` is still written to every history entry; nothing
+            reads it, exactly as with the retired estimates.)
+
+            The span STAYS, and rendering it empty is not an oversight. It is
+            14ch of reserved width, and it is the only reason the track beside
+            it ends on the same pixel as a finished row's waveform -- the
+            alignment measured at dL/dR 0.0px across 340/420/560px columns.
+            Remove it and the bar grows 14ch past the waveform on every
+            generating row. It still carries the one thing here that is not a
+            time: a failed row's `Failed · try 3`. */}
         <span className="mono result-time">
-          {/* The same reserved slot TransportTime puts the minus in, and the
-              only place a working indicator can go without moving anything:
-              it is already 1ch wide and already empty on this row.
-
-              Reusing VoicePicker's busy dot rather than inventing a spinner --
-              one idiom for "this is working", and it is 1.5px of layout that
-              was already allocated. It earns its place while the first chunk
-              renders, when the progress bar is still at zero and a running row
-              would otherwise look identical to a queued one.
-
-              Gated on prefers-reduced-motion: --animate-pulse-soft is a literal
-              1.4s, NOT one of the tokens the reduced-motion block in tokens.css
-              zeroes, so it would otherwise pulse for whole generations. The
-              element stays either way; only the motion goes. */}
-          {/* The gap is on the RUNNING row only, and that is arithmetic rather
-              than taste. `.result-time` is 14ch, and a finished row's
-              "12:07 / 45:33" is 13 characters in a 1ch sign slot -- exactly 14,
-              with nothing spare. Widening the slot unconditionally would push
-              that past the box and into its `overflow: hidden`. A running row
-              shows elapsed only ("0:11"), so it has ~8ch of slack and can
-              afford the 4px without touching the width, the script preview
-              beside it, or the row height. */}
-          <span
-            className={`${queued ? 'hidden' : 'inline-block'} w-[1ch] ${running ? 'mr-1' : ''}`}
-            aria-hidden="true"
-          >
-            {running && (
-              <span
-                className={`inline-block size-1.5 rounded-full bg-progress align-middle ${reduced ? '' : 'animate-pulse-soft'}`}
-              />
-            )}
-          </span>
-          {failed
-            ? attempt > 1
-              ? `Failed · try ${attempt}`
-              : 'Failed'
-            : canceling
-              ? 'Cancelling…'
-              : elapsed == null
-                ? ''
-                : formatClock(elapsed)}
+          {/* The pulsing dot that used to live in this span's 1ch sign slot is
+              gone with the clock it was aligned against. It existed to separate
+              a running row from a queued one while the bar was still at zero;
+              the ring does that now, in a box of its own, and two "this is
+              working" signals on one line was one too many. */}
+          {failed ? (attempt > 1 ? `Failed · try ${attempt}` : 'Failed') : ''}
         </span>
 
         {queued && (
@@ -551,11 +639,19 @@ function PendingRow({
             {failed ? truncate(reason) : previewOf(job.text_preview)}
           </p>
         ) : (
+          // Disabled until the job lands. The affordance stays visible --
+          // removing it would make the control appear only once, at the moment
+          // the row is replaced -- but it does nothing while the voiceover is
+          // still being made. Consequence worth stating: `onReusePendingScript`
+          // and the `GET /api/queue/{id}/script` endpoint behind it are now
+          // unreachable from the UI. Both are left wired, because re-enabling
+          // this is deleting one word.
           <button
             type="button"
-            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
+            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint enabled:hover:text-ink disabled:opacity-55"
             title={job.text_preview}
             aria-label={`Reuse the script of ${nameControl.name || nameControl.placeholder || 'this pending voiceover'}`}
+            disabled
             onClick={onReuseScript}
           >
             <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -574,7 +670,7 @@ function PendingRow({
           {formatTimeOfDay(job.submitted_at)}
         </time>
       </div>
-      </div>
+      </motion.div>
     </motion.li>
   )
 }
@@ -791,6 +887,11 @@ export default function HistoryList({
   displayMode,
 }: Props) {
   const { queue, refresh } = useGenerationActivity()
+  // Read by held-cancel timers, which fire from a closure captured several
+  // renders earlier -- `queue` there would be whatever it was when the hold
+  // started, which is precisely the value that cannot be trusted.
+  const queueRef = useRef(queue)
+  queueRef.current = queue
   const [entryFileNames, setFileName, removeFileName] = usePersistedRecord('historyFileNames')
   // Names for jobs that have no history entry yet, keyed by job id.
   //
@@ -845,7 +946,9 @@ export default function HistoryList({
   /** Queued jobs whose cancel is held behind an Undo toast. They remain in
    *  view until the timer commits their cancellation. */
   const [pendingCancels, setPendingCancels] = useState<Set<string>>(() => new Set())
-  const cancelTimers = useRef(new Map<string, { timer: number; flush: () => void }>())
+  const cancelTimers = useRef(
+    new Map<string, { timer: number; flush: () => void; toastId: string | number }>(),
+  )
 
   // Timers are cleared, NOT flushed, on unmount. Flushing would turn a
   // navigation into a destructive act the user never confirmed.
@@ -913,10 +1016,16 @@ export default function HistoryList({
   // and a terminal job has no position -- so a job that failed BEFORE the
   // current one started shares the running job's -1 and can sort above it.
   //
-  // `canceled` stays out. The user stopped that one deliberately and does not
-  // need telling. (Those entries do sit in the backend's in-memory _jobs
-  // unclaimed; dismissing them would mean firing a side-effectful request from
-  // a poll loop, which is the worse trade.)
+  // `canceled` stays out, and it is the ABSENCE of that status here that the
+  // row's slide-out exit is built around: the backend drops a cancelled job
+  // from /api/queue outright, so the row never renders in a terminal state --
+  // it simply unmounts between two polls. PendingRow therefore decides how it
+  // is leaving while it is still mounted (`leavingCancelled`), and framer plays
+  // that decision on the way out. Listing `canceled` here instead would leave a
+  // dead row on screen that the user has to dismiss, which is the thing the
+  // exit animation exists to avoid. (Those entries do sit in the backend's
+  // in-memory _jobs unclaimed; dismissing them would mean firing a
+  // side-effectful request from a poll loop, which is the worse trade.)
   //
   // A RUNNING SEARCH HIDES THEM. An in-flight job has no finished script to
   // match -- its text_preview is truncated to 80 chars server-side and the
@@ -1349,19 +1458,26 @@ export default function HistoryList({
     })
   }
 
-  /** A queued job has no GPU work to lose, so its cancel is held behind an
-   *  Undo toast. It stays visible until the timer settles, matching a held
-   *  voiceover delete. */
-  function handleQueuedCancel(jobId: string) {
+  /** Hold a cancellation behind an Undo toast for UNDO_MS, then send it.
+   *
+   *  Both kinds of job come through here, and the running one is the reason the
+   *  word "held" is accurate rather than hopeful: deferring the request does
+   *  not pause anything. The job keeps generating on the GPU exactly as it was,
+   *  so Undo has no state to restore -- it simply never sends. That is a
+   *  different thing from pausing a render, which is still impossible and still
+   *  the reason there is no pause control.
+   *
+   *  The cost is real and was accepted deliberately: confirming no longer frees
+   *  the GPU immediately. A cancel already lands at the next chunk boundary
+   *  (~1s); this adds the undo window on top, so someone cancelling to get a
+   *  different script running waits longer. The trade is that the one
+   *  irreversible control in this column stops being irreversible. */
+  function holdCancel(jobId: string, running: boolean) {
     // The row remains visible during the hold, so guard a second click from
     // creating another timer and toast for the same job.
     if (cancelTimers.current.has(jobId)) return
     setPendingCancels((prev) => new Set(prev).add(jobId))
-    cancelTimers.current.set(jobId, {
-      timer: window.setTimeout(() => void settleCancel(jobId, true), UNDO_MS),
-      flush: () => void settleCancel(jobId, true, true),
-    })
-    toast('Queued generation canceled', {
+    const toastId = toast(running ? 'Generation canceled' : 'Queued generation canceled', {
       duration: UNDO_MS,
       icon: <StopIcon size={15} />,
       action: {
@@ -1373,6 +1489,11 @@ export default function HistoryList({
         ),
         onClick: () => void settleCancel(jobId, false),
       },
+    })
+    cancelTimers.current.set(jobId, {
+      timer: window.setTimeout(() => void settleCancel(jobId, true), UNDO_MS),
+      flush: () => void settleCancel(jobId, true, true),
+      toastId,
     })
   }
 
@@ -1400,17 +1521,36 @@ export default function HistoryList({
     }
   }
 
-  /** A running render cannot be paused and resumed. The inline confirmation
-   *  in PendingRow is therefore the decision point; approval cancels it now. */
-  async function handleRunningCancel(jobId: string) {
-    try {
-      await cancelQueuedJob(jobId)
-    } catch (e) {
-      onError(e instanceof ApiError ? e.message : 'Failed to cancel')
-    } finally {
-      refresh()
-    }
+  /** True while a job can still be cancelled at all. Read from queueRef, so it
+   *  answers about the job as it is NOW rather than as it was when the hold
+   *  started. */
+  function stillCancellable(jobId: string): boolean {
+    const live = queueRef.current.find((e) => e.job_id === jobId)
+    return (
+      live !== undefined &&
+      (live.status === 'running' || live.status === 'queued' || live.status === 'canceling')
+    )
   }
+
+  // A job can FINISH inside its own undo window -- that is the whole risk of
+  // holding a running cancel, and it is not hypothetical on short scripts.
+  // Committing then would post a cancel at a job that is already in history and
+  // earn a rejection for something the user cannot act on, while the Undo
+  // button goes on offering to undo an event that can no longer happen. So the
+  // hold is released the moment the job stops being cancellable, as if Undo had
+  // been pressed, and its toast is dismissed with it.
+  useEffect(() => {
+    if (pendingCancels.size === 0) return
+    for (const jobId of pendingCancels) {
+      if (stillCancellable(jobId)) continue
+      const held = cancelTimers.current.get(jobId)
+      if (held?.toastId !== undefined) toast.dismiss(held.toastId)
+      void settleCancel(jobId, false)
+    }
+    // settleCancel and stillCancellable are fresh closures every render; the
+    // queue and the held set are what this actually watches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCancels, queue])
 
   /** Settle a held cancel. Idempotent: the timer is the token, so whichever of
    *  the timer, the Undo and the unload flush gets here first wins and the rest
@@ -1427,6 +1567,17 @@ export default function HistoryList({
         return next
       })
       refresh()
+      return
+    }
+    // Nothing left to cancel -- the job landed, or failed, inside the window.
+    // Checked on BOTH paths: an unload flush has no way to report a rejection,
+    // so posting one blind is the version of this that fails silently.
+    if (!stillCancellable(jobId)) {
+      setPendingCancels((prev) => {
+        const next = new Set(prev)
+        next.delete(jobId)
+        return next
+      })
       return
     }
     if (unloading) {
@@ -1735,9 +1886,7 @@ export default function HistoryList({
                     onCancel={() =>
                       failed
                         ? handleDismiss(job.job_id)
-                        : job.status === 'running'
-                          ? handleRunningCancel(job.job_id)
-                          : handleQueuedCancel(job.job_id)
+                        : holdCancel(job.job_id, job.status === 'running')
                     }
                     cancelPending={pendingCancels.has(job.job_id)}
                     canMoveUp={queuedIndex > 0}

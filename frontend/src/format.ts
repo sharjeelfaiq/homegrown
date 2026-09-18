@@ -34,7 +34,9 @@ export function presetNameFromFile(fileName: string): string {
 
 /** m:ss, for a transport position readout.
  *
- * Separate from formatDuration on purpose: "1m 6s" is right for "this voiceover
+ * Separate from formatDuration on purpose -- and formatDuration itself is now
+ * UNREFERENCED, the elapsed readouts that used it having been removed. It is
+ * kept rather than deleted. "1m 6s" is right for "this voiceover
  * is about a minute long" and wrong for a clock that ticks. Only the transport
  * uses this; every other duration in the app stays formatDuration. */
 export function formatClock(seconds: number | null | undefined): string {

@@ -795,8 +795,11 @@ body {
   }
 }
 
-/* The time slot -- position/total on a finished row, elapsed on one still
-   generating. It holds two separate width invariants, solved two ways.
+/* The time slot -- position/total on a finished row, and on a generating one
+   EMPTY unless the job failed, in which case it carries `Failed · try 3`.
+   Rendering it empty is not an oversight: it is 14ch of reserved width and the
+   only reason the progress track ends on the same pixel as a finished row's
+   waveform. It holds two separate width invariants, solved two ways.
 
    WITHIN one row, the played/remaining toggle must not resize: that is the
    1ch sign span reserving the minus, the single character that differs
@@ -805,8 +808,9 @@ body {
    ACROSS the two row kinds, the slot must be the same size regardless of
    content, or the preview beside it (flex: 1 1 auto) starts at a different x
    on a generating row than on a finished one -- and moves again as the
-   generating row goes "Queued" (6 chars) to "0:07" (4) to "Cancelling…" (11).
-   Hence the fixed width.
+   generating row goes "0:07" to "Failed · try 3". Hence the fixed width.
+   (It used to also swap in "Cancelling…" at 11 characters; that word is gone,
+   but the width requirement is not.)
 
    14ch, not a pixel guess: 1ch sign + "12:07 / 45:33" is 14 characters, and
    --font-mono (IBM Plex Mono) is a true monospace, so every glyph -- letters
@@ -857,6 +861,16 @@ body {
   overflow: hidden;
 }
 
+/* The moving part of the track. It was the `bg-progress` utility inline on the
+   element, which is correct right up to the moment a ROW STATE needs to own the
+   colour: a utility and a state rule are both in the utilities layer at one
+   class of specificity, so `is-canceling & .result-bar-fill` could not win
+   without !important. Naming the fill moves the colour into the same cascade
+   the rest of the row's state already uses. */
+@utility result-bar-fill {
+  background: var(--progress);
+}
+
 @utility has-ticks {
   &::after {
     content: '';
@@ -903,7 +917,8 @@ body {
 }
 
 /* A queued row is the same row in a different colour -- amber means the GPU
-   is working on it, purple means it is waiting its turn.
+   is working on it, purple means it is waiting its turn, red means it is
+   stopping (see is-canceling, which this rule used to say did not exist).
 
    Queued rows deliberately have no progress track: their reorder buttons and
    `Queued` label occupy that line instead. The label carries the state colour
@@ -926,17 +941,19 @@ body {
   }
 }
 
-/* A running row's clock reads `1:12 / ~2:30` and is AMBER, matching the
-   progress bar it sits beside -- amber already means "the GPU is working on
-   this" everywhere else in this column, so the running row's time needs no new
-   token and separates itself from a finished row's faint grey for free.
+/* A running row is AMBER -- the tint and the bar fill, amber already meaning
+   "the GPU is working on this" everywhere else in this column.
 
-   The `~` is not decoration. The denominator is a guess with ~20% mean error
-   (see _estimate_seconds in backend/main.py), and a bare "2:30" would claim a
-   precision the number does not have.
+   This block used to describe a clock reading `1:12 / ~2:30`. Both halves of
+   that are gone: the `~estimate` denominator went when the estimator was
+   retired, and the elapsed clock itself went when the row stopped reporting
+   time at all. The `.result-time` rule below therefore colours nothing on a
+   running row; it is kept because `is-failed` and `is-canceling` do use that
+   slot, and a running row's colour should not be the odd one out if a readout
+   ever returns.
 
-   Not in is-queued's block: a queued row has no elapsed time to pair with an
-   estimate, and is already purple. */
+   Not in is-queued's block: a queued row has not started, and is already
+   purple. */
 @utility is-running {
   background: var(--progress-soft);
   box-shadow: inset 2px 0 0 var(--progress-line);
@@ -970,6 +987,35 @@ body {
 
   & .result-time,
   & .result-text {
+    color: var(--danger-text);
+  }
+}
+
+/* Cancelled: the work is stopping, so every amber thing on the row hands over
+   to --danger at once -- the tint, the bar fill that is now frozen at the last
+   committed chunk, the still dot, and the clock.
+
+   This state used to have NO colour of its own, and the comment on is-queued
+   said why: the job is still running until the current chunk ends, so painting
+   it as "not started" would be a lie. That reasoning was about --queued, and it
+   still holds; red is not "not started", it is "stopping", which is exactly
+   what is true here. The row also no longer carries the word "Cancelling", so
+   colour and the disabled Cancel button are now the whole signal.
+
+   Same construction as is-failed -- an inset box-shadow, never a border -- so
+   the row stays exactly --result-row-h tall and the eight-row window cap holds.
+   Written after is-running so it wins on source order for the .result-time
+   colour; the two cannot both apply anyway, since `running` and `canceling` are
+   different statuses. */
+@utility is-canceling {
+  background: var(--danger-soft);
+  box-shadow: inset 2px 0 0 var(--danger);
+
+  & .result-bar-fill {
+    background: var(--danger);
+  }
+
+  & .result-time {
     color: var(--danger-text);
   }
 }
@@ -1021,6 +1067,22 @@ body {
    its state changes; the dimming itself is a group-hover utility at the call
    site. Only the two input-conditional rules live here. */
 @utility result-actions {
+  /* One width for both row kinds, and that is what makes a generating row's
+     progress bar span EXACTLY the same pixels as a finished row's waveform.
+     Both lines are [leading control][flexible track][.result-time][this], so
+     with the leading control mirrored in PendingRow (see the placeholder
+     carrying the play button's classes) the only thing left that could move
+     the track's right edge is this strip -- and it does not contain the same
+     buttons on the two rows: 14px checkbox + 28px overflow on a finished row
+     against a 58px Cancel, or two 28px confirm buttons, on a generating one.
+
+     min-width, not width, so a failed row's Retry + Dismiss can still grow
+     past it; that row's bar is an empty outline with no fill to align.
+     justify-content keeps the narrower (finished) strip on the right edge
+     rather than centring it in the reserved space. */
+  min-width: 58px;
+  justify-content: flex-end;
+
   /* A touch screen has neither :hover nor :focus-within until you have
      already tapped something, which left download and delete looking
      permanently disabled on a phone. Keyed to the input, not to a width: a

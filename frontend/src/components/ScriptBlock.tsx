@@ -60,11 +60,31 @@ export default function ScriptBlock({
     // common interaction in the app and it earns colour at rest, not only
     // during a render.
     <div className="relative rounded-md border border-hairline bg-surface-card transition-[border-color] duration-(--base) ease-(--ease) focus-within:border-audio-line">
-      {/* A stable 40% of the visible page height, not auto-growing or user-resizable.
-          A stable writing surface keeps long scripts from reflowing the page. */}
+      {/* clamp(240px, 32svh, 340px) -- all three numbers measured, none picked.
+          This was 40svh first (a slab: the box owned most of the column), then
+          over-corrected to a flat 220px, which is about six lines and too
+          short to hold a paragraph. The clamp is not just "relative again":
+          the BOUNDS are what make it safe in both directions. The 340px
+          ceiling stops a tall monitor reproducing the slab; the 240px floor
+          stops a short laptop shrinking the box below the flat value that was
+          already too small.
+          Measured at 1424px wide, against the real built app (viewport heights
+          are Chrome's, not the window's):
+            viewport 1005 -> 321.6px, 10 visible lines
+            viewport  805 -> 257.6px,  8 lines
+            viewport  673 -> 240.0px,  7 lines   (floor)
+            viewport  605 -> 240.0px,  7 lines   (floor)
+            viewport  545 -> 240.0px,  7 lines   (floor)
+          Root overflow was 0 at every one of those, and Generate stayed fully
+          on screen -- which is the constraint that matters, because above
+          1025px `.studio` is height:100svh;overflow:hidden and the page cannot
+          scroll to reveal anything this box pushes off.
+          Still not auto-growing and not user-resizable, and the h/min-h/max-h
+          triple stays identical so content cannot move it: a stable writing
+          surface keeps long scripts from reflowing the page. */}
       <textarea
         ref={textareaRef}
-        className="block h-[40svh] min-h-[40svh] max-h-[40svh] w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-9 text-[15px]/[1.7] outline-none placeholder:text-faint"
+        className="block h-[clamp(240px,32svh,340px)] min-h-[clamp(240px,32svh,340px)] max-h-[clamp(240px,32svh,340px)] w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-9 text-[15px]/[1.7] outline-none placeholder:text-faint"
         placeholder="Write what the voice should say…"
         value={text}
         onChange={(e) => onTextChange(e.target.value)}

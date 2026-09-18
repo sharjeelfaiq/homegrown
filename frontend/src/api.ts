@@ -99,9 +99,13 @@ export interface QueueEntry {
   attempt?: number
 }
 
-/** The complete script is deliberately fetched only when someone asks to
- * reuse a pending generation. Queue polling carries text_preview instead so
- * long scripts do not travel on every one-second refresh. */
+/** The complete script is deliberately fetched on demand rather than carried by
+ * the queue poll -- text_preview rides that instead, so long scripts do not
+ * travel on every one-second refresh.
+ *
+ * Currently UNREACHABLE from the UI: a pending row's Reuse control is disabled
+ * until the voiceover exists (HistoryList's PendingRow). The route and this
+ * client are left wired, because re-enabling it is deleting one word. */
 export interface QueueScript {
   text: string
   preset_id: string
