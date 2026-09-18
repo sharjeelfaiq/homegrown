@@ -345,7 +345,9 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
 
 ### Script
 
-One script box, up to 60,000 characters, fixed at 40% of the visible viewport height (`40svh`). A word count sits
+One script box, up to 60,000 characters, sized `clamp(240px, 32svh, 340px)` — ten visible lines on a
+1080p window, never fewer than seven on a short laptop, and never the 40%-of-viewport slab it used to
+be. A word count sits
 in the bottom-right corner *inside* the box rather than in a row of its own. The **voice dropdown**
 and **✚** sit *above* the box, at the right; **Generate** sits alone below it.
 
@@ -377,21 +379,22 @@ Only one job runs at a time — one worker thread, one GPU lock.
 The voiceover being generated appears at once as the **first row of the Voiceovers column**, in the slot
 its finished self will occupy and laid out identically, with three swaps: the waveform becomes a progress
 bar (hairline ticks at the chunk boundaries, advancing smoothly between completions rather than jumping),
-the transport becomes a labelled **Cancel**, and the clock counts **elapsed** time in amber, with a
-small pulsing dot beside it while work is in flight.
+the transport becomes a labelled **Cancel** beside a **greyed-out play button** — there is nothing to
+play yet. A generating row reports no time at all: no elapsed counter, no estimate. Its script
+preview's **Reuse** is greyed out until the voiceover lands.
 
 The Generate button stays live throughout, so a second script submitted mid-run is queued rather than
 refused. Queued voiceovers are further rows above the finished ones, in processing order, and are
-**purple** rather than amber — reorder controls and the word `Queued` in place of a progress bar and a
-ticking clock, so the difference survives greyscale as well as colour. Each promotes in place when its
-turn comes.
+**purple** rather than amber — reorder controls and the word `Queued` in place of a progress bar, so
+the difference survives greyscale as well as colour. Each promotes in place when its turn comes.
 
 The **Generate** control stays an action rather than a progress panel: queue and render progress belong
 in the Voiceovers column, not on the control that submits another job.
 
-**The app never predicts how long a render will take.** It reports elapsed time and chunk progress,
-both of which are measured. Two estimators were built and both were retired — the second was accurate
-to a 20% mean error and still ran *over* on 12 of 12 measured jobs, because a median is beaten by half
+**The app never predicts how long a render will take, and no longer reports elapsed time either.** A
+generating row shows chunk progress, which is measured. Two estimators were built and both were
+retired — the second was accurate to a 22% mean error and still ran *over* on 12 of 12 measured jobs,
+because a median is beaten by half
 of all jobs by construction and chunk resampling makes the tail worse. A number that is always beaten
 teaches you to ignore it, so it is gone rather than tuned. The reasoning and the measurements are in
 `docs/gpu-notes.md`.
@@ -403,11 +406,13 @@ still true: the model-down banner (which carries **Retry**), the CPU-fallback no
 long-reference-clip warning.
 
 **Cancel** stops a running job after the current chunk, within about a second. Clicking Cancel on either
-a **running** or **queued** row replaces it with compact tick/cross confirmation controls. Confirming a
-running cancel sends it immediately, because an in-flight render cannot be paused and resumed. Confirming
-a queued cancel opens a seven-second **Undo** toast instead; its row remains visible until that timer
-commits the cancellation, and Undo keeps it queued. There is no pause — a paused job would hold the GPU
-lock and stall the whole queue.
+a **running** or **queued** row replaces it with compact tick/cross confirmation controls, and confirming
+either opens a seven-second **Undo** toast rather than acting at once. Nothing is paused meanwhile: the
+voiceover keeps generating, the bar keeps filling, and only Cancel greys out. Undo puts it back with
+nothing to restore; letting the timer run sends the cancellation, and the row turns red and freezes then.
+A voiceover that finishes inside the window releases the hold by itself. The cost is that confirming no
+longer frees the GPU straight away — if you are cancelling to start something else, you wait those seven
+seconds. There is still no pause — a paused job would hold the GPU lock and stall the whole queue.
 
 A voiceover that **fails** stays visible rather than disappearing: the row turns red, reads `Failed`, and
 carries the backend's own error in place of the script preview, with the full text on hover. It sorts below
@@ -465,7 +470,9 @@ just like completed rows.
 
 The adjacent **Filters** button opens a compact popover for voice, browser-local
 date range (today, last 7/30 days, or custom), duration, and generation status.
-Voice/date/duration filters are applied by the history API before pagination.
+The button carries the count of applied filters, and its **Clear filters** control
+is disabled until at least one of them is. Voice/date/duration filters are applied
+by the history API before pagination.
 The header’s display settings persist per browser: **Infinite scroll** is the
 default and retains incremental loading, while **Paginated display** fetches
 the complete filtered history in batches of at most 100 entries so local-name
@@ -476,14 +483,16 @@ names. Generating, queued, and failed rows are live client-side queue data:
 **All** shows live work above matching completed rows, while active and failed
 views show only their respective live rows.
 
-Every finished job is newest first in a **fixed window about eight rows tall** in infinite mode. The newest
+Every finished job is newest first in a **fixed window about seven rows tall** in infinite mode (the
+cap is a height — `8 × --result-row-h + 12px` — and a row renders taller than that token; measured, 7
+rows fit at a 1005px viewport and 5 at 805px). The newest
 20 arrive on first paint and scrolling to the bottom fetches ten more. Paginated mode instead shows ten
 completed rows at a time with page controls; active queue rows remain above them. On a desktop-width
 viewport the page itself does not scroll at all; the list is the only scrolling region. On a
 short screen the window renders fewer rows than the cap allows, since it can only use the height the column
 actually has. Below 1025px the layout is one column — composer first, Voiceovers under it — the page
 scrolls normally, and the list grows to fit instead of scrolling inside itself. The script textarea is a
-fixed 40%-viewport (`40svh`) writing surface with its own vertical scrollbar.
+`clamp(240px, 32svh, 340px)` writing surface with its own vertical scrollbar.
 
 Each row is three lines:
 
@@ -500,10 +509,10 @@ Each row is three lines:
    timestamp on hover.
 
 **Click the script preview to reuse that script and voice.** The preview carries a wand affordance on
-hover and replaces the compose box, offering Undo if it overwrites text. Pending scripts are fetched in
-full only after that click; their rows still carry just the first 80 characters in queue polls. 80 matches
-the backend's `text_preview` cut, so a voiceover does not visibly gain characters at the moment it
-finishes.
+hover and replaces the compose box, offering Undo if it overwrites text. It is **disabled on a row that
+is still generating** — there is no voiceover to reuse yet — and becomes live when the row lands. Every
+row carries just the first 80 characters in queue polls, which matches the backend's `text_preview` cut,
+so a voiceover does not visibly gain characters at the moment it finishes.
 
 **Deleting a voiceover is undoable.** The row remains visible while the toast offers **Undo** for seven
 seconds; the request is only sent when that expires, then the history refresh removes the row. Leaving
@@ -611,7 +620,7 @@ Environment overrides:
 | LAN clients load the UI but every action fails | `VITE_BACKEND_URL` was set when you built (or, in dev, is set at all). Comment it out in `frontend/.env.local` and rebuild. `start_server.bat` now catches this before it starts. |
 | `no kernel image is available for execution on the device` | The torch build has no kernels for your GPU. cu126 covers `sm_50`–`sm_90`; Blackwell needs cu128. |
 | `CUDA error: the launch timed out and was terminated` | Windows TDR killed a GPU batch running over ~2s on a display-attached card. It kills the whole process's CUDA context, so the running voiceover **and everything queued behind it** fail together — the app detects this (`gpu_fault`), hides Retry and asks you to restart, because nothing in-app can recover it. Lower `DECODE_CHUNK_FRAMES`, and do not run two model processes at once. |
-| Red banner, and an in-flight row whose clock has stopped | The backend stopped answering — crashed, machine asleep, network dropped. **Retry** in the banner re-checks it. Jobs may still be running server-side; the app has only lost contact. |
+| Red banner, and an in-flight row whose progress bar has stopped moving | The backend stopped answering — crashed, machine asleep, network dropped. **Retry** in the banner re-checks it. Jobs may still be running server-side; the app has only lost contact. |
 | Yellow "Running on CPU" banner | No usable GPU was found; the reason is in the banner and in `/api/health`. |
 | Output murmurs, drags, or drops words | Almost always the reference clip — see "Making a voice that actually works". |
 | Output has echo | Reverb in your reference clip. Re-record dry and close-mic. |

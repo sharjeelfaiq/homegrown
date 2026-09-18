@@ -80,7 +80,8 @@ voice.
 
 ## 3. Write a script and generate
 
-One script box, up to 60,000 characters, fixed at 40% of the visible viewport height (`40svh`). A **word count**
+One script box, up to 60,000 characters, sized **`clamp(240px, 32svh, 340px)`** — ten lines on a
+1080p window, seven at its floor. A **word count**
 sits in the bottom-right corner inside the box, not in a row of its own.
 
 The **voice picker** and **✚** sit above the box, at the right. **Generate** sits alone beneath it.
@@ -114,8 +115,21 @@ Jobs process **one at a time** — single GPU, one worker thread, one lock.
 
 The voiceover being generated appears **immediately as the first row of the Voiceovers column**, laid out
 exactly like the finished row it will become — same editable name, same voice — with three swaps: the
-waveform is a progress bar, the transport is a labelled **Cancel**, and the clock counts **elapsed**
-time in amber (a finished row's clock is grey), with a small pulsing dot while work is in flight.
+waveform is a progress bar **spanning exactly the same pixels the waveform will**, the transport is a
+labelled **Cancel**, and the play button is there in its usual place but **greyed out** — there is
+nothing to play yet. A generating row reports no time at all: no elapsed counter, no estimate. Its
+script preview's **Reuse** is greyed out for the same reason, and becomes available when the voiceover
+lands. The row carries no `Generating` or `Cancelling`
+word: the filling amber bar already says the GPU is working, and a cancellation shows as a disabled
+**Cancel**. `Queued` is still spelled out, because a queued row has no bar at all.
+
+**Cancelling a voiceover stops the row where it is and turns it red.** The progress bar freezes at the
+chunk it had actually finished — it does not reset, and it does not keep creeping — the dot stops
+pulsing, and the amber row tint, bar and clock all switch to the same red used for a failure. The job
+is genuinely still running until the current chunk ends, so the bar holds at the chunk it reached
+rather than resetting. When the backend drops it, the row **slides out to the right** rather than fading in place: a cancelled
+voiceover is not replaced by anything, and a quiet fade there reads as the row having been lost. A
+*completing* row still fades, because that one is being replaced by its own finished self.
 Download is absent until there is something to download. The script preview's
 wand is available on running, cancelling, and queued rows, so you can reuse
 that work without waiting for it to finish.
@@ -124,7 +138,7 @@ that work without waiting for it to finish.
 the voice if you want, press it again, and the new voiceover joins the queue rather than being refused.
 Queued voiceovers appear as further rows above the finished ones, in the order they will be processed,
 and they are **purple** where the one being generated is amber: reorder controls and the word `Queued`
-instead of a progress bar and a ticking clock. When the running one finishes, the next promotes in place
+instead of a progress bar. When the running one finishes, the next promotes in place
 and turns amber. Cancel works on either — cancelling a queued voiceover leaves the running one alone.
 
 Elapsed, never a countdown. There was briefly a `~2:30` guess beside the clock and a server-side
@@ -133,11 +147,18 @@ chunks landed, so both are gone. The **Generate** button just says Generate, thr
 Voiceovers column reports the work, so the button does not need to.
 
 **Cancel** stops a running job after the current chunk, within about a second. Clicking Cancel on either
-a **running** or **queued** row reveals compact tick/cross confirmation buttons. Confirming a running
-cancel sends it immediately, because the render cannot be paused and resumed. Confirming a queued cancel
-opens a seven-second **Undo** toast; the queued row remains visible until that timer commits, and Undo
-keeps it queued. There is no pause: generation is serialised behind one GPU lock, so a paused job would
-stall everything queued behind it.
+a **running** or **queued** row reveals compact tick/cross confirmation buttons, and confirming either
+one opens a seven-second **Undo** toast rather than acting at once.
+
+Nothing is paused during those seven seconds — the voiceover carries on generating exactly as it was,
+the bar keeps filling, and the only visible change is that Cancel is greyed out. Undo puts it straight
+back; there is nothing to restore. When the timer runs out the cancellation is sent, and only then does
+the row turn red and freeze. If the voiceover happens to *finish* inside the window, the hold is
+released on its own and nothing is sent.
+
+The trade-off, so it is not a surprise: confirming no longer frees the GPU immediately, so if you are
+cancelling in order to start something else, you wait the seven seconds first. There is still no pause —
+generation is serialised behind one GPU lock, so a paused job would stall everything queued behind it.
 
 **A voiceover that fails stays on the list.** It turns red, reads `Failed`, and shows the backend's own
 reason in place of the script preview — hover it for the full message. It sorts below anything still
@@ -174,9 +195,9 @@ row with a **Retry** button appears above the script, and any in-flight row **st
 than counting up against a process that may be gone.
 
 **Nothing tells you how long it will take, on purpose.** Two estimators were tried and both were
-retired: the better one was accurate to a 20% mean error and still overran on 12 of 12 measured jobs.
-What you get instead is measured — elapsed time on the running row, and a progress bar with a tick per
-chunk. See `docs/gpu-notes.md` if you want the numbers.
+retired: the better one was accurate to a 22% mean error and still overran on 12 of 12 measured jobs.
+What you get instead is measured, and it is progress rather than time — a bar with a tick per chunk,
+and no clock anywhere on a generating row. See `docs/gpu-notes.md` if you want the numbers.
 
 **Each finished or failed job raises a toast** — "Voiceover ready" with the voice name, or a failure toast
 that stays until dismissed. Transient errors elsewhere are toasts too. Three notices stay inline because
@@ -205,7 +226,7 @@ than being stored. While a search is running the full history is loaded; live ro
 voice name as well.
 
 The header's **Voiceover display settings** persist per browser. **Infinite scroll** is the default: the
-column is a **fixed window showing about eight rows**, the newest 20 load up front, and scrolling to the
+column is a **fixed window showing about seven rows** (five on a shorter screen), the newest 20 load up front, and scrolling to the
 bottom fetches ten more. **Paginated display** fetches the complete already-server-filtered history in
 cancellable batches of at most 100 entries, then applies the browser-local name search and shows ten
 completed rows per page. Live, queued, canceling, and failed rows remain above every completed-history
@@ -213,7 +234,7 @@ page. In either mode, on a desktop-width window there is no page scroll at all �
 thing that scrolls. Below
 1025px the layout collapses to one column — the composer on top, Voiceovers beneath it — and the page
 scrolls normally instead, with the list growing to fit rather than scrolling inside itself. The script
-textarea is a fixed 40%-viewport (`40svh`) writing surface with its own vertical scrollbar.
+textarea is a `clamp(240px, 32svh, 340px)` writing surface with its own vertical scrollbar.
 
 Each row is three lines:
 
@@ -255,9 +276,9 @@ restart.
   reference clip leaves in the context window, and chunks are size-balanced so there is no runt final
   chunk. A chunk whose audio comes out wildly longer or shorter than its text warrants is regenerated.
   See `README.md`'s "How generation works".
-- **Nothing is predicted.** The running row counts elapsed seconds; the bar counts chunks. Both are
-  measured. `/api/estimate` still exists, but only for the chunk count and the long-reference-clip
-  warning.
+- **Nothing is predicted, and nothing is timed.** The bar counts chunks, which is measured; there is no
+  elapsed clock on a generating row. `/api/estimate` still exists, but only for the chunk count and the
+  long-reference-clip warning.
 - **The queue survives a backend restart** — `queue.json` persists queued/in-flight jobs and resumes them
   (from the start of that job, not mid-chunk) on the next startup.
 - **The waveform** reflects real audio amplitude via the Web Audio API while something plays. Only one

@@ -151,8 +151,10 @@ Flat JSON in `backend/storage/` (gitignored), written via temp-file + `.replace(
 resumed **from the start of the job**, not mid-chunk. Completed jobs live in `history.json`; the job dicts
 themselves (`_jobs`) are in-memory only, so a restart loses status of finished/failed jobs.
 
-Generation time is reported, never predicted: the running row counts elapsed seconds. Two estimators
-were built and both retired — see the no-predicted-time note below, and `docs/gpu-notes.md`.
+Generation time is neither predicted nor reported any more. Two estimators were built and both
+retired (see the no-predicted-time note below and `docs/gpu-notes.md`), and the elapsed clock that
+replaced them has since gone too — a generating row shows chunk progress and nothing else.
+`generation_s` is still written to every history entry; nothing reads it.
 
 ### Frontend
 
@@ -252,6 +254,15 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   and sonner (999999999). Selection is keyed by id and is **not** filtered to what is visible — the
   count must not lie when a search is active.
 
+- **The script box is `clamp(240px, 32svh, 340px)`, and both bounds are load-bearing.** It was
+  `40svh` (a slab, and most of the compose column), then a flat `220px` (about six lines, too short
+  for a paragraph). The ceiling stops a tall monitor reproducing the slab; the floor stops a short
+  laptop going below the flat value that was already too small. Measured against the built app at
+  1424px wide: viewport 1005 → 321.6px/10 lines, 805 → 257.6px/8, and 673/605/545 → 240px/7 at the
+  floor, with **root overflow 0 and Generate fully visible at all five**. That last number is the
+  constraint — above 1025px `.studio` is `height: 100svh; overflow: hidden`, so the page cannot
+  scroll to reveal anything this box pushes off. Keep `h`/`min-h`/`max-h` identical: the box must not
+  move with its content.
 - **The script box is persisted (`usePersistedDraft`), which is why there is no `beforeunload`.**
   It was the one place real work lived only in memory; a reload or a closed tab discarded up to
   `MAX_SCRIPT_CHARS` silently. Restoring it removes the need for a "Leave site?" prompt guarding
@@ -322,16 +333,111 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   `title={entry.text}` is the in-place way to see past `PREVIEW_CHARS`. Every generated and pending
   row reserves a `min-h-7` action line: the normal Cancel button, queued up/down controls, and
   tick/cross confirmation controls therefore cannot change row height or shift the fixed window.
-- **Voiceover cancellation intentionally differs by state.** Clicking Cancel on a running or queued row
-  reveals tick/cross icon buttons without changing the reserved action-line height. Confirming a
-  **running** cancellation sends `POST /api/queue/{job_id}/cancel` immediately: there is no resumable
-  model state, and a paused job would monopolise the GPU lock. Confirming a **queued** cancellation
-  starts the `UNDO_MS` toast instead. `pendingCancels` keeps that queued row visible and disables its
-  controls until Undo restores it or the timer commits the request. This is a real Undo because a queued
-  job has not started. Voice and completed-voiceover deletes are likewise deferred, but their row
-  visibility differs: completed voiceovers remain in the list until the commit refresh; voices are
-  hidden and restored at their original position on Undo.
+- **EVERY voiceover cancellation is now held behind the `UNDO_MS` toast, running ones included.** This
+  bullet used to say the opposite — that confirming a running cancel sends
+  `POST /api/queue/{job_id}/cancel` immediately, "because there is no resumable model state and a paused
+  job would monopolise the GPU lock". That reasoning was about **pausing**, and it still holds: there is
+  no pause control and cannot be one. Deferring the *request* pauses nothing. The job carries on
+  generating exactly as it was for the whole seven seconds, so Undo has no state to restore — it simply
+  never sends. Both kinds go through one `holdCancel(jobId, running)`; `handleRunningCancel` is gone.
+  **The cost was accepted, not overlooked**: confirming no longer frees the GPU at once. A cancel already
+  lands at the next chunk boundary (~1s); the hold adds `UNDO_MS` on top, so someone cancelling to get a
+  different script running waits longer. The trade is that the only irreversible control in this column
+  stops being irreversible.
+  **The row does not change during the hold**, and that is the point: `cancelPending` disables Cancel and
+  nothing else — no red, no frozen bar — because nothing has been sent and Undo must read as reversible.
+  The red-and-freeze treatment arrives afterwards, off the backend's own `canceling` status.
+  **A job can FINISH inside its own undo window**, which is the one hazard holding a *running* cancel
+  introduces and is not hypothetical on a short script. Committing then would post a cancel at a job
+  already in history, and the Undo button would go on offering to undo an event that can no longer
+  happen. Two layers stop it: an effect releases the hold (as if Undo had been pressed) and dismisses the
+  toast the moment the job stops being cancellable, and `settleCancel` re-checks `stillCancellable`
+  before sending — **on the unload path too**, since a `keepalive` flush has no way to report a
+  rejection. Both read `queueRef`, never the captured `queue`: a timer armed seven seconds ago closes
+  over exactly the value that cannot be trusted.
+  Measured in a real browser against a mock backend, 500ms sampling: **Undo** — tick at 1.02s, toast up,
+  Cancel disabled, row still amber (`is-canceling` absent) with the bar advancing 5→15px, Undo at 2.22s,
+  toast gone, Cancel re-enabled, bar still climbing to 133px at +6s, and **0** cancel requests reaching
+  the server. **Commit** — tick at 1.02s, bar advancing 5→31px through the hold, `POST cancel` at
+  **8.02s (tick + 7.00s exactly)**, red on the next poll at 8.2s, bar frozen at 36px from 8.2s to 11.0s,
+  row gone at 11.5s. **Finished mid-hold** — job left the queue at 7.5s, toast dismissed with it, and
+  **0** cancel requests sent.
+  Voice and completed-voiceover deletes are likewise deferred, but their row visibility differs:
+  completed voiceovers remain in the list until the commit refresh; voices are hidden and restored at
+  their original position on Undo.
 
+- **A generating row's progress bar spans EXACTLY a finished row's waveform, and two things hold
+  that.** Both line 2s are `[leading control][flexible track][.result-time][.result-actions]`, so
+  only the first and last can move the track's edges. The left edge: `PendingRow` wraps its bar in a
+  copy of `VoiceoverPlayer`'s own box (`flex min-w-0 flex-1 items-center gap-2`) led by a placeholder
+  carrying the play button's exact classes (`icon-btn size-6 flex-none`) — a mirrored element, not a
+  hardcoded 32px spacer, so it stays true if those classes change. The right edge: `@utility
+  result-actions` takes `min-width: 58px` + `justify-content: flex-end`, because the strip holds a
+  14px checkbox + 28px overflow button on a finished row against a 58px Cancel (or two 28px confirm
+  buttons) on a generating one. `min-width`, not `width`, so a failed row's Retry + Dismiss can still
+  grow past it — that row's bar is an empty outline with no fill to align.
+  **The third thing was a stray `px-2`, and a synthetic harness hid it for a whole iteration.** This
+  bullet first claimed `dL`/`dR` of **0.0px**, measured in headless Chrome against the built CSS — but
+  the page being measured was a hand-written harness reproducing both row kinds, and it gave both of
+  them `px-2`. The real `PendingRow` carried `px-2`; `VoiceoverRow` never did, and `.result-list`
+  already supplies 8px of side padding. So the generating row was double-padded and its track sat
+  **8px inside the waveform at both ends** — measured in the real app at `dL +8.0`, `dR -8.1`, bar
+  516.5px against waveform 532.6px — while the harness reported a confident zero. The padding is gone;
+  re-measured in the real app across 33 samples: `dL` **0.0px**, `dR` **-0.1px** (sub-pixel, bar 532.5
+  against waveform 532.6), holding through the cancelling state.
+  **The lesson is the measurement, not the padding.** A harness you wrote from the same mental model
+  as the code confirms the model, not the code. Measure the built app.
+- **A generating row shows no `Generating` or `Cancelling` word.** The filling amber bar already says
+  the GPU is working, and the word was the only thing on that line whose width changed with the state.
+  A cancellation shows as a **disabled Cancel**, plus the bar freezing and the row turning red once the
+  request is actually sent. `Failed` is not repeated there either (`.result-time` renders it, with the
+  attempt count). **`Queued` stays**: that row has no bar at all, so the word is its only statement, and
+  the greyscale-legibility rule behind the purple depends on it.
+- **A cancelled row freezes, turns red, and slides out — three separate mechanisms.**
+  *Freeze*: `useOptimisticProgress` already clamped to `chunks_done / total_chunks` on `canceling`,
+  but the row was passing it `running ? job : undefined` and animating `width` to
+  `running ? progress : 0` — so the hook reset to 0 and the bar slid back to the left edge the moment
+  the status flipped, which reads as work undone rather than work stopped. Both now test
+  `running || canceling`. Measured in a real browser: 269px held across 9 consecutive 500ms samples
+  while `is-canceling` was on the row.
+  *Red*: `@utility is-canceling`, built like `is-failed` (inset box-shadow, never a border, so the row
+  does not grow by the outline's width). It needs `.result-bar-fill` — a utility of its own — because the fill used
+  the `bg-progress` utility inline, and a utility cannot be beaten by a state rule at equal
+  specificity without `!important`. Measured: fill `rgb(255,180,58)` → `rgb(255,97,105)`, row tint
+  `--progress-soft` → `--danger-soft`.
+  *Slide*: `leavingCancelled` is `canceling || (cancelPending && queued)`, and the `queued` qualifier
+  became load-bearing once running cancels were held too. A queued job leaves the queue the instant its
+  cancel commits, still reporting `queued`, so only the flag identifies it. A running job cannot be read
+  that way — it leaves for two different reasons, cancelled or simply **finished**, and the last render
+  is identical either way — so the running path relies on `canceling`, which only appears once the
+  request has actually been sent. A job that lands mid-hold therefore keeps the completion fade, which is
+  what covers the handoff seam.
+  The `<li>` fades (0.22s) and its **content** translates `x: '100%'`, clipped by
+  `overflow-hidden` on the `<li>`. The transform must NOT go on the `<li>`: it would have to be
+  clipped by `.result-list`, whose `overflow-y` is `auto` above the breakpoint and deliberately
+  `visible` below it, so an `overflow-x` there either adds a horizontal scrollbar or turns the mobile
+  list back into the nested scroll region its own comment forbids. The content learns it is leaving
+  through **`useIsPresent`**, not a framer variant label: the label version was built first and
+  measured, and it left the row **permanently mounted** — the child jumped to `translateX(100%)` as a
+  static value, the `<li>`'s opacity never left 1, so the exit never completed and AnimatePresence
+  never removed it. Which row leaves how is decided while it is still mounted (`leavingCancelled =
+  canceling || cancelPending`), because `canceled` never appears in `/api/queue` — there is no render
+  in which the row knows it has already gone. `cancelPending` picks the exit but deliberately **not**
+  the colour: during the Undo hold nothing has been sent, and a row that turned red mid-countdown
+  would claim a cancellation that has not happened.
+  Measured exits, real browser, 500ms/frame sampling plus a per-frame transform reader:
+  cancelled → 13 frames, x 13→718px while opacity 0.81→0, row gone on the next sample;
+  completed → 13 frames, **x = 0 at every one**, opacity 0.77→0. The completion fade is unchanged.
+- **Measuring this list needs Chrome's throttling flags, or you will measure nothing.** Three long
+  detours came from the same cause: an unfocused or headless Chrome throttles `setTimeout`, so
+  `GenerationActivityContext`'s 1s queue poll fired **once in 15 seconds** and the queue never
+  advanced — which looks exactly like a row that refuses to unmount. `--disable-background-timer-
+  throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+  --disable-features=CalculateNativeWinOcclusion` fixes the polling. Separately,
+  `--virtual-time-budget` does **not** run framer's exit animations to completion (they are WAAPI),
+  so a row held by `AnimatePresence` stays in the DOM forever there — including on code paths nobody
+  touched. Static layout and colour measure fine headless; anything that has to *finish animating*
+  needs a real browser window.
 - **Queued rows own their reorder controls.** The up/down icon buttons sit between `.result-time` and
   the cancel strip. `moveQueuedJob` sends the complete ordered list of queued ids to
   `POST /api/queue/reorder`; the backend validates that it is exactly the caller's pending jobs and
@@ -358,7 +464,7 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
 - **There is NO predicted generation time anywhere in the product, and re-adding one needs evidence.**
   Two estimators shipped and both were retired. A chars/second model was wrong by a mean of 50%, with
   the rounded string wrong on 65% of jobs. Its replacement —
-  `_JOB_OVERHEAD_S + chunks × median(seconds per chunk)` — scored 20% mean error against
+  `_JOB_OVERHEAD_S + chunks × median(seconds per chunk)` — scored 22% mean error against
   `history.json`, which was a real improvement and still **not good enough in the way that mattered**:
   measured on a 50-job batch, **12 of 12 completed jobs ran OVER, by 1.2×–2.5×, none under**.
   The reason is structural, not a tuning miss. The model was fitted to minimise **mean absolute
@@ -367,31 +473,47 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   construction**, and the tail is fat because `_chunk_duration_is_sane` resamples a degenerate chunk up
   to `CHUNK_ATTEMPTS` times while a median deliberately discards exactly those runs (measured p90
   32.4s/chunk against p50 19.3s).
-  So the app reports **elapsed** time only, which is measured. `formatDuration` and `formatClock` stay;
-  `approxDuration` existed solely for the prediction and is gone. `generation_s` and `total_chunks` are
-  still written to every history entry — the raw material survives — but nothing consumes them.
+  So the app reported **elapsed** time only, which was measured — and the clock has since gone as well,
+  leaving a generating row with no time readout at all (see the ProgressRing/play-button bullet).
+  `formatClock` stays, on the finished row's playback transport. `approxDuration` existed solely for the
+  prediction and is gone; **`formatDuration` is now unreferenced** — nothing outside `format.ts` imports
+  it — and is left in place rather than deleted. `generation_s` and `total_chunks` are still written to
+  every history entry — the raw material survives — but nothing consumes them.
   **If you want to bring an estimate back**, read the model-selection table in `docs/gpu-notes.md`
   first, and score candidates on **overrun rate**, not mean error. Two traps recorded there: a
   least-squares `a·frames + b·chunks` fit scores best (26%) but its seconds-per-frame coefficient is
   **negative at every sample count** because the two terms are collinear; and per-voice chars/second
   spans 3.2× purely from job-length mix, which is not evidence that the estimate is voice-blind.
 
-- **The running row's clock shows ELAPSED time only, plus a pulsing dot.** It briefly read
-  `elapsed / ~guess` against `QueueEntry.estimated_s`; both the denominator and `is-over` (the tint
-  that fired once elapsed passed the guess) are gone with the estimate — "over" is undefined without
-  a prediction. `is-running` stays, so a running row's clock is still `--progress` amber against a
-  finished row's faint grey.
-  The working indicator is **VoicePicker's busy dot reused**, not a new spinner, and it sits in the
-  clock's already-reserved 1ch sign slot — the one `TransportTime` puts its minus in, empty on this
-  row and there purely to keep the digits column-aligned with a finished row's. So it costs **zero
-  layout**. It earns its place while the first chunk renders: the progress bar is still at zero then,
-  and a running row would otherwise look identical to a queued one.
-  It is gated on `prefers-reduced-motion`, because `--animate-pulse-soft` is a literal 1.4s and **not**
-  one of the tokens the reduced-motion block in `tokens.css` zeroes — the same trap that once let the
-  voice-picker dot pulse for whole generations. The element stays when reduced; only the motion goes.
-  `.result-time` went back to **14ch** when the `~` left, which is what a finished row's
-  `12:07 / 45:33` needs. Never clamp elapsed to anything; a frozen clock beside a live bar reads as a
-  hung job.
+- **A generating row reports NO time at all, and its leading box holds a DISABLED play button.**
+  This bullet used to describe an elapsed clock and a pulsing dot beside the bar. Both are removed, and
+  so is the percentage ring that briefly replaced them — a second reading of the number the track
+  already shows was redundant, and an empty box is a hole where a control belongs. The box now holds
+  the same `icon-btn size-6` play button, with the same glyph, that the row will own once it becomes a
+  voiceover, `disabled` because there is nothing to play yet. `icon-btn:disabled` already dims it, so
+  no new style, and the box is identical in both row kinds — which is what the bar's left-edge
+  alignment depends on. Three consequences, each easy to undo by accident:
+  **`useElapsed` is deleted**, and with it the `reachable` read inside `PendingRow`. That hook's whole
+  reason for a `live` flag was that its advance was local and unbounded, so a dead backend counted up
+  forever. `useOptimisticProgress` needs no such flag — it never crosses the next chunk boundary, so
+  it stalls within one chunk instead of running away. The unreachable-backend detection itself is
+  untouched; it lives in `GenerationActivityContext` and `StudioShell`.
+  **`.result-time` still renders on a generating row, empty, and deleting it breaks the alignment.**
+  It is 14ch of reserved width and it is the only thing making the track end on the same pixel as a
+  finished row's waveform. Remove it and the bar grows 14ch past the waveform on every generating row.
+  It still carries `Failed · try 3`, which is not a time. (`is-running & .result-time { color:
+  --progress }` now colours nothing visible; it is left in place for the failed/cancelling states that
+  do use the slot.)
+  **The pulsing dot went with the clock.** It existed to separate a running row from a queued one
+  while the bar was still at zero. The track and the row tint carry that now. The
+  `--animate-pulse-soft` reduced-motion trap it documented still applies to `VoicePicker`, which is
+  where that animation still lives.
+  **The script preview's Reuse is disabled on a pending row**, for the same reason as the play button:
+  the voiceover does not exist yet. The affordance stays visible rather than appearing for the first
+  time at the moment the row is replaced. Consequence worth stating so it is not filed later as dead
+  code: `onReusePendingScript` and the `GET /api/queue/{id}/script` endpoint behind it are now
+  unreachable from the UI. Both are left wired — re-enabling is deleting one word — and the endpoint's
+  reason for existing is unchanged (the full script must not ride on a 1s queue poll).
   **`.result-stamp` is 17ch, and the number comes from the LONGEST LOCALE FORM.** The timestamp is
   `toLocaleTimeString`, so on an `en-US` machine `14:32` is rendered `02:32 PM` and the dated form
   becomes `Sep 11, 02:32 PM` — **16 characters**, not 13. Sized against a 24-hour example it
@@ -436,11 +558,11 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   effect re-runs on tab-visible**, because a hidden tab was not failing, it was not asking; and the
   flip is **downward only** — `/api/queue` answering again does not mean the model reloaded, so
   clearing the banner is the health check's job.
-  **`useElapsed` takes a `live` flag and freezes when it is false.** Its advance is local, so before
-  this a dead backend produced a row that counted up forever — the comment claiming "every poll
-  re-anchors it, so it cannot drift" was true only while polls succeed, which it did not say.
-  `useOptimisticProgress` is deliberately NOT frozen: it never crosses the next chunk boundary, so it
-  stalls within one chunk instead of running away. The clock had no such bound.
+  **There is no longer an elapsed clock to freeze.** `useElapsed` and its `live` flag existed because
+  a local, unbounded advance kept counting through a dead backend; both are deleted with the clock
+  (see the ProgressRing bullet). `useOptimisticProgress` never needed the flag — it cannot cross the
+  next chunk boundary, so it stalls within one chunk instead of running away. If a time readout ever
+  comes back on a generating row, it needs that liveness gate again.
 
 - **`animate-pulse-soft` is gated on `prefers-reduced-motion` at both `VoicePicker` call sites.** Its
   duration is a literal `1.4s` in `--animate-pulse-soft`, **not** one of the `--fast/--base/--slow`
@@ -515,8 +637,9 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   Everything else auto-dismisses, and the undo toasts already have the action that is their whole
   point; a second dismiss affordance beside Undo is noise. Before this it was global, and sonner's
   default placement hung it **6px outside the toast on both axes**, straddling the corner.
-  Relatedly, the elapsed-time span in `HistoryList` is **no longer `aria-live`** -- it announced a
-  new time every second and said nothing at the finish. Sonner's own polite region replaced it.
+  Relatedly, the elapsed-time span in `HistoryList` was made **not `aria-live`** before it was removed
+  outright -- it announced a new time every second and said nothing at the finish. Sonner's own polite
+  region replaced it, and remains the only announcement of a finished job.
 
 - **Voiceover search matches NAME and VOICE only, client-side, and a server `q` was built and then
   removed.** Script text is deliberately excluded: a script runs to `MAX_TOTAL_CHARS` (60,000), so a
@@ -607,9 +730,17 @@ shifts every row beneath. `canceled` stays excluded — the user stopped it and 
 The **Voiceovers column defaults to a fixed infinite-scroll window.** `HISTORY_INITIAL_COUNT` (20) fills it
 on first paint and `HISTORY_LOAD_MORE_COUNT` (10) is the scroll increment — two constants because the two
 jobs differ: the first batch has to fill the window and absorb the first scrolls, the increment only has to
-arrive before the reader reaches the bottom. `.result-list` is capped at `calc(8 * var(--result-row-h))`
-with `overflow-y: auto`; an `IntersectionObserver` on a sentinel `<li>` fetches the next slice as it scrolls
-into view. `history` accumulates rather than swapping pages. Two consequences worth knowing before touching
+arrive before the reader reaches the bottom. `.result-list` is capped at `calc(8 * var(--result-row-h) +
+12px)` with `overflow-y: auto`; an `IntersectionObserver` on a sentinel `<li>` fetches the next slice as it
+scrolls into view.
+**`--result-row-h` is 88px and no row is actually that tall — the cap is a height, not a row count.**
+Measured against the built app at a 1005px viewport: the list computes to exactly 716px (= 8 × 88 + 12,
+so the arithmetic is right), but a finished row renders **101px** and a generating one **91.6px**, so
+**7 rows are fully visible, not 8** (5 at an 805px viewport, where the list shrinks to 576px). The two
+row kinds also differ from each other by 9.4px, which is a small jump at the handoff. Both facts are
+long-standing and are recorded here rather than "fixed", because changing either is a layout change,
+not a doc correction. If the eight is ever wanted literally, `--result-row-h` has to match what a row
+measures — not the other way round. `history` accumulates rather than swapping pages. Two consequences worth knowing before touching
 it:
 - **Reloads refetch the whole prefix** (`listHistory(max(PAGE_SIZE, loaded), 0)`), they do not patch the
   array. Deleting an entry shifts every later one up by one, so an offset-based append would silently skip
@@ -624,7 +755,7 @@ it:
 - **Above 1025px the page itself does not scroll** (`.studio` is `height: 100svh; overflow: hidden`, with a
   `min-height: 0` chain down through `.workspace` → `.aside` → `.results` → `.result-list`). The row cap is
   a ceiling, not a height: `flex: 1 1 auto` clamps the list to whatever the aside actually has, so on a
-  768px-tall laptop it renders fewer than eight rows and the `max-height` never applies. Raising the
+  768px-tall laptop it renders fewer rows than the cap would allow and the `max-height` never applies. Raising the
   multiplier alone does nothing there.
 - **1025px is now written in two places, and one of them is a token.** `--breakpoint-wide: 1025px` in
   `frontend/src/index.css` gives the `wide:` utility prefix used throughout the layout, and
@@ -642,9 +773,11 @@ it:
   constrained height — so `.result-list`'s `flex: 1 1 auto; min-height: 0` never engaged, the list
   took its full `max-height` at every viewport, and the overflow was **clipped** by the shell's
   `wide:overflow-hidden` rather than scrolling. Measured before the fix, at widths ≥1025px: a 716px
-  list and 8.00 visible rows at viewport heights 1100/900/768/700, with the root overflowing by
-  101/233/301px at the last three. After adding `wide:h-full wide:min-h-0` to `.results`: 8.00 rows
-  at 1100, 6.64 at 900, 5.14 at 768, 4.36 at 700, and no overflow anywhere. Note the shell root
+  list at viewport heights 1100/900/768/700, with the root overflowing by 101/233/301px at the last
+  three. After adding `wide:h-full wide:min-h-0` to `.results`: the list tracks the column's real
+  height and there is no overflow anywhere. **Those "8.00 / 6.64 / 5.14 / 4.36 rows" figures were
+  `listHeight / --result-row-h`, not counted rows, and the token is smaller than a row** — re-measured
+  by counting rows fully inside the list, it is 7 at a 1005px viewport and 5 at 805px. Note the shell root
   itself carries no `min-h-0` and no `.studio` class — it is the flex *container*, not an item.
 
 ### Styling: Tailwind v4, nine themes, no App.css
@@ -1037,7 +1170,7 @@ below for why one wrong click there is unrecoverable.
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
   `natural`/`balanced`). **Nothing predicts duration.** `/api/estimate` is still fetched on a 400ms
   debounce for exact chunking and the long-reference warning, but neither it nor `/api/generate` returns
-  `estimated_s`; the running row reports measured elapsed time and chunk progress only. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
+  `estimated_s`; the running row reports chunk progress only, and no time of any kind. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
   this machine, so wiring Stability up would buy nothing — see `docs/gpu-notes.md`. Style is untested. And `is_builtin` is dead weight: the backend hardcodes it `False`
   (`main.py`), no "Studio Voices" gallery section exists in the frontend any more, and
   `NewVoiceModal` no longer filters on it -- the field survives only in `Preset` on both sides.
