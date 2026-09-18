@@ -342,10 +342,12 @@ function PendingRow({
   // current chunk ends); `cancelPending` covers the queued path, whose request
   // is held behind the Undo toast and fires only when that window closes.
   //
-  // cancelPending selects the EXIT but deliberately not the colour: during the
-  // hold nothing has been sent and Undo must still read as reversible, so a row
-  // that turned red mid-countdown would be claiming a cancellation that has not
-  // happened. It only ever takes effect at unmount, which is after the commit.
+  // cancelPending drives the COLOUR as well, and this note used to say the
+  // opposite -- that a row turning red mid-countdown would claim a cancellation
+  // that had not happened. The call went the other way: the red is feedback
+  // that the tick registered, and the Undo toast counting down beside it is
+  // what says the decision is still reversible. A row that stayed amber for
+  // seven seconds after the tick read as a click that did nothing.
   //
   // It is qualified by `queued`, and that qualification is load-bearing now
   // that a RUNNING cancel is held too. A queued job leaves the queue the
@@ -363,6 +365,13 @@ function PendingRow({
   // the content needs: "you are on your way out, and it was a cancellation".
   const present = useIsPresent()
   const sliding = !present && leavingCancelled && !reduced
+  // Red from the tick, not from the backend's reply. `canceling` arrives only
+  // after the request is sent -- up to UNDO_MS later on a held cancel, and then
+  // only at the next chunk boundary -- so keying the colour on it alone left
+  // the row unchanged through the entire undo window. Both kinds of row get it:
+  // is-canceling is written after is-queued, so a queued row's purple hands
+  // over to red for the countdown and back again on Undo.
+  const showCanceling = canceling || cancelPending
 
   return (
     // Enter AND exit, unlike a VoiceoverRow, which only exits. A pending row
@@ -427,10 +436,11 @@ function PendingRow({
         'group/row flex overflow-hidden border-b border-hairline py-[7px] last:border-b-0',
         queued && 'is-queued',
         failed && 'is-failed',
-        // Mutually exclusive with is-running by construction -- `running` and
-        // `canceling` are different statuses -- so the amber tint, the amber
-        // bar fill and the amber clock all hand over to --danger at once.
-        canceling && 'is-canceling',
+        // Written after is-queued and is-running in index.css, so it wins the
+        // tint, the bar fill and the .result-time colour off source order for
+        // as long as it applies -- and stops applying, restoring amber or
+        // purple, the moment an Undo clears cancelPending.
+        showCanceling && 'is-canceling',
         // is-over used to sit beside this, tinting the clock once elapsed
         // passed the estimate. Both it and the estimate are gone: a prediction
         // that was beaten by 12 of 12 measured jobs is not worth showing, and
