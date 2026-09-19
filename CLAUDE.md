@@ -200,11 +200,11 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   `check_orphan_css.py` is untouched. The asymmetry is the whole design and is easy to
   "fix" back into a bug:
   a **`VoiceoverRow` has no `initial`/`animate` at all**, because the three ways one
-  appears are a job completing, a load-more append, and first paint. The first is a
+  appears are a job completing, a page change, and first paint. The first is a
   handoff -- `PendingRow` and `VoiceoverRow` are two `.map()`s in one `<ul>`, and the
   completing job's row is replaced in the same frame, so an entrance there reads as a
-  flicker. The second is an infinite-scroll append or a page transition. Neither is an
-  event the user caused at that row.
+  flicker. The second is a page transition, where every row changes at once. Neither is
+  an event the user caused at that row.
   A **`PendingRow` animates both ways**: it appears only because Generate was pressed.
   **Its exit fade is load-bearing, and was removed once on a misreading before being
   measured properly.** A finishing job does not hand off atomically -- the queue poll
@@ -275,8 +275,10 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
 - **Everything the user types survives an immediate reload, and `useFlushOnHide` is what closes the
   gap in each case.** Four stores, four different holes, one primitive:
   `homegrown-script-draft` and `voiceoverSearch` (`usePersistedDraft`), `historyFileNames` and
-  `pendingVoiceoverNames` (`usePersistedRecord`), plus `voiceoverDisplay.v1` (a synchronous,
-  validated browser preference for infinite versus paginated completed-history display).
+  `pendingVoiceoverNames` (`usePersistedRecord`), plus `voiceoverPageSize.v1` (a synchronous,
+  validated browser preference for how many completed rows a page shows — it replaced
+  `voiceoverDisplay.v1`, which chose between infinite scroll and pagination and went with infinite
+  scroll itself).
   `voiceoverSearch` is additionally clamped to `MAX_SEARCH_CHARS` (100) on input and restoration, so an
   old localStorage value cannot render or filter beyond the field's limit.
   **The debounce used to eat the last edit.** `usePersistedDraft`'s timeout cleanup cancelled the
@@ -318,8 +320,7 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   same thing silently overwrite each other and the user gets fewer files than they selected.
 
 - **Selecting rows: visible-row-indexed ranges and select-all.** Shift-click fills the range
-  between two visible positions (the filtered list in infinite mode, the current page in paginated
-  mode), not in `history` — the same
+  between two visible positions (the current page of the filtered list), not in `history` — the same
   indices in the unfiltered array are different voiceovers, verified against the real store. A
   shift-range only ever ADDS, or a stray shift-click wipes a carefully built selection. The header
   checkbox acts on the visible rows only (13 of 23 under a filter, measured), and rows selected earlier
@@ -544,6 +545,27 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   it always meant. **The general trap stands**: an undefined `var()` fails silently and no gate sees
   it, so raw CSS here uses tokens that exist in layer 1 — `--progress`, `--queued`, `--danger-text` —
   as `is-queued`/`is-failed` already do.
+  **And it had already recurred four more times, each in a different feature, each invisible.** A doc
+  sweep in 2026-09-19 diffed every `var(--x)` in the stylesheets against the tokens actually declared
+  and found `--audio`, `--audio-soft`, `--audio-line`, `--bg` and `--surface-hover` — all of them
+  **bridge names only**. `audio` exists as `--color-audio: var(--accent-2)` for the `text-audio` /
+  `bg-audio-soft` utilities; `surface-hover` as `--color-surface-hover: var(--bg-hover)`. In raw CSS
+  they are undefined, so the whole declaration is dropped. Dead as a result, all measured in the built
+  app before the fix: `voice-picker-trigger.is-selected` (the selected voice had **no** tint and no
+  border colour), `@utility is-selected` (a bulk-selected row had no tint and no inset edge — the
+  signal the floating bar depends on), the pager's hover and active-page rules (the active button
+  computed `background: rgba(0,0,0,0)`), and `OptionWheel.css`'s centre band. They now use
+  `--accent-2`, `--accent-2-soft`, `--accent-2-line`, `--bg-base` and `--bg-hover`.
+  **The pager's active page deliberately did NOT take the literal reading of its dead rule.** Restoring
+  `background: var(--accent-2); color: var(--bg-base)` measures **3.06:1** on daylight for a 12px
+  numeral — a fail nothing would have caught, since `check_contrast.py` validates tokens rather than
+  composed surfaces. It uses `voice-picker-trigger.is-selected`'s treatment instead (accent-2-soft fill,
+  accent-2-line border, `--text-primary` text), computed across all nine themes at **11.33:1 worst case
+  (tide)**, and hover follows `ghost-btn` rather than inventing an accent-tinted hover.
+  **The sweep that found these is worth keeping in the toolbox**: collect `^\s*--x:` declarations from
+  `tokens.css` + `index.css`, collect every `var(--x)` across `frontend/src/**/*.css`, and diff. The
+  only legitimate absentees are properties set inline from TSX (`--chunks`, `--option-wheel-*`,
+  `--specular-*`) and Tailwind's own `--tw-border-style`.
 
 - **`ThemeSwitch`'s root must not carry a transform.** It centred itself with
   `top-1/2 -translate-y-1/2`, and a transform does two things beyond moving the box: it creates a
@@ -667,17 +689,19 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   `usePersistedDraft`'s 400ms debounce, which is a different thing: it delays the *save*, not the
   filter, so typing still narrows the list on the keystroke. A restored query boots the column into a
   filtered view, which is safe because the box renders whenever `searching` is true — it cannot vanish
-  and leave a filter with no way to clear it. In infinite mode, `onSearchActiveChange` makes the parent
-  load the whole history; paginated mode already does that before rendering any page.)
+  and leave a filter with no way to clear it. The parent has always loaded the complete
+  server-filtered history before the first page renders, so a restored query has everything to filter
+  over.)
   Two consequences that are easy to break:
   **numbering happens BEFORE filtering.** The number is `total - i` over the *whole* list, so
   numbering the filtered array would renumber every row as you typed — "Voiceover 26" becoming
   "Voiceover 3" mid-search, so the name being searched for stops matching itself.
-  And **the parent must finish loading the history while a search runs in infinite mode**
-  (`onSearchActiveChange` → `listHistory(totalRef.current, 0)`), because filtering only sees what was
-  fetched; without it a query over a 200-row history would silently consider the first 20. Paginated
-  mode always loads the complete server-filtered result in <=100-entry batches. The load-more sentinel
-  and its `IntersectionObserver` are both switched off while searching, and never mount in paginated mode.
+  And **the parent must load the WHOLE history, which it now always does** — `StudioShell` pulls the
+  complete server-filtered result in <=100-entry batches before `HistoryList` renders a page, because
+  filtering *and* paging both happen on the client and neither can see an unfetched row. This used to
+  be conditional: infinite mode fetched a prefix and `onSearchActiveChange` told the parent to top it
+  up when a search started, so a query over a 200-row history would otherwise have considered only the
+  first 20. That prop, the sentinel `<li>` and its `IntersectionObserver` are gone with infinite mode.
 
 - **Shortcut caps: `MOD_KEY` is the glyph, `MOD_ARIA` is the attribute, and they are not
   interchangeable.** `aria-keyshortcuts` takes a fixed vocabulary (`Control+Enter`), so it can
@@ -741,57 +765,120 @@ position, so failures are re-sorted client-side or they surface *above* the runn
 `total + 1 + i` row numbering must skip them, since a failed job never becomes a voiceover and numbering it
 shifts every row beneath. `canceled` stays excluded — the user stopped it and knows.
 
-The **Voiceovers column defaults to a fixed infinite-scroll window.** `HISTORY_INITIAL_COUNT` (20) fills it
-on first paint and `HISTORY_LOAD_MORE_COUNT` (10) is the scroll increment — two constants because the two
-jobs differ: the first batch has to fill the window and absorb the first scrolls, the increment only has to
-arrive before the reader reaches the bottom. `.result-list` is capped at `calc(8 * var(--result-row-h) +
-12px)` with `overflow-y: auto`; an `IntersectionObserver` on a sentinel `<li>` fetches the next slice as it
-scrolls into view.
-**`--result-row-h` is 88px and no row is actually that tall — the cap is a height, not a row count.**
-Measured against the built app at a 1005px viewport: the list computes to exactly 716px (= 8 × 88 + 12,
-so the arithmetic is right), but a finished row renders **101px** and a generating one **91.6px**, so
-**7 rows are fully visible, not 8** (5 at an 805px viewport, where the list shrinks to 576px). The two
-row kinds also differ from each other by 9.4px, which is a small jump at the handoff. Both facts are
-long-standing and are recorded here rather than "fixed", because changing either is a layout change,
-not a doc correction. If the eight is ever wanted literally, `--result-row-h` has to match what a row
-measures — not the other way round. `history` accumulates rather than swapping pages. Two consequences worth knowing before touching
-it:
-- **Reloads refetch the whole prefix** (`listHistory(max(PAGE_SIZE, loaded), 0)`), they do not patch the
-  array. Deleting an entry shifts every later one up by one, so an offset-based append would silently skip
-  a voiceover. Appends de-duplicate by `id` for the same reason — a job finishing between two requests
-  shifts the offsets under you.
-- The persisted `voiceoverDisplay.v1` setting may switch to frontend pagination.
-  In that mode `StudioShell` fetches the entire already-server-filtered history
-  in cancellable batches of at most 100 before `HistoryList` applies its
-  client-only name search and slices 10 completed rows per page. Do not reuse
-  the infinite sentinel there; infinite mode remains the legacy incremental
-  behaviour.
+The **Voiceovers column is PAGINATED — there is one display mode, and infinite scroll is gone.**
+`StudioShell` fetches the whole server-filtered history in <=100-entry batches, `HistoryList` applies
+its client-only name search and slices one page of completed rows, and the user picks the page size
+from a dropdown in the column's footer. `.result-list` is `flex: 1 1 auto; min-height: 0;
+overflow-y: auto` with **no `max-height`**, so the list fills whatever height the column has and a page
+longer than that scrolls inside it.
+**What was removed, so it is not rebuilt by reflex:** the `voiceoverDisplay.v1` preference and the gear
+button beside `ThemeSwitch` that set it (`HistoryDisplaySettings.tsx`), the sentinel `<li>` and its
+`IntersectionObserver`, the empty-list rescue effect behind it, `hasMore` / `onLoadMore` /
+`loadMoreHistory`, `onSearchActiveChange` (the parent now always holds the whole history, so there is
+nothing to tell it), and `HISTORY_LOAD_MORE_COUNT`. `HISTORY_INITIAL_COUNT` (20) survives only as
+`listHistory`'s default limit.
+**Page size is `voiceoverPageSize.v1`: 10 / 25 / 50 / 100, default 10** (`historyPageSize.ts`). Read
+synchronously so the first paint is already the chosen size, and validated against the option list —
+localStorage is user-editable, and an unbounded value would slice an arbitrary number of rows into a
+column whose height the viewport already decides. Changing it resets to page 1 (the old page number is
+meaningless at a new size) and scrolls the list to the top. Measured against the built app with 53
+voiceovers: 10 → 10 rows / 6 pages, 25 → 25 / 3, 50 → 50 / 2, 100 → 53 rows on one page. A junk stored
+value renders 10.
+**Changing the page size must move NOTHING, and three separate things had to be nailed down to get
+there.** The first version moved four: the nav was gated on `pageCount > 1`, so choosing 100 unmounted
+it; the footer was `height: auto`, so it measured 34.1px with a six-page link row, 32px with none and
+**64px** at a 1025px viewport where the links wrapped to a second line; the label sat in a `1fr` track
+that the link row squeezed, so its box ran 96.9 → 244px and the words wrapped to `PER` / `PAGE` exactly
+when the links were widest; and the list resized under the reader each time.
+Now: **`.voiceover-pager` is a three-track grid,
+`minmax(max-content, 1fr) auto minmax(0, 1fr)`, at a fixed `height: 36px`.** The label is
+`white-space: nowrap` in the first track, the page buttons sit in the middle one as a **fixed 220px slot**
+(`--pager-slot`), and the third track exists purely so the middle one is centred on the FOOTER rather
+than on the space the label leaves — measured `navCenterOffset` **0.0px** at 1440px wide. At the narrow
+end the first track's `max-content` floor wins and the offset becomes a constant **44.7px** at a 1025px
+viewport; constant is the requirement, since both the label and the slot are fixed widths.
+`.voiceover-pager-list` is `flex-wrap: nowrap` — wrapping is what produced the 64px footer.
+**The pager is hand-rolled, and `react-paginate` was uninstalled with it.** That component sizes its own
+output from `pageRangeDisplayed`/`marginPagesDisplayed`, and **the number of buttons it emits changes
+with the selected page**: with six pages it rendered `‹ 1 2 3 … 6 ›` on page 1 and `‹ 1 2 3 4 5 6 ›` on
+page 2, so clicking a page number reshaped the control that had just been clicked. No prop combination
+fixes it — the break only appears when there is a gap to collapse, so the count is a function of the
+selection by construction. `PAGE_WINDOW` (5) plus `pageWindow()` in `HistoryList.tsx` is a sliding window
+instead: `min(PAGE_WINDOW, pageCount)` buttons at every selection, clamped at both ends, no ellipsis
+(the ellipsis was only ever a symptom of the variable window). Walking pages 1→2→3→4→5→6→3→1 at
+10/page: **7 buttons, a 220px row and `navLeft` 916 at every step**, the window sliding `1-5` → `2-6`.
+**The buttons are `<button>`, not `<a>`**, so `:disabled` (not a class) takes the chevrons out of the tab
+order at the ends of the range, and they are the larger half of the footer at **28×28px / 12px** against
+the label's **10px text and 28px select** — the setting you touch once should not outweigh the control
+you touch constantly. Widest row (chevron + 5 pages + chevron = 220px) fits the narrowest two-column
+footer (~373px at a 1025px viewport, less ~113px of label and gaps).
+Measured across 10 / 25 / 50 / 100 at 1440×900, 1440×1400 and 1025×900, and again while switching sizes
+live on one page load: footer top/height, label box, nav left/width and `.result-list` height are
+**identical to 0.0px at every size**, root overflow 0. `padding: 0 8px` mirrors the list's, so the
+label's left edge still sits **0.0px** from a row's. Keyboard: Enter on `Page 3` selects page 3, Space on
+the next chevron moves to 4, and every page change returns `.result-list` to `scrollTop: 0`.
+**At one page the nav stays mounted and goes `inert`**, with `aria-disabled` and the `is-disabled` class
+(opacity 0.45). `inert` rather than a class alone is the point: a control that only *looks* disabled
+still takes a Tab and a click. Verified at 100/page — both chevrons `disabled`, five Tabs from the
+select never land inside the nav, clicking every button leaves the row count at 53, and a hit test at a
+chevron's centre returns `DIV.voiceover-pager`, not the button. The select renders whenever a completed
+row exists — it is how the reader asks for more rows, so hiding it until there are several pages hides
+it exactly when it would help.
+**The `calc(8 * var(--result-row-h) + 12px)` cap is GONE, and re-adding one re-adds the bug.** It read as
+an eight-row window and behaved as a 716px ceiling, which bound on exactly the viewports with room to
+spare: measured against the built app at 1440 wide, the list was 471 / 539 / 671px at viewport heights
+700 / 768 / 900 (the flex chain already sizing it, cap never applying) and then **froze at 716px at both
+1100 and 1400** while `.results` grew to 871 and 1171 — so a tall monitor got 455px of empty glass panel
+under the last row, and the pager sat at y=951 in a 1400px viewport. Immediately after the removal, same
+matrix: **471 / 539 / 671 / 871 / 1171px**, root overflow 0 at all five.
+**Those five numbers are now 44px smaller, and that is the footer, not a regression.** The pager row
+became an always-present, fixed 36px (see the footer bullet above), and the list is the flex child that
+gives up the space. Re-measured against the current build at 1440 wide with 25 per page:
+**427 / 495 / 627 / 827 / 1127px** at viewport heights 700 / 768 / 900 / 1100 / 1400, root overflow 0 at
+all five, footer bottom 1368 at 1400. Rows fully visible: **4 / 4 / 6 / 8 / 11** (was 4 / 5 / 6 / 7 / 7
+under the cap) — the 768px viewport lost a row to the footer, and the two tall ones gained one and four.
+**`--result-row-h` (88px) is still what a row is specified to be and no row is actually that tall** — a
+finished row renders **101px**, a generating one **91.6px**, which is why the token multiplied into a
+window always under-counted (7 rows at a 1005px viewport, not 8). The token survives as the row's spec,
+and the `is-failed` / `is-canceling` outlines are still inset box-shadows so a state cannot change a row's
+height; nothing multiplies it into a height any more.
+Two consequences worth knowing before touching it:
+- **Reloads refetch from offset 0 and rebuild the array**, they do not patch it. Deleting an entry shifts
+  every later one up by one, so an offset-based append would silently skip a voiceover. The batch loop
+  de-duplicates by `id` for the same reason — a job finishing between two batches shifts the offsets
+  under it — and its `cancelled` flag aborts a half-finished sweep when the filters change.
+- **The fetch is unconditionally complete, and that is load-bearing rather than lazy.** Both the name
+  search and the paging happen on the client, over names (`historyFileNames`) and positions the server
+  has never seen, so a prefix fetch would make page 4 of a 200-row history render empty. The cost is
+  bounded by `/api/history`'s own `HISTORY_PAGE_MAX` batching, not by the page size.
 - **Above 1025px the page itself does not scroll** (`.studio` is `height: 100svh; overflow: hidden`, with a
-  `min-height: 0` chain down through `.workspace` → `.aside` → `.results` → `.result-list`). The row cap is
-  a ceiling, not a height: `flex: 1 1 auto` clamps the list to whatever the aside actually has, so on a
-  768px-tall laptop it renders fewer rows than the cap would allow and the `max-height` never applies. Raising the
-  multiplier alone does nothing there.
+  `min-height: 0` chain down through `.workspace` → `.aside` → `.results` → `.result-list`), and that chain
+  is now the ONLY thing sizing the list in both directions: `flex: 1 1 auto; min-height: 0` shrinks it on a
+  768px-tall laptop and grows it on a 1400px monitor. There is no second bound to keep in sync — which is
+  the point, since the cap that used to be there only ever disagreed with the chain on tall viewports.
 - **1025px is now written in two places, and one of them is a token.** `--breakpoint-wide: 1025px` in
   `frontend/src/index.css` gives the `wide:` utility prefix used throughout the layout, and
   `TWO_COLUMN_QUERY` in `HistoryList.tsx` still hardcodes the same number. **Use `wide:`, never Tailwind's
-  `lg:` — `lg` is 1024px and the off-by-one decides which element is the scroll root.** The component needs
-  the query because both of its scroll effects have to pick a root: above the breakpoint the list is the
-  scroller, below it the page is. Rooting the `IntersectionObserver` at the list below the breakpoint
-  reports intersecting immediately and chain-loads the whole history in one go; reading `list.scrollTop`
-  there returns 0 forever, i.e. permanently "at the top". Below the breakpoint all of that is switched off
-  and the page scrolls normally — a short inner scroller inside a locked page is two nested scroll regions
-  on a phone. A missing `min-h-0` anywhere in the shell → `main` → `.aside` → `.results` →
+  `lg:` — `lg` is 1024px and the off-by-one decides which element is the scroll root.** The component still
+  needs the query for its at-top effect: above the breakpoint the list is the scroller, below it the page
+  is, and `list.scrollTop` down there returns 0 forever, i.e. permanently "at the top", so a finished
+  voiceover would always be inserted under the reader. (The other consumer was the load-more
+  `IntersectionObserver`, which had to be rooted at the list above the breakpoint and at the viewport
+  below it or it chain-loaded the whole history; that observer is gone with infinite scroll.) Below the
+  breakpoint the page scrolls normally — a short inner scroller inside a locked page is two nested scroll
+  regions on a phone. A missing `min-h-0` anywhere in the shell → `main` → `.aside` → `.results` →
   `.result-list` chain stops the list shrinking, and `scripts/check_orphan_css.py` guards the class
   hooks that chain depends on. **`.results` was the missing link for a long time.** It is a flex
-  column but was `height: auto`, and a flex child can only shrink against a parent with a
+  column but was `height: auto`, and a flex child can only shrink or grow against a parent with a
   constrained height — so `.result-list`'s `flex: 1 1 auto; min-height: 0` never engaged, the list
-  took its full `max-height` at every viewport, and the overflow was **clipped** by the shell's
+  took its full (then-capped) height at every viewport, and the overflow was **clipped** by the shell's
   `wide:overflow-hidden` rather than scrolling. Measured before the fix, at widths ≥1025px: a 716px
   list at viewport heights 1100/900/768/700, with the root overflowing by 101/233/301px at the last
   three. After adding `wide:h-full wide:min-h-0` to `.results`: the list tracks the column's real
   height and there is no overflow anywhere. **Those "8.00 / 6.64 / 5.14 / 4.36 rows" figures were
-  `listHeight / --result-row-h`, not counted rows, and the token is smaller than a row** — re-measured
-  by counting rows fully inside the list, it is 7 at a 1005px viewport and 5 at 805px. Note the shell root
+  `listHeight / --result-row-h`, not counted rows, and the token is smaller than a row** — counted
+  properly, and with the cap now gone, it is 6 rows at a 900px viewport, 8 at 1100px and 11 at 1400px
+  (1440 wide, real rows fully inside the list). Note the shell root
   itself carries no `min-h-0` and no `.studio` class — it is the flex *container*, not an item.
 
 ### Styling: Tailwind v4, nine themes, no App.css
@@ -934,7 +1021,9 @@ it cannot become anyone's containing block. Verified after the change: bulk-bar 
 
 Being absolutely positioned, it also costs **zero layout**, which a wrapper `<div>` with padding and
 a border could not: row height 91.6px and list heights 716/670/538/470 at viewport 1100/900/768/700
-with `rootOverflow: 0` are all byte-identical to before. `z-index: -1` keeps it behind this
+with `rootOverflow: 0` were all byte-identical to before. (Those list heights are pre-cap-removal — the
+list is taller now at 1100 and 1400; what the measurement showed is that this pseudo-element changes
+none of them, which is still true.) `z-index: -1` keeps it behind this
 section's own content but above the CursorGrid canvas at `-10`, so the blur has something to blur.
 
 **`--glass-fill`'s alpha is a readability budget, and the honest worst case had to be measured, not
@@ -1219,8 +1308,9 @@ below for why one wrong click there is unrecoverable.
   the first voice jump by a whole list. Measured against the built CSS: panel 487.5px at 0, 1, 5,
   6, 9 and 20 voices, and during an upload.
   `voice-list` also carries `flex: none`, the deliberate **opposite** of `result-list`'s
-  `flex: 1 1 auto; min-height: 0` — that one must shrink below eight rows on a short laptop,
-  this one must not shrink at all. Different containers, opposite requirements; don't unify them.
+  `flex: 1 1 auto; min-height: 0` — that one must track its column's height in both directions,
+  shrinking on a short laptop and growing on a tall monitor; this one must not move at all.
+  Different containers, opposite requirements; don't unify them.
   `--voice-row-h` is 45px (py-1 8 + a 36px `min-h-9` row + 1px hairline) with a
   `@media (pointer: coarse)` override to 49px, because `icon-btn` takes a 40px floor on touch and
   lifts the row with it. Without the override a tablet reserves 24px too little. Verified: 49px

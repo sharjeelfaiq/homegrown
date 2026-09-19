@@ -222,16 +222,20 @@ a reload, is limited to 100 characters, and matches a voiceover's
 60,000 characters, so a common word matches nearly everything and the list is not narrowed. The whole
 search runs in the browser, because two of the things it matches are not on the server at all — a custom
 name is a `localStorage` override, and the default `Voiceover 27` comes from the row's position rather
-than being stored. While a search is running the full history is loaded; live rows are filtered by their
-voice name as well.
+than being stored. The full history is always loaded — it is fetched in batches before the first page
+renders — so a search sees every voiceover rather than only the current page. Live rows are filtered by
+their voice name as well.
 
-The header's **Voiceover display settings** persist per browser. **Infinite scroll** is the default: the
-column is a **fixed window showing about seven rows** (five on a shorter screen), the newest 20 load up front, and scrolling to the
-bottom fetches ten more. **Paginated display** fetches the complete already-server-filtered history in
-cancellable batches of at most 100 entries, then applies the browser-local name search and shows ten
-completed rows per page. Live, queued, canceling, and failed rows remain above every completed-history
-page. In either mode, on a desktop-width window there is no page scroll at all — the list is the only
-thing that scrolls. Below
+Completed voiceovers are **paginated**, and a **Per page** dropdown at the bottom-left of the column
+chooses how many a page shows — **10** (the default), **25**, **50** or **100** — remembered per
+browser. The page controls sit beside it and stay in place at every size — once everything fits on one
+page they are greyed out and inactive rather than disappearing, so the column never shifts. The app
+fetches the complete already-server-filtered history in cancellable batches of at most 100 entries
+before the first page renders, then applies the browser-local name search over all of it. The column
+itself **fills the height of the window** (about six rows on a 900px-tall screen, eleven on a 1400px
+one) and scrolls internally when a page is longer than that. Live, queued, canceling, and failed rows
+remain above every completed-history page. On a desktop-width window there is no page scroll at all —
+the list is the only thing that scrolls. Below
 1025px the layout collapses to one column — the composer on top, Voiceovers beneath it — and the page
 scrolls normally instead, with the list growing to fit rather than scrolling inside itself. The script
 textarea is a `clamp(240px, 32svh, 340px)` writing surface with its own vertical scrollbar.
@@ -244,9 +248,9 @@ Each row is three lines:
    download filename, and the rename persists in `localStorage`. The field hugs its own text. A name typed
    into a row that is still generating survives a reload and carries over to the finished voiceover.
 2. **Play**, the waveform (which doubles as the seek bar — click or arrow-key), a **`0:12 / 1:06`** clock,
-   and the overflow actions at the right: **download** and **delete**. Click the clock's left half to switch
-   it to time remaining (`-0:54`); the total on the right stays put, and the slot is a fixed width so
-   nothing beside it shifts.
+   and the overflow actions at the right: **download** and **delete**. The clock is itself a button: click
+   anywhere on it to switch to time remaining (`-0:54`). The total on the right stays put, and the slot is
+   a fixed width so nothing beside it shifts.
 3. The first words of the script, and on the right the time it was made — `14:32`, gaining a date
    once it is no longer today, with the full timestamp on hover. A row still generating shows when it
    was **sent**, which is the only indication of how long a queued job has been waiting.
@@ -262,7 +266,8 @@ delete is sent only when it expires, then the history refresh removes it. Leavin
 window commits the delete with a keepalive request.
 
 **Select several** — the checkbox appears on hover, shift-click takes a range, and the checkbox in the
-heading takes everything currently on screen (the current ten-row page in paginated mode). A floating bar offers **Download** (one `.zip`) and
+heading takes everything currently on screen (the current page, at whatever page size is selected). A
+floating bar offers **Download** (one `.zip`) and
 **Delete** (one Undo for the batch).
 
 A voiceover finishing while you are scrolled down the list does not move you. It is counted instead, and an

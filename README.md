@@ -366,8 +366,9 @@ they drive; Generate shows its shortcut on hover. There is no Space shortcut —
 binding a bare Space globally means taking over page scrolling everywhere outside a text field.
 
 **Generate remains a semantic 40px button.** Its action and shortcut do not change: it says
-**Generate** (or `Generate N voiceovers` for a batch), **Starting the voice model…** during the
-pre-submit wake check, and **Submitting…** while the request is sent. Disabled controls do not show the
+**Generate**, **Starting the voice model…** during the pre-submit wake check, and **Submitting…** while
+the request is sent. (`GenerateButton` can also render `Generate N voiceovers`, but nothing reaches it:
+`StudioShell` passes `count` as 0 or 1, since one submission is one script.) Disabled controls do not show the
 effect. On an enabled control, a pointer-local, theme-aware specular highlight follows the pointer; it is
 suppressed for reduced motion. CSS still paints the same highlight if a browser cannot transparently
 composite the optional WebGL layer, so WebGL is never required for a usable control.
@@ -445,9 +446,6 @@ open for browsing. With reduced motion enabled, it becomes an immediate static l
 and **Light** headings. The persisted theme model still understands `system` for existing preferences and
 first-run defaults, but System is intentionally not exposed as a picker choice.
 
-The adjacent borderless **Voiceover display settings** button chooses the persisted completed-history
-view: **Infinite scroll** (the default) or **Paginated display**.
-
 Each theme has its own **identity colour** — the wordmark tells you which one you are in at a
 glance — while the amber "generating" bar means the same thing in all nine, the way the red error
 and purple queued colours do. Those were one colour until recently, which is why eight of the nine
@@ -466,33 +464,34 @@ voiceover's **name** and the **voice** that
 spoke it — not the script, since a 60,000-character script makes any common word match nearly everything.
 It runs entirely in the browser, because two of the things it searches are not on the server at all: a
 custom name is a `localStorage` override, and the default `Voiceover 27` is derived from the row's
-position. While a search is running, the whole history is loaded; live rows are filtered by voice name
-just like completed rows.
+position. The whole history is always loaded — the app fetches it in batches before the first page
+renders — so a search sees every voiceover, not just the page in front of you. Live rows are filtered by
+voice name just like completed rows.
 
 The adjacent **Filters** button opens a compact popover for voice, browser-local
 date range (today, last 7/30 days, or custom), duration, and generation status.
 The button carries the count of applied filters, and its **Clear filters** control
 is disabled until at least one of them is. Voice/date/duration filters are applied
 by the history API before pagination.
-The header’s display settings persist per browser: **Infinite scroll** is the
-default and retains incremental loading, while **Paginated display** fetches
-the complete filtered history in batches of at most 100 entries so local-name
-search and its 10-item frontend pages are complete and accurate. Live queue
-rows remain above every completed-history page.
+Completed voiceovers are always paginated. The app fetches the complete
+filtered history in batches of at most 100 entries, so the browser-local name
+search and every page are complete and accurate. Live queue rows remain above
+every completed-history page.
 The name/voice search remains browser-local so it can include custom display
 names. Generating, queued, and failed rows are live client-side queue data:
 **All** shows live work above matching completed rows, while active and failed
 views show only their respective live rows.
 
-Every finished job is newest first in a **fixed window about seven rows tall** in infinite mode (the
-cap is a height — `8 × --result-row-h + 12px` — and a row renders taller than that token; measured, 7
-rows fit at a 1005px viewport and 5 at 805px). The newest
-20 arrive on first paint and scrolling to the bottom fetches ten more. Paginated mode instead shows ten
-completed rows at a time with page controls; active queue rows remain above them. On a desktop-width
-viewport the page itself does not scroll at all; the list is the only scrolling region. On a
-short screen the window renders fewer rows than the cap allows, since it can only use the height the column
-actually has. Below 1025px the layout is one column — composer first, Voiceovers under it — the page
-scrolls normally, and the list grows to fit instead of scrolling inside itself. The script textarea is a
+Every finished job is newest first, in a list that **fills the height of its column** — there is no
+fixed row cap, so a taller viewport shows more rows before it has to scroll (measured at 1440 wide:
+6 rows at a 900px viewport, 8 at 1100px, 11 at 1400px). A **Per page** dropdown at the bottom-left of
+the column chooses **10** (the default), **25**, **50** or **100** completed rows per page, and the
+choice is remembered per browser. The page controls sit beside it in a fixed slot and stay there at
+every page size — when everything fits on one page they are shown disabled rather than removed, so
+changing the page size never shifts the layout. Active queue rows remain above the completed rows. On a desktop-width
+viewport the page itself does not scroll at all; the list is the only scrolling region.
+Below 1025px the layout is one column — composer first, Voiceovers under it — and the page
+scrolls normally instead of the list. The script textarea is a
 `clamp(240px, 32svh, 340px)` writing surface with its own vertical scrollbar.
 
 Each row is three lines:
@@ -502,9 +501,9 @@ Each row is three lines:
    to `Voiceover N`. Whatever you call it is also the download filename. The field is sized to its text. A
    name typed while the voiceover is still generating survives a reload and carries over when it
    lands.
-2. Play, the waveform (which doubles as the seek bar), a `0:12 / 1:06` clock — click its left half to count
-   down the time remaining instead — and the overflow actions at the right: download and delete. The clock
-   occupies a fixed 14ch so nothing beside it shifts as it ticks.
+2. Play, the waveform (which doubles as the seek bar), a `0:12 / 1:06` clock — the whole clock is a
+   button, and clicking it counts down the time remaining instead — and the overflow actions at the right:
+   download and delete. The clock occupies a fixed 14ch so nothing beside it shifts as it ticks.
 3. The first words of the script, and on the right the time it was generated (or, on a row still
    working, sent to generate) — `14:32`, with the date once it is no longer today and the full
    timestamp on hover.
@@ -520,8 +519,8 @@ seconds; the request is only sent when that expires, then the history refresh re
 the page during that window commits the delete with a keepalive request.
 
 **Select rows** with the checkbox that appears on hover, **shift-click** for a range, or use the
-checkbox in the `VOICEOVERS` heading to take everything on screen — in paginated mode, that means the
-current page only; with a search running it means
+checkbox in the `VOICEOVERS` heading to take everything on screen — that means the current page only,
+at whatever page size is selected; with a search running it means
 the matches, and rows you selected before searching stay selected. A floating bar then offers
 **Download** (all of them as one `.zip`) and **Delete** (one toast, one Undo, for the whole batch).
 
