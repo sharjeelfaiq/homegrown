@@ -409,6 +409,9 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   700×900: the band spans 770→1272 against a finished row's 778→1264, i.e. 8px wider on each side,
   while `dL` is **0.0px** and `dR` **-0.1px** at all four — the content did not move. Keep the two
   numbers equal, and keep the bleed ≤ the list's padding or the band will clip.
+  One number moves as a result, and it is the right one: the footer's "Per page" label sits 0.0px from
+  a **finished** row's left edge and from a pending row's CONTENT, and therefore 8px inside the pending
+  row's tinted band. Measure against the content, not the band.
   **The lesson is the measurement, not the padding.** A harness you wrote from the same mental model
   as the code confirms the model, not the code. Measure the built app.
 - **A generating row shows no `Generating` or `Cancelling` word.** The filling amber bar already says
@@ -823,8 +826,10 @@ you touch constantly. Widest row (chevron + 5 pages + chevron = 220px) fits the 
 footer (~373px at a 1025px viewport, less ~113px of label and gaps).
 Measured across 10 / 25 / 50 / 100 at 1440×900, 1440×1400 and 1025×900, and again while switching sizes
 live on one page load: footer top/height, label box, nav left/width and `.result-list` height are
-**identical to 0.0px at every size**, root overflow 0. `padding: 0 8px` mirrors the list's, so the
-label's left edge still sits **0.0px** from a row's. Keyboard: Enter on `Page 3` selects page 3, Space on
+**identical to 0.0px at every size**, root overflow 0. `padding: 0 12px` mirrors the list's — the two
+move together, and they were widened together from 8px — so the label's left edge still sits
+**0.0px** from a finished row's left edge and from a pending row's content (8px inside its tinted
+band, which bleeds outward; see the PendingRow bullet). Keyboard: Enter on `Page 3` selects page 3, Space on
 the next chevron moves to 4, and every page change returns `.result-list` to `scrollTop: 0`.
 **At one page the nav stays mounted and goes `inert`**, with `aria-disabled` and the `is-disabled` class
 (opacity 0.45). `inert` rather than a class alone is the point: a control that only *looks* disabled
