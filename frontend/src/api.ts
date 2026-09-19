@@ -49,6 +49,16 @@ export interface HistoryEntry {
   duration_s: number
   generation_s: number | null
   created_at: number
+  /** Present on structured-filter pages to preserve positional display names. */
+  history_number?: number
+}
+
+export interface HistoryFilters {
+  presetId?: string
+  createdFrom?: number
+  createdTo?: number
+  durationMin?: number
+  durationMax?: number
 }
 
 export interface GenerateJobStart {
@@ -87,6 +97,18 @@ export interface QueueEntry {
   error: string | null
   /** 1 for a first submission, incremented by each retry. */
   attempt?: number
+}
+
+/** The complete script is deliberately fetched on demand rather than carried by
+ * the queue poll -- text_preview rides that instead, so long scripts do not
+ * travel on every one-second refresh.
+ *
+ * Currently UNREACHABLE from the UI: a pending row's Reuse control is disabled
+ * until the voiceover exists (HistoryList's PendingRow). The route and this
+ * client are left wired, because re-enabling it is deleting one word. */
+export interface QueueScript {
+  text: string
+  preset_id: string
 }
 
 export interface ApiErrorBody {
@@ -219,15 +241,14 @@ export interface HistoryPage {
   total: number
 }
 
-// Two different jobs, deliberately two different numbers -- neither is a
-// "page", since the Voiceovers column scrolls rather than paginates.
+// The default page size for a bare listHistory() call, and nothing more.
 //
-// The first batch has to fill the fixed window (about eight rows) and absorb
-// the first few scrolls without a fetch. The increment only has to arrive
-// before the reader reaches the bottom, so it is smaller: fewer rows to render
-// per fetch, and a stall is less likely to be visible.
+// There WAS a second constant here, HISTORY_LOAD_MORE_COUNT, and it went with
+// infinite scroll: the column pages on the client now, so nothing appends a
+// slice at a time. StudioShell asks for 100 per batch explicitly and keeps
+// going until it holds the whole server-filtered history -- client-side paging
+// and the name search both need all of it.
 export const HISTORY_INITIAL_COUNT = 20
-export const HISTORY_LOAD_MORE_COUNT = 10
 
 /** One page of history, newest first.
  *
@@ -239,8 +260,15 @@ export const HISTORY_LOAD_MORE_COUNT = 10
 export function listHistory(
   limit: number = HISTORY_INITIAL_COUNT,
   offset = 0,
+  filters: HistoryFilters = {},
 ): Promise<HistoryPage> {
-  return authFetch(apiUrl(`/api/history?limit=${limit}&offset=${offset}`)).then(
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (filters.presetId) query.set('preset_id', filters.presetId)
+  if (filters.createdFrom !== undefined) query.set('created_from', String(filters.createdFrom))
+  if (filters.createdTo !== undefined) query.set('created_to', String(filters.createdTo))
+  if (filters.durationMin !== undefined) query.set('duration_min', String(filters.durationMin))
+  if (filters.durationMax !== undefined) query.set('duration_max', String(filters.durationMax))
+  return authFetch(apiUrl(`/api/history?${query}`)).then(
     parseOrThrow<HistoryPage>,
   )
 }
@@ -351,6 +379,10 @@ export async function zipHistory(
 
 export function listQueue(): Promise<{ queue: QueueEntry[] }> {
   return authFetch(apiUrl('/api/queue')).then(parseOrThrow<{ queue: QueueEntry[] }>)
+}
+
+export function getQueueScript(jobId: string): Promise<QueueScript> {
+  return authFetch(apiUrl(`/api/queue/${jobId}/script`)).then(parseOrThrow<QueueScript>)
 }
 
 export function cancelQueuedJob(

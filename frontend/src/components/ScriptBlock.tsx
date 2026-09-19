@@ -22,11 +22,10 @@ export default function ScriptBlock({
 }: Props) {
   const overLimit = text.length > MAX_SCRIPT_CHARS
 
-  // The estimate is not displayed HERE, but it is displayed. onEstimate feeds
-  // StudioShell, which renders `warning` as the long-reference-clip notice and
-  // `estimated_s`/`chunks` beside Generate. (For a long time only `warning`
-  // was used and the rest was discarded, which is why this comment used to say
-  // so.) Deleting this request removes both.
+  // The estimate is not displayed. onEstimate feeds StudioShell's
+  // long-reference-clip warning; the backend calculation also keeps the
+  // generated job's chunk count aligned with the pre-flight result. Deleting
+  // this request removes the warning path.
   useEffect(() => {
     if (text.trim().length === 0 || overLimit) {
       onEstimate?.(null)
@@ -61,12 +60,31 @@ export default function ScriptBlock({
     // common interaction in the app and it earns colour at rest, not only
     // during a render.
     <div className="relative rounded-md border border-hairline bg-surface-card transition-[border-color] duration-(--base) ease-(--ease) focus-within:border-audio-line">
-      {/* Fixed height, resized by dragging the corner grip -- not auto-growing.
-          The user sets the working height once and it stays put instead of the
-          page reflowing on every keystroke. */}
+      {/* clamp(240px, 32svh, 340px) -- all three numbers measured, none picked.
+          This was 40svh first (a slab: the box owned most of the column), then
+          over-corrected to a flat 220px, which is about six lines and too
+          short to hold a paragraph. The clamp is not just "relative again":
+          the BOUNDS are what make it safe in both directions. The 340px
+          ceiling stops a tall monitor reproducing the slab; the 240px floor
+          stops a short laptop shrinking the box below the flat value that was
+          already too small.
+          Measured at 1424px wide, against the real built app (viewport heights
+          are Chrome's, not the window's):
+            viewport 1005 -> 321.6px, 10 visible lines
+            viewport  805 -> 257.6px,  8 lines
+            viewport  673 -> 240.0px,  7 lines   (floor)
+            viewport  605 -> 240.0px,  7 lines   (floor)
+            viewport  545 -> 240.0px,  7 lines   (floor)
+          Root overflow was 0 at every one of those, and Generate stayed fully
+          on screen -- which is the constraint that matters, because above
+          1025px `.studio` is height:100svh;overflow:hidden and the page cannot
+          scroll to reveal anything this box pushes off.
+          Still not auto-growing and not user-resizable, and the h/min-h/max-h
+          triple stays identical so content cannot move it: a stable writing
+          surface keeps long scripts from reflowing the page. */}
       <textarea
         ref={textareaRef}
-        className="block h-[clamp(140px,30svh,260px)] min-h-[140px] w-full resize-y overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-9 text-[15px]/[1.7] outline-none placeholder:text-faint"
+        className="block h-[clamp(240px,32svh,340px)] min-h-[clamp(240px,32svh,340px)] max-h-[clamp(240px,32svh,340px)] w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-9 text-[15px]/[1.7] outline-none placeholder:text-faint"
         placeholder="Write what the voice should say…"
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
@@ -77,10 +95,9 @@ export default function ScriptBlock({
       />
 
 
-      {/* Word count only. The chunk count, character counter and time estimate
-          all still exist -- the estimate request above is unchanged, because
-          StudioShell renders its `warning` field as the long-reference-clip
-          notice -- they simply are not shown here any more.
+      {/* Word count only. Chunking is still calculated by the request above so
+          StudioShell can render its long-reference-clip warning, but no time
+          estimate or chunk count is shown here.
 
           Overlaid on the textarea rather than given a row of its own: a
           30px bordered strip for six characters was the widest thing in the
@@ -92,10 +109,9 @@ export default function ScriptBlock({
               over this same colour, so it matches exactly), because pb-9
               only reserves space at the END of the content -- a script
               scrolled to its middle runs lines straight under this;
-            - `right-6`, not `right-0`. Two things live in that corner: the
-              `resize-y` drag grip the comment above promises, and -- once a
-              script overflows `overflow-y-auto` -- the scrollbar, which is
-              17px on Windows. 16px is not enough for either. */}
+            - `right-6`, not `right-0`: once a script overflows
+              `overflow-y-auto`, Windows gives its scrollbar 17px, so 16px
+              is not enough to keep the count clear of it. */}
       <span
         className={`mono pointer-events-none absolute right-6 bottom-2 rounded-sm bg-surface-card px-1.5 py-0.5 text-[11px] whitespace-nowrap ${
           overLimit ? 'text-danger' : 'text-faint'

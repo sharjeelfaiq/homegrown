@@ -2,23 +2,24 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { useTheme } from '../ThemeContext'
-import { THEMES, type ThemeChoice } from '../theme'
+import { THEMES, type ThemeId } from '../theme'
 import { CheckIcon, ThemeIcon } from './Icons'
+import OptionWheel from './OptionWheel'
 
 interface MenuPos {
   top: number
   right: number
 }
 
-/** Theme picker, in the header. A menu rather than a two-state toggle because
- * there are nine themes plus System, and a toggle has nowhere to put them.
+/** Theme picker, in the header. A wheel rather than a two-state toggle because
+ * there are nine explicit themes, and a toggle has nowhere to put them.
  *
  * NO TRANSFORM ON THE ROOT, and that is load-bearing twice over. It used to
  * centre itself with `top-1/2 -translate-y-1/2`, and a transform does two
@@ -36,11 +37,10 @@ interface MenuPos {
  * root puts the whole switch above <main> rather than relying on the menu to
  * win a fight it could not reach.
  *
- * Modelled on VoicePicker: same pointerdown-to-close, same Escape handling,
- * same arrow-key walk. Two things differ deliberately -- the roles are
- * menu/menuitemradio rather than VoicePicker's listbox-over-a-role-less-list,
- * and focus moves into the menu on open. A menu button that opens a menu and
- * leaves focus behind is a keyboard dead end. */
+ * Modelled on VoicePicker: same pointerdown-to-close and Escape handling.
+ * Focus moves into the active picker on open; the animated wheel owns its
+ * listbox/option and arrow-key semantics. A picker that opens and leaves focus
+ * behind is a keyboard dead end. */
 export default function ThemeSwitch() {
   const { choice, theme, setChoice } = useTheme()
   const reduced = usePrefersReducedMotion()
@@ -48,14 +48,9 @@ export default function ThemeSwitch() {
   const [pos, setPos] = useState<MenuPos | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLUListElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const close = useCallback(() => setOpen(false), [])
-
-  const closeAndReturnFocus = useCallback(() => {
-    setOpen(false)
-    triggerRef.current?.focus()
-  }, [])
 
   // The menu is position: fixed, so its coordinates come off the trigger's
   // viewport rect at open time.
@@ -84,23 +79,15 @@ export default function ThemeSwitch() {
     })
   }, [open])
 
-  // 332px is about seven rows, so the list scrolls rather than running off a
-  // short screen once the theme count passed five. min() with 60svh because a
-  // fixed cap is still too tall on a laptop in landscape. Same shape as
-  // @utility result-list and voice-list, scrollbar-gutter included, so the
-  // rows do not shift sideways when the scrollbar appears.
-  //
-  // The arrow-key walk below needs nothing extra: .focus() scrolls the focused
-  // element into view in every browser that supports this menu.
-
-  // Move focus into the menu once it is positioned, onto the checked row.
+  // Move focus into the active picker only after the fixed menu has viewport
+  // coordinates. The wheel owns its own Arrow-key navigation.
   useEffect(() => {
     if (!open || !pos) return
-    const picks = menuRef.current?.querySelectorAll<HTMLButtonElement>('.theme-menu-pick')
-    if (!picks?.length) return
-    const checked = Array.from(picks).find((b) => b.getAttribute('aria-checked') === 'true')
-    ;(checked ?? picks[0]).focus()
-  }, [open, pos])
+    const initial = menuRef.current?.querySelector<HTMLElement>(
+      reduced ? '.theme-menu-pick[aria-checked="true"], .theme-menu-pick' : '.option-wheel',
+    )
+    initial?.focus()
+  }, [open, pos, reduced])
 
   useEffect(() => {
     if (!open) return
@@ -116,16 +103,6 @@ export default function ThemeSwitch() {
     // floating away from its trigger -- closing is more predictable than
     // repositioning, and a scroll means the user has moved on anyway.
     //
-    // BUT NOT ITS OWN SCROLL. Capture phase sees scroll events from every
-    // element, which was harmless while the menu was short enough never to
-    // scroll. Once it was capped at ~7 rows and given overflow-y, that same
-    // listener fired the moment anyone dragged its scrollbar or used a wheel
-    // over it -- so the menu closed itself the instant it was scrolled, and
-    // the themes past the seventh were unreachable.
-    //
-    // Scroll does not bubble, so this cannot be solved by dropping capture:
-    // capture is what lets one listener cover both scrollers (the page below
-    // 1025px, the results list above it) without naming either.
     function onScroll(e: Event) {
       if (menuRef.current?.contains(e.target as Node)) return
       close()
@@ -142,32 +119,22 @@ export default function ThemeSwitch() {
     }
   }, [open, close])
 
-  function onMenuKeyDown(e: ReactKeyboardEvent<HTMLUListElement>) {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-    const picks = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('.theme-menu-pick') ?? [],
-    )
-    if (picks.length === 0) return
-    e.preventDefault()
-    const at = picks.indexOf(document.activeElement as HTMLButtonElement)
-    const next = e.key === 'ArrowDown' ? at + 1 : at - 1
-    picks[(next + picks.length) % picks.length].focus()
-  }
-
-  function pick(next: ThemeChoice) {
-    setChoice(next)
-    closeAndReturnFocus()
-  }
-
   const active = THEMES.find((t) => t.id === theme)
   // The trigger says what is in effect, but System has to read as System --
   // "Theme: Studio" when the user picked System and the OS is dark would make
   // the menu's tick look wrong.
   const activeLabel = choice === 'system' ? `System (${active?.label ?? theme})` : active?.label
+  const wheelItems = useMemo(() => THEMES.map(({ id, label }) => ({ value: id, label })), [])
+
+  function pickWheel(themeId: string) {
+    // OptionWheel can only emit values supplied by wheelItems; this guard keeps
+    // the theme model narrow if its data ever changes independently.
+    if (THEMES.some((item) => item.id === themeId)) setChoice(themeId as ThemeId)
+  }
 
   return (
     <div
-      className="absolute inset-y-0 right-(--gutter) z-150 flex items-center font-body text-[13px]/[1.55] font-normal tracking-normal normal-case text-left"
+      className="relative z-150 flex items-center font-body text-[13px]/[1.55] font-normal tracking-normal normal-case text-left"
       ref={rootRef}
     >
       {/* Borderless, like every other icon button in the app. It briefly had
@@ -181,7 +148,7 @@ export default function ThemeSwitch() {
         ref={triggerRef}
         className="icon-btn size-8"
         aria-label={`Theme: ${activeLabel}`}
-        aria-haspopup="menu"
+        aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
@@ -198,85 +165,33 @@ export default function ThemeSwitch() {
           Origin is top-right because that is the corner it is anchored to. */}
       <AnimatePresence>
         {open && (
-          <motion.ul
+          <motion.div
             initial={reduced ? false : { opacity: 0, scale: 0.97, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={reduced ? undefined : { opacity: 0, scale: 0.97, y: -4 }}
             transition={{ duration: reduced ? 0 : 0.14, ease: [0.2, 0, 0, 1] }}
-            className="fixed z-150 m-0 max-h-[min(60svh,332px)] min-w-[208px] list-none origin-top-right overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) [scrollbar-gutter:stable]"
+            className="fixed z-150 min-w-[208px] origin-top-right rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu)"
             ref={menuRef}
-            role="menu"
-            aria-label="Theme"
-            onKeyDown={onMenuKeyDown}
             style={pos ? { top: pos.top, right: pos.right } : { visibility: 'hidden' }}
           >
-            {/* Grouped by mode. Six dark and three light in one flat list meant
-                scanning every hint to find out which was which, and the two
-                kinds are never alternatives to each other -- you are choosing
-                within one or switching between them.
-
-                role="group" with an aria-label, not a bare heading: the outer
-                list is role="menu", whose only valid children are menuitems and
-                groups. A decorative <li> heading would be announced as an empty
-                item. The visible caption is aria-hidden because the group's own
-                label already carries it. */}
-            {(['dark', 'light'] as const).map((mode) => (
-              <li key={mode} role="none">
-                <ul
-                  role="group"
-                  aria-label={mode === 'dark' ? 'Dark themes' : 'Light themes'}
-                  className="m-0 list-none p-0"
-                >
-                  <li
-                    role="presentation"
-                    aria-hidden="true"
-                    className="mono px-[9px] pt-2 pb-1 text-[10px] tracking-[0.12em] text-faint uppercase"
-                  >
-                    {mode}
-                  </li>
-                  {THEMES.filter((t) => t.mode === mode).map((t) => (
-                    <li key={t.id} role="none">
-                      <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={choice === t.id}
-                        className="theme-menu-pick flex w-full min-h-9 items-start gap-2 rounded-sm px-[9px] py-[7px] text-left text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink focus-visible:bg-surface-hover focus-visible:text-ink"
-                        onClick={() => pick(t.id)}
-                      >
-                        <span className="grid h-[18px] flex-[0_0_12px] place-items-center text-audio" aria-hidden="true">
-                          {choice === t.id && <CheckIcon size={12} />}
-                        </span>
-                        <span className="flex flex-col gap-px">
-                          {t.label}
-                          <span className="text-[11px] text-faint">{t.hint}</span>
-                        </span>
+            {reduced ? (
+              <div className="max-h-[min(60svh,332px)] overflow-y-auto [scrollbar-gutter:stable]">
+                {(['dark', 'light'] as const).map((mode) => (
+                  <div key={mode} role="group" aria-label={`${mode} themes`}>
+                    <div aria-hidden="true" className="mono px-[9px] pt-2 pb-1 text-[10px] tracking-[0.12em] text-faint uppercase">{mode}</div>
+                    {THEMES.filter((item) => item.mode === mode).map((item) => (
+                      <button key={item.id} type="button" role="radio" aria-checked={choice === item.id} className="theme-menu-pick flex w-full min-h-9 items-start gap-2 rounded-sm px-[9px] py-[7px] text-left text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink focus-visible:bg-surface-hover focus-visible:text-ink" onClick={() => setChoice(item.id)}>
+                        <span className="grid h-[18px] flex-[0_0_12px] place-items-center text-audio" aria-hidden="true">{choice === item.id && <CheckIcon size={12} />}</span>
+                        <span className="flex flex-col gap-px">{item.label}<span className="text-[11px] text-faint">{item.hint}</span></span>
                       </button>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-            <li role="none">
-              <hr className="my-1 h-0 border-0 border-t border-hairline" />
-            </li>
-            <li role="none">
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={choice === 'system'}
-                className="theme-menu-pick flex w-full min-h-9 items-start gap-2 rounded-sm px-[9px] py-[7px] text-left text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink focus-visible:bg-surface-hover focus-visible:text-ink"
-                onClick={() => pick('system')}
-              >
-                <span className="grid h-[18px] flex-[0_0_12px] place-items-center text-audio" aria-hidden="true">
-                  {choice === 'system' && <CheckIcon size={12} />}
-                </span>
-                <span className="flex flex-col gap-px">
-                  System
-                  <span className="text-[11px] text-faint">Follows your OS setting</span>
-                </span>
-              </button>
-            </li>
-          </motion.ul>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <OptionWheel items={wheelItems} defaultSelected={theme} onChange={pickWheel} optionSpacing={36} labelSize={14} inset={18} smoothing={160} curve={5} tilt={3} blur={1} fade={0.22} loop={false} draggable reducedMotion={false} />
+            )}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

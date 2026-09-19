@@ -345,7 +345,9 @@ The **✚** button beside the voice dropdown opens the Voices dialog.
 
 ### Script
 
-One script box, up to 60,000 characters, fixed height — drag the corner grip to resize it. A word count sits
+One script box, up to 60,000 characters, sized `clamp(240px, 32svh, 340px)` — ten visible lines on a
+1080p window, never fewer than seven on a short laptop, and never the 40%-of-viewport slab it used to
+be. A word count sits
 in the bottom-right corner *inside* the box rather than in a row of its own. The **voice dropdown**
 and **✚** sit *above* the box, at the right; **Generate** sits alone below it.
 
@@ -355,13 +357,21 @@ names, the instant you stop editing; and anything still unsaved is flushed when 
 That includes a name typed into a voiceover that is *still generating*: reload mid-render and the
 name is still there, and still lands on the finished voiceover. The script is kept in `localStorage`,
 so closing the tab or refreshing does not lose it — which is also why there is no "are you sure you want to leave" prompt.
-The re-queue wand, which replaces the box with an old script, offers an **Undo** when it overwrites
-something you had written.
+The script-preview reuse control, which replaces the box with an old script and voice, offers an **Undo**
+when it overwrites something you had written.
 
 Keyboard shortcuts: **Ctrl/Cmd+Enter** generates, **/** focuses the script, **Ctrl/Cmd+F** focuses the
 voiceovers search, **Escape** dismisses an error. `/` and `Ctrl+F` are shown as key caps on the controls
 they drive; Generate shows its shortcut on hover. There is no Space shortcut — it was removed, because
 binding a bare Space globally means taking over page scrolling everywhere outside a text field.
+
+**Generate remains a semantic 40px button.** Its action and shortcut do not change: it says
+**Generate**, **Starting the voice model…** during the pre-submit wake check, and **Submitting…** while
+the request is sent. (`GenerateButton` can also render `Generate N voiceovers`, but nothing reaches it:
+`StudioShell` passes `count` as 0 or 1, since one submission is one script.) Disabled controls do not show the
+effect. On an enabled control, a pointer-local, theme-aware specular highlight follows the pointer; it is
+suppressed for reduced motion. CSS still paints the same highlight if a browser cannot transparently
+composite the optional WebGL layer, so WebGL is never required for a usable control.
 
 ### While it generates
 
@@ -370,23 +380,22 @@ Only one job runs at a time — one worker thread, one GPU lock.
 The voiceover being generated appears at once as the **first row of the Voiceovers column**, in the slot
 its finished self will occupy and laid out identically, with three swaps: the waveform becomes a progress
 bar (hairline ticks at the chunk boundaries, advancing smoothly between completions rather than jumping),
-the transport becomes a labelled **Cancel**, and the clock counts **elapsed** time in amber, with a
-small pulsing dot beside it while work is in flight.
+the transport becomes a labelled **Cancel** beside a **greyed-out play button** — there is nothing to
+play yet. A generating row reports no time at all: no elapsed counter, no estimate. Its script
+preview's **Reuse** is greyed out until the voiceover lands.
 
 The Generate button stays live throughout, so a second script submitted mid-run is queued rather than
 refused. Queued voiceovers are further rows above the finished ones, in processing order, and are
-**purple** rather than amber — an empty bar and the word `Queued` in place of a filling bar and a
-ticking clock, so the difference survives greyscale as well as colour. Each promotes in place when its
-turn comes.
+**purple** rather than amber — reorder controls and the word `Queued` in place of a progress bar, so
+the difference survives greyscale as well as colour. Each promotes in place when its turn comes.
 
-Elapsed over a fixed guess, rather than a live countdown: the backend's `eta_s` re-projects from
-`elapsed / chunks_done` on every poll, so it moves in *both* directions as chunks land and is not
-worth watching. The denominator here is the estimate made once at submission and left alone. The **Generate** button stays a button and keeps its label throughout: progress
-belongs in the Voiceovers column, not on the control you press.
+The **Generate** control stays an action rather than a progress panel: queue and render progress belong
+in the Voiceovers column, not on the control that submits another job.
 
-**The app never predicts how long a render will take.** It reports elapsed time and chunk progress,
-both of which are measured. Two estimators were built and both were retired — the second was accurate
-to a 20% mean error and still ran *over* on 12 of 12 measured jobs, because a median is beaten by half
+**The app never predicts how long a render will take, and no longer reports elapsed time either.** A
+generating row shows chunk progress, which is measured. Two estimators were built and both were
+retired — the second was accurate to a 22% mean error and still ran *over* on 12 of 12 measured jobs,
+because a median is beaten by half
 of all jobs by construction and chunk resampling makes the tail worse. A number that is always beaten
 teaches you to ignore it, so it is gone rather than tuned. The reasoning and the measurements are in
 `docs/gpu-notes.md`.
@@ -397,10 +406,15 @@ instead, because they describe a *condition* rather than an event and would be w
 still true: the model-down banner (which carries **Retry**), the CPU-fallback notice, and the
 long-reference-clip warning.
 
-**Cancel** stops a running job after the current chunk, within about a second. On a **running** job it
-asks first (`Stop it?` → Stop / Keep going), because a cancel throws away however much of the render
-is already done; a **queued** job cancels in one click, since no GPU time has been spent on it. There
-is no pause — a paused job would hold the GPU lock and stall the whole queue.
+**Cancel** stops a running job after the current chunk, within about a second. Clicking Cancel on either
+a **running** or **queued** row replaces it with compact tick/cross confirmation controls, and confirming
+either opens a seven-second **Undo** toast rather than acting at once. Nothing is paused meanwhile: the
+voiceover keeps generating and the bar keeps filling — but the row turns **red** straight away, so the
+tick visibly registers, and Cancel greys out. Undo puts it back to amber with nothing to restore;
+letting the timer run sends the cancellation, and the bar freezes then.
+A voiceover that finishes inside the window releases the hold by itself. The cost is that confirming no
+longer frees the GPU straight away — if you are cancelling to start something else, you wait those seven
+seconds. There is still no pause — a paused job would hold the GPU lock and stall the whole queue.
 
 A voiceover that **fails** stays visible rather than disappearing: the row turns red, reads `Failed`, and
 carries the backend's own error in place of the script preview, with the full text on hover. It sorts below
@@ -415,17 +429,22 @@ the backend clears them.
 
 The voice dropdown stays usable throughout, so you can line up the next voice while one job runs.
 
-There is no queue list and no reorder control in the UI, though `POST /api/queue/reorder` exists and works
-— see the API table below.
+Queued rows include **up/down** icon controls between their status and cancel controls. They reorder the
+queued jobs through `POST /api/queue/reorder`; the first and last queued rows disable the unavailable
+direction.
 
 ### Themes
 
-Nine, in the picker at the top right: six dark — **Studio** (charcoal and cyan), **Greenroom** (deep
+Nine explicit choices appear in the picker at the top right: six dark — **Studio** (charcoal and cyan), **Greenroom** (deep
 green and jade), **Booth** (near-black, on air), **Marquee** (violet, magenta and cyan), **Vinyl**
 (warm black and gold), **Tide** (midnight navy and teal) — and three light — **Daylight** (neutral),
-**Tape** (warm paper and rust), **Score** (paper white, high contrast). **System** follows your OS.
+**Tape** (warm paper and rust), **Score** (paper white, high contrast).
 
-The picker groups them under **Dark** and **Light** headings.
+The default picker is a compact, right-curving option wheel. It supports mouse wheel/trackpad input,
+dragging, clicking, and Arrow keys; a theme is applied only after the wheel settles, and the picker stays
+open for browsing. With reduced motion enabled, it becomes an immediate static list grouped under **Dark**
+and **Light** headings. The persisted theme model still understands `system` for existing preferences and
+first-run defaults, but System is intentionally not exposed as a picker choice.
 
 Each theme has its own **identity colour** — the wordmark tells you which one you are in at a
 glance — while the amber "generating" bar means the same thing in all nine, the way the red error
@@ -439,20 +458,41 @@ like an error message, or a card that does not separate from the page.
 ### Voiceovers
 
 A **search box** sits under the heading, focused by `Ctrl/Cmd+F` (the shortcut is printed inside the
-field). It filters as you type, with no delay, keeps its query across a reload, and matches a
+field). It filters as you type, with no delay, keeps its query across a reload, limits queries to 100
+characters, and matches a
 voiceover's **name** and the **voice** that
 spoke it — not the script, since a 60,000-character script makes any common word match nearly everything.
 It runs entirely in the browser, because two of the things it searches are not on the server at all: a
 custom name is a `localStorage` override, and the default `Voiceover 27` is derived from the row's
-position. While a search is running, the whole history is loaded and the queue rows are hidden.
+position. The whole history is always loaded — the app fetches it in batches before the first page
+renders — so a search sees every voiceover, not just the page in front of you. Live rows are filtered by
+voice name just like completed rows.
 
-Every finished job, newest first, in a **fixed window about eight rows tall**. The newest 20 arrive on
-first paint and scrolling to the bottom of that window fetches ten more — there is no paginator, and on a
-desktop-width viewport the page itself does not scroll at all; the list is the only scrolling region. On a
-short screen the window renders fewer rows than the cap allows, since it can only use the height the column
-actually has. Below 1025px the layout is one column — composer first, Voiceovers under it — the page
-scrolls normally, and the list grows to fit instead of scrolling inside itself. The script box shrinks with
-the viewport there (`clamp(140px, 30svh, 260px)`) so it does not sit between you and your history.
+The adjacent **Filters** button opens a compact popover for voice, browser-local
+date range (today, last 7/30 days, or custom), duration, and generation status.
+The button carries the count of applied filters, and its **Clear filters** control
+is disabled until at least one of them is. Voice/date/duration filters are applied
+by the history API before pagination.
+Completed voiceovers are always paginated. The app fetches the complete
+filtered history in batches of at most 100 entries, so the browser-local name
+search and every page are complete and accurate. Live queue rows remain above
+every completed-history page.
+The name/voice search remains browser-local so it can include custom display
+names. Generating, queued, and failed rows are live client-side queue data:
+**All** shows live work above matching completed rows, while active and failed
+views show only their respective live rows.
+
+Every finished job is newest first, in a list that **fills the height of its column** — there is no
+fixed row cap, so a taller viewport shows more rows before it has to scroll (measured at 1440 wide:
+6 rows at a 900px viewport, 8 at 1100px, 11 at 1400px). A **Per page** dropdown at the bottom-left of
+the column chooses **10** (the default), **25**, **50** or **100** completed rows per page, and the
+choice is remembered per browser. The page controls sit beside it in a fixed slot and stay there at
+every page size — when everything fits on one page they are shown disabled rather than removed, so
+changing the page size never shifts the layout. Active queue rows remain above the completed rows. On a desktop-width
+viewport the page itself does not scroll at all; the list is the only scrolling region.
+Below 1025px the layout is one column — composer first, Voiceovers under it — and the page
+scrolls normally instead of the list. The script textarea is a
+`clamp(240px, 32svh, 340px)` writing surface with its own vertical scrollbar.
 
 Each row is three lines:
 
@@ -461,26 +501,26 @@ Each row is three lines:
    to `Voiceover N`. Whatever you call it is also the download filename. The field is sized to its text. A
    name typed while the voiceover is still generating survives a reload and carries over when it
    lands.
-2. Play, the waveform (which doubles as the seek bar), a `0:12 / 1:06` clock — click its left half to count
-   down the time remaining instead — and the actions at the right, dimmed until you hover the row:
-   download, re-queue (wand — pulls that script and voice back into the script box), and delete. The clock
-   occupies a fixed 14ch so nothing beside it shifts as it ticks.
+2. Play, the waveform (which doubles as the seek bar), a `0:12 / 1:06` clock — the whole clock is a
+   button, and clicking it counts down the time remaining instead — and the overflow actions at the right:
+   download and delete. The clock occupies a fixed 14ch so nothing beside it shifts as it ticks.
 3. The first words of the script, and on the right the time it was generated (or, on a row still
    working, sent to generate) — `14:32`, with the date once it is no longer today and the full
    timestamp on hover.
 
-**Click the script preview to copy the whole script**, with a toast to confirm. Nothing opens. The
-row shows the first 80 characters and hovering it reveals a copy glyph; the full text is also in the
-native tooltip. 80 matches what the backend truncates `text_preview` to, so a voiceover does not
-visibly gain characters at the moment it finishes. To *edit* an old script rather than copy it, the re-queue wand pulls it back into the
-compose box (and offers an Undo if that replaced something).
+**Click the script preview to reuse that script and voice.** The preview carries a wand affordance on
+hover and replaces the compose box, offering Undo if it overwrites text. It is **disabled on a row that
+is still generating** — there is no voiceover to reuse yet — and becomes live when the row lands. Every
+row carries just the first 80 characters in queue polls, which matches the backend's `text_preview` cut,
+so a voiceover does not visibly gain characters at the moment it finishes.
 
-**Deleting a voiceover is undoable.** The row disappears at once and a toast offers **Undo** for
-seven seconds; the request is only sent when that expires. One consequence worth knowing: if you
-close the tab inside that window the delete never happens and the row comes back on reload.
+**Deleting a voiceover is undoable.** The row remains visible while the toast offers **Undo** for seven
+seconds; the request is only sent when that expires, then the history refresh removes the row. Leaving
+the page during that window commits the delete with a keepalive request.
 
 **Select rows** with the checkbox that appears on hover, **shift-click** for a range, or use the
-checkbox in the `VOICEOVERS` heading to take everything on screen — with a search running that means
+checkbox in the `VOICEOVERS` heading to take everything on screen — that means the current page only,
+at whatever page size is selected; with a search running it means
 the matches, and rows you selected before searching stay selected. A floating bar then offers
 **Download** (all of them as one `.zip`) and **Delete** (one toast, one Undo, for the whole batch).
 
@@ -525,20 +565,21 @@ All routes are under `/api`, and every request is the same single local user.
 |---|---|---|
 | GET | `/api/health` | `model_loaded`, `sample_rate`, `device`, `device_reason`, `gpu_fault` |
 | GET | `/api/languages` | Languages the loaded model supports |
-| POST | `/api/estimate` | `{text, preset_id}` → `estimated_s`, `chunks`, `chunk_chars`, `ref_seconds`, `warning`. POST, and the whole script, because chunk count depends on sentence boundaries *and* on the voice |
+| POST | `/api/estimate` | `{text, preset_id}` → `chunks`, `chunk_chars`, `ref_seconds`, `warning`. POST, and the whole script, because chunk count depends on sentence boundaries *and* on the voice; it does not predict duration |
 | GET | `/api/presets` | List voice presets |
 | POST | `/api/presets` | Create one (multipart: `audio`, `name`, `ref_text`, `language`, `tag`) → also returns `ref_seconds` and `trimmed_from_seconds` |
 | PATCH | `/api/presets/{id}` | Rename one (`{name}`). Does not touch `preset_name` on existing history entries |
 | GET | `/api/presets/{id}/download` | The voice's reference clip, named after the voice |
 | DELETE | `/api/presets/{id}` | Delete a preset and its reference clip |
-| POST | `/api/generate` | Queue a job → `{job_id, total_chunks, estimated_s, queue_position}` |
+| POST | `/api/generate` | Queue a job → `{job_id, total_chunks, queue_position}` |
 | GET | `/api/jobs/{id}` | One job's status |
 | GET | `/api/queue` | The queue, in real processing order |
+| GET | `/api/queue/{id}/script` | Complete script and preset ID for an explicit pending-script reuse |
 | POST | `/api/queue/{id}/cancel` | Cancel a queued or running job |
 | POST | `/api/queue/{id}/retry` | Resubmit a failed job's own script → same shape as `/api/generate` |
 | DELETE | `/api/queue/{id}` | Dismiss a **canceled or failed** job. Finished ones are deleted through `/api/history` |
 | POST | `/api/queue/reorder` | Reorder queued jobs |
-| GET | `/api/history` | Completed voiceovers. No `q` — search is client-side, see below |
+| GET | `/api/history` | Completed voiceovers. Optional `preset_id`, `created_from`, `created_to`, `duration_min`, and `duration_max` filter before pagination. No `q` — search is client-side |
 | POST | `/api/history/zip` | Several voiceovers as one `.zip` (`{ids, names}`). `names` carries the display names, which the server has never seen |
 | DELETE | `/api/history/{id}` | Delete an entry and its audio |
 | GET | `/api/download/{filename}?name=` | Download with a chosen filename |
@@ -579,7 +620,7 @@ Environment overrides:
 | LAN clients load the UI but every action fails | `VITE_BACKEND_URL` was set when you built (or, in dev, is set at all). Comment it out in `frontend/.env.local` and rebuild. `start_server.bat` now catches this before it starts. |
 | `no kernel image is available for execution on the device` | The torch build has no kernels for your GPU. cu126 covers `sm_50`–`sm_90`; Blackwell needs cu128. |
 | `CUDA error: the launch timed out and was terminated` | Windows TDR killed a GPU batch running over ~2s on a display-attached card. It kills the whole process's CUDA context, so the running voiceover **and everything queued behind it** fail together — the app detects this (`gpu_fault`), hides Retry and asks you to restart, because nothing in-app can recover it. Lower `DECODE_CHUNK_FRAMES`, and do not run two model processes at once. |
-| Red banner, and an in-flight row whose clock has stopped | The backend stopped answering — crashed, machine asleep, network dropped. **Retry** in the banner re-checks it. Jobs may still be running server-side; the app has only lost contact. |
+| Red banner, and an in-flight row whose progress bar has stopped moving | The backend stopped answering — crashed, machine asleep, network dropped. **Retry** in the banner re-checks it. Jobs may still be running server-side; the app has only lost contact. |
 | Yellow "Running on CPU" banner | No usable GPU was found; the reason is in the banner and in `/api/health`. |
 | Output murmurs, drags, or drops words | Almost always the reference clip — see "Making a voice that actually works". |
 | Output has echo | Reverb in your reference clip. Re-record dry and close-mic. |
@@ -587,6 +628,17 @@ Environment overrides:
 | Jobs are slow | Normal on a small GPU. A shorter reference clip gives bigger chunks, fewer of them, and a much faster job. |
 
 ---
+
+## Interface background
+
+The studio uses a Canvas 2D CursorGrid behind its surfaces. Its static lattice takes its colour from
+each active theme's `--accent`; pointer movement briefly illuminates nearby cells and primary clicks
+emit a pulse, including when the click lands on a control. The canvas is always `pointer-events: none`,
+so it never intercepts the UI, and the same feedback remains available for reduced-motion users.
+
+It caps device-pixel-ratio at 2, redraws on resize, and only keeps an animation frame alive while a
+highlight or pulse is active. Theme updates resolve `var(--accent)` to RGB before Canvas draws, so all
+nine themes update immediately.
 
 ## Known limitations
 

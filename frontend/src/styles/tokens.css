@@ -86,9 +86,10 @@
      ~548px there instead, and still reaches 520px once there is room for it. */
   --aside: clamp(360px, 38vw, 520px);
   /* One compacted voiceover row: 26px name line + 24px transport line + ~17px
-     script preview + gaps + padding + hairline. The Voiceovers block is capped
-     at eight of these, which is what makes the window a size rather than a
-     guess. Re-measure if the row gains or loses a line. */
+     script preview + gaps + padding + hairline. This is what a row is SPECIFIED
+     to be -- a real finished row measures ~101px, which is why it no longer
+     multiplies into a window: .result-list is sized by the flex chain now, not
+     by a row count. Re-measure if the row gains or loses a line. */
   --result-row-h: 88px;
   /* One voice row in the voices dialog: py-1 (4+4) + a 36px min-h-9 control
      row + the 1px hairline under it. Both controls inside are SHORTER than
@@ -295,37 +296,18 @@
   --wave-played: var(--accent-2-bright);
   --wave-playhead: color-mix(in srgb, var(--text-primary) 90%, transparent);
 
-  /* ==== Background threads =============================================
-     The three colours the WebThreads shader weaves between. Derived, like
-     --wave-* above and for the same reason: stated here, all nine themes get
-     a correct background with no per-theme block and no new raw value, and a
-     theme added later inherits one automatically.
-
-     They reuse the palette's existing roles rather than inventing a mood:
-     --thread-1 is identity (distinct in all nine themes), --thread-2 is the
-     audio half of the tonal pair, and --thread-3 is the shader's "hot core",
-     mixed into the brightest pixels -- so it has to be the near-white/
-     near-black end of the theme, exactly as --wave-playhead does, or it is
-     invisible on the three light themes.
-
-     Read back through the probe in theme.ts, NOT getPropertyValue: a custom
-     property holding a var() chain comes back unevaluated, which WebGL cannot
-     parse. Same trap the waveform hit. */
   /* ==== Glass ==========================================================
      The Voiceovers column's translucent fill, behind a backdrop blur.
      Derived, so all nine themes get one and a tenth would inherit it.
 
      The alpha is a READABILITY budget, not a style choice: whatever shows
-     through is whatever the background shader is painting, so the worst case
+     through is whatever the background is painting, so the worst case
      for text contrast is this fill composited over pure white. The percentage
      below is the highest transparency at which every text token still clears
      WCAG AA against that worst case, in every theme -- see the measurement in
      CLAUDE.md. Lower it and the light themes fail first. */
   --glass-fill: color-mix(in srgb, var(--bg-card) 86%, transparent);
 
-  --thread-1: var(--accent);
-  --thread-2: var(--accent-2-bright);
-  --thread-3: var(--text-primary);
 
   /* ==== Legacy aliases =================================================
      Older rules are written against these names. They are repointed onto

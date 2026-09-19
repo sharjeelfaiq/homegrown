@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NewVoiceModal from './NewVoiceModal'
 import ThemeSwitch from './ThemeSwitch'
+import ParticleText from './ParticleText'
 import VoicePicker from './VoicePicker'
 import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
+import { restoreVoiceoverFilters, type VoiceoverFilterState } from './VoiceoverFilters'
 import GenerateButton from './GenerateButton'
 import { MAX_SCRIPT_CHARS, UNDO_MS } from '../constants'
 import { presetNameFromFile } from '../format'
@@ -24,21 +26,21 @@ import { wakeBackend } from '../wake'
 import BootOverlay from './BootOverlay'
 import Modal from './Modal'
 import UndoCountdown from './UndoCountdown'
-import WebThreads from './WebThreads'
+import CursorGrid from './CursorGrid'
 import {
   ApiError,
-  HISTORY_INITIAL_COUNT,
-  HISTORY_LOAD_MORE_COUNT,
   createPreset,
   deleteHistoryEntry,
   deletePreset,
   getHealth,
+  getQueueScript,
   listHistory,
   listPresets,
   renamePreset,
   startGenerate,
   type Estimate,
   type HistoryEntry,
+  type HistoryFilters,
   type Preset,
 } from '../api'
 
@@ -92,18 +94,22 @@ export default function StudioShell() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyNonce, setHistoryNonce] = useState(0)
-  // Not the query text -- just whether one is running. Filtering is
-  // client-side (HistoryList searches names the server has never seen), so
-  // all this has to do is make sure the whole history is loaded while a
-  // search is on.
-  const [searchActive, setSearchActive] = useState(false)
+  const [historyFilters, setHistoryFilters] = useState<VoiceoverFilterState>(restoreVoiceoverFilters)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [pendingNew, setPendingNew] = useState(0)
-  // Refs, not state: read inside callbacks that must not be rebuilt (and so
-  // must not re-arm the IntersectionObserver) every time they change.
-  const loadedRef = useRef(0)
-  const totalRef = useRef(0)
-  const loadingMoreRef = useRef(false)
+  // A ref, not state: read inside a callback that must not be rebuilt on every
+  // scroll event.
   const atTopRef = useRef(true)
+  const serverFilters = useMemo<HistoryFilters>(() => ({
+    presetId: historyFilters.presetId, createdFrom: historyFilters.createdFrom,
+    createdTo: historyFilters.createdTo, durationMin: historyFilters.durationMin,
+    durationMax: historyFilters.durationMax,
+  }), [historyFilters])
+  const showingHistory = historyFilters.status === 'all' || historyFilters.status === 'completed'
+
+  useEffect(() => {
+    try { localStorage.setItem('voiceoverFilters.v1', JSON.stringify(historyFilters)) } catch { /* storage is optional */ }
+  }, [historyFilters])
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -195,61 +201,45 @@ export default function StudioShell() {
     setWakeMessage(boot.detail || 'The voice model failed to load.')
   }, [boot?.phase, boot?.detail])
 
-  // Reload from the top, refetching as many entries as are already on screen so
-  // the user's scroll depth survives. Refetching the whole prefix (rather than
-  // patching the array) is what keeps deletion correct: removing an entry
-  // shifts every later one up by one, so an offset-based append would skip a
-  // voiceover. The same applies when a new one lands at the top.
+  // PULL THE WHOLE SERVER-FILTERED HISTORY, always, in batches of at most 100.
+  // This is the only fetch path now that infinite scroll is gone, and the
+  // completeness is not incidental: HistoryList pages and searches on the
+  // CLIENT, over names the server has never seen, so anything unfetched could
+  // neither be searched nor paged to. A prefix fetch would make page 4 of a
+  // 200-row history render empty.
   //
-  // WHILE A SEARCH IS RUNNING, PULL EVERYTHING. Filtering happens on the
-  // client, so anything not fetched cannot match -- a search over the first
-  // 20 rows of a 200-row history would silently look like the rest do not
-  // exist. totalRef is the count the last response reported; on the very
-  // first load it is 0 and the normal page size applies, and the search can
-  // only start after that has returned anyway.
+  // Refetching from offset 0 (rather than patching the array) is what keeps
+  // deletion correct: removing an entry shifts every later one up by one, so an
+  // offset-based append would skip a voiceover. Entries are de-duplicated by id
+  // for the same reason -- a job finishing between two batches shifts the
+  // offsets under the loop.
   useEffect(() => {
     let cancelled = false
-    const want = searchActive
-      ? Math.max(HISTORY_INITIAL_COUNT, totalRef.current)
-      : Math.max(HISTORY_INITIAL_COUNT, loadedRef.current)
-    listHistory(want, 0)
-      .then((r) => {
-        if (cancelled) return
-        setHistory(r.history)
-        setHistoryTotal(r.total)
-        loadedRef.current = r.history.length
-        totalRef.current = r.total
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
+    if (!showingHistory) {
+      setHistory([])
+      setHistoryTotal(0)
+      setHistoryLoading(false)
+      return
     }
-  }, [historyNonce, searchActive])
-
-  // Append the next slice. Stable identity on purpose -- HistoryList uses it as
-  // an effect dependency to arm its observer.
-  const loadMoreHistory = useCallback(() => {
-    if (loadingMoreRef.current || loadedRef.current >= totalRef.current) return
-    loadingMoreRef.current = true
-    listHistory(HISTORY_LOAD_MORE_COUNT, loadedRef.current)
-      .then((r) => {
-        setHistoryTotal(r.total)
-        totalRef.current = r.total
-        setHistory((prev) => {
-          // De-duplicated by id because offsets are not stable: a voiceover
-          // finishing between the two requests shifts everything down one, and
-          // a naive append would then show a row twice.
-          const seen = new Set(prev.map((e) => e.id))
-          const next = [...prev, ...r.history.filter((e) => !seen.has(e.id))]
-          loadedRef.current = next.length
-          return next
-        })
-      })
-      .catch(() => {})
-      .finally(() => {
-        loadingMoreRef.current = false
-      })
-  }, [])
+    setHistoryLoading(true)
+    void (async () => {
+      const entries: HistoryEntry[] = []
+      let offset = 0
+      let total = 0
+      while (!cancelled) {
+        const page = await listHistory(100, offset, serverFilters)
+        total = page.total
+        const known = new Set(entries.map((entry) => entry.id))
+        entries.push(...page.history.filter((entry) => !known.has(entry.id)))
+        offset += page.history.length
+        if (page.history.length === 0 || entries.length >= total) break
+      }
+      if (cancelled) return
+      setHistory(entries)
+      setHistoryTotal(total)
+    })().catch(() => {}).finally(() => { if (!cancelled) setHistoryLoading(false) })
+    return () => { cancelled = true }
+  }, [historyNonce, serverFilters, showingHistory])
 
   // A finished job must not scroll the list out from under a reader. At the top
   // the new voiceover belongs there anyway, so refresh in place; scrolled down,
@@ -484,33 +474,56 @@ export default function StudioShell() {
   // No setLanguage here any more: selecting the voice already determines the
   // language, so restoring the entry's own would just duplicate it -- and would
   // be wrong if the voice has since been recreated in another language.
-  function handleRequeue(entry: HistoryEntry) {
+  function reuseScript(text: string, presetId: string) {
     // The wand replaces the script box wholesale, which silently threw away
     // anything typed there. Offered as an undo rather than a confirm: a
     // confirm taxes every re-queue to protect the rare one, and window.confirm
     // blocks the page and looks nothing like the rest of the app -- the same
     // reasoning that made voice deletion an inline two-step.
     const previous = script
-    const replacing = previous.trim() !== '' && previous !== entry.text
-    setScript(entry.text)
-    setVoiceId(entry.preset_id)
+    const replacing = previous.trim() !== '' && previous !== text
+    setScript(text)
+    setVoiceId(presetId)
     scriptRef.current?.focus()
-    if (!replacing) return
+    if (!replacing) {
+      toast('Script ready to reuse')
+      return
+    }
     toast('Script replaced', {
       description: 'The script you had written was swapped out.',
       action: { label: 'Undo', onClick: () => setScript(previous) },
     })
   }
 
+  function handleRequeue(entry: HistoryEntry) {
+    reuseScript(entry.text, entry.preset_id)
+  }
+
+  async function handlePendingScriptReuse(jobId: string) {
+    try {
+      // Do not touch the composer until the authenticated request succeeds:
+      // a job might have disappeared or belong to somebody else by click time.
+      const pendingScript = await getQueueScript(jobId)
+      reuseScript(pendingScript.text, pendingScript.preset_id)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Failed to load pending script')
+    }
+  }
+
+  // An id can outlive its voice when it was deleted elsewhere or between
+  // refreshes. Only a currently available preset is valid for generation.
+  const selectedVoice = voiceId == null ? null : presets.find((p) => p.id === voiceId) ?? null
   const scriptReady =
-    script.trim().length > 0 && script.length <= MAX_SCRIPT_CHARS && voiceId != null
+    script.trim().length > 0 && script.length <= MAX_SCRIPT_CHARS && selectedVoice != null
 
   async function handleGenerate() {
-    if (!scriptReady) {
+    if (!scriptReady || selectedVoice == null) {
       setError(
         presets.length === 0
           ? 'Add a voice first — drop a reference clip anywhere on this page.'
-          : 'Write a script and pick a voice.',
+          : selectedVoice == null
+            ? 'Pick a voice before generating.'
+            : 'Write a script before generating.',
       )
       return
     }
@@ -537,12 +550,22 @@ export default function StudioShell() {
 
     setSubmitting(true)
     try {
-      const voiceLanguage = presets.find((p) => p.id === voiceId)?.language || 'English'
-      await startGenerate({ presetId: voiceId as string, text: script, language: voiceLanguage })
+      // `scriptReady` above proves this is a current preset, rather than just
+      // a stale id that would surface the backend's internal preset error.
+      await startGenerate({ presetId: selectedVoice.id, text: script, language: selectedVoice.language })
       setScript('')
       refreshQueue()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to submit')
+      if (
+        e instanceof ApiError &&
+        (e.message.includes('Unknown preset_id') || e.message.includes('Selected voice is unavailable'))
+      ) {
+        setVoiceId(null)
+        refreshPresets()
+        setError('The selected voice is no longer available. Pick a voice before generating.')
+      } else {
+        setError(e instanceof ApiError ? e.message : 'Failed to submit')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -561,7 +584,7 @@ export default function StudioShell() {
         ? 'Waiting for the voice model'
         : presets.length === 0
           ? 'Add a voice first'
-          : voiceId == null
+          : selectedVoice == null
             ? 'Pick a voice'
             : script.length > MAX_SCRIPT_CHARS
               ? 'Script is too long'
@@ -593,7 +616,21 @@ export default function StudioShell() {
           here would become the containing block for this fixed element and
           create a stacking context around it -- the same pair of effects that
           once let the search field paint over ThemeSwitch's open menu. */}
-      <WebThreads />
+      <CursorGrid
+        color="var(--accent)"
+        cellSize={70}
+        radius={140}
+        falloff="smooth"
+        holdTime={400}
+        fadeDuration={800}
+        lineWidth={1.2}
+        maxOpacity={0.68}
+        fillOpacity={0.035}
+        gridOpacity={0.055}
+        cellRadius={0}
+        clickPulse
+        pulseSpeed={600}
+      />
       {/* The wrapper exists only to be a positioning context for the theme
           control. It adds no height -- it contains just the h1, which keeps
           its own padding and hairline -- and it is not a flex row, so the
@@ -615,10 +652,24 @@ export default function StudioShell() {
             identity earns its keep. Large text, so the 3:1 non-text bar applies
             rather than 4.5:1; check_palette.py holds every theme's accent above
             that against all three surfaces. */}
-        <h1 className="border-b border-hairline px-(--gutter) py-[30px] text-center font-display text-[26px]/none font-semibold tracking-[0.1em] uppercase text-accent">
-          Homegrown
+        <h1 className="px-(--gutter) py-[25px] text-center leading-none">
+          <ParticleText
+            text="HOMEGROWN"
+            trigger="hover"
+            fontSize="clamp(1.7rem, 5vw, 2.2rem)"
+            fontWeight={600}
+            fontFamily="var(--font-display)"
+            particleColor="var(--accent)"
+            highlightColor="var(--accent-2-bright)"
+            particleSize={1.2}
+            density={3}
+            scatter={14}
+            gatherDuration={320}
+          />
         </h1>
-        <ThemeSwitch />
+        <div className="absolute inset-y-0 right-(--gutter) z-150 flex items-center gap-1">
+          <ThemeSwitch />
+        </div>
       </div>
 
       {/* minmax(0, ...) on BOTH tracks is load-bearing: the voiceover
@@ -736,18 +787,11 @@ export default function StudioShell() {
               GenerateButton stays a button throughout -- progress now lives in
               the Voiceovers column, as the first row, where the finished
               voiceover will land. */}
-          {/* NO ESTIMATE BESIDE GENERATE, deliberately. It was rendered here
-              for a while ("Generation will take about 25 min") and has been
-              removed: a figure quoted before you commit reads as a promise,
-              and this one is a guess with ~20% mean error (see
-              _estimate_seconds). It now appears only where it is honest --
-              as the denominator of the running row's clock, next to the
-              elapsed time that is actually measuring it, marked `~`.
-
-              /api/estimate is still fetched on the same 400ms debounce and is
-              still used: `warning` below is the long-reference-clip notice,
-              and the backend puts the same estimate on the job so the row can
-              show it. Nothing extra is requested for this. */}
+          {/* No duration estimate beside Generate or in a running row. A number
+              quoted before submission reads as a promise, and measured elapsed
+              time plus chunk progress are more honest. /api/estimate remains
+              on the 400ms debounce solely for exact chunking and the
+              long-reference-clip warning rendered above. */}
           <section className="compose-bar flex flex-wrap items-center gap-2">
             <GenerateButton
               disabled={!canGenerate}
@@ -765,19 +809,20 @@ export default function StudioShell() {
         <aside className="min-w-0 wide:h-full wide:min-h-0">
           <HistoryList
             history={history}
+            presets={presets}
+            filters={historyFilters}
+            onFiltersChange={setHistoryFilters}
             searchRef={searchRef}
-            onSearchActiveChange={setSearchActive}
             total={historyTotal}
-            hasMore={history.length < historyTotal}
-            onLoadMore={loadMoreHistory}
             pendingNew={pendingNew}
             onShowNew={showNewVoiceovers}
             onAtTopChange={handleAtTopChange}
             onDelete={handleDeleteHistory}
             onRequeue={handleRequeue}
+            onReusePendingScript={handlePendingScriptReuse}
             onError={setError}
             gpuFault={gpuFault != null}
-            loading={modelStatus === 'checking'}
+            loading={modelStatus === 'checking' || historyLoading}
           />
         </aside>
       </main>

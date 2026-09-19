@@ -1,0 +1,63 @@
+.option-wheel {
+  position: relative;
+  isolation: isolate;
+  height: calc(var(--option-wheel-spacing) * 5);
+  min-width: 172px;
+  overflow: hidden;
+  touch-action: none;
+  cursor: ns-resize;
+  outline: none;
+  user-select: none;
+}
+
+.option-wheel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.option-wheel__viewport {
+  position: absolute;
+  top: 50%;
+  right: var(--option-wheel-inset);
+  left: var(--option-wheel-inset);
+  z-index: -1;
+  height: var(--option-wheel-spacing);
+  transform: translateY(-50%);
+  border-top: 1px solid var(--line-ink);
+  border-bottom: 1px solid var(--line-ink);
+  /* --bg-hover, NOT --surface-hover. `surface-hover` is only the @theme bridge
+     name (--color-surface-hover: var(--bg-hover)) that backs the
+     `bg-surface-hover` utility; in raw CSS it is undefined, so the whole
+     color-mix -- and with it this band's fill -- was silently dropped. */
+  background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
+  pointer-events: none;
+}
+
+.option-wheel__option {
+  position: absolute;
+  top: 50%;
+  right: var(--option-wheel-inset);
+  left: var(--option-wheel-inset);
+  display: flex;
+  align-items: center;
+  height: var(--option-wheel-spacing);
+  transform: translate3d(var(--option-wheel-x), calc(-50% + var(--option-wheel-y)), 0) rotateX(var(--option-wheel-rotation));
+  transform-origin: right center;
+  color: var(--text-muted);
+  font-size: var(--option-wheel-label-size);
+  line-height: 1;
+  opacity: var(--option-wheel-opacity);
+  filter: var(--option-wheel-filter);
+  transition: transform var(--option-wheel-smoothing) cubic-bezier(.2, 0, 0, 1), opacity var(--option-wheel-smoothing) ease, filter var(--option-wheel-smoothing) ease, color var(--option-wheel-smoothing) ease;
+  will-change: transform, opacity, filter;
+  cursor: pointer;
+}
+
+.option-wheel__option[aria-selected='true'] {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .option-wheel__option { transition-duration: 0ms; }
+}

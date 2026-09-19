@@ -1,0 +1,123 @@
+.dock {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  max-width: calc(100vw - 24px);
+  padding: 7px;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-menu);
+}
+
+.dock-summary {
+  flex: none;
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dock-items {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: end;
+  justify-content: center;
+  gap: 4px;
+}
+
+.dock-item {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: var(--control-fill);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-md);
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+
+.dock-item:hover:not(:disabled),
+.dock-item:focus-visible:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--control-fill-hover);
+  border-color: var(--control-edge-hover);
+}
+
+.dock-item:focus-visible {
+  outline: 2px solid var(--line-focus);
+  outline-offset: 2px;
+}
+
+.dock-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.dock-item.dock-item-danger:hover:not(:disabled),
+.dock-item.dock-item-danger:focus-visible:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.dock-tooltip {
+  position: absolute;
+  z-index: 1;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: max-content;
+  max-width: min(200px, calc(100vw - 24px));
+  padding: 5px 7px;
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 1.2;
+  pointer-events: none;
+  background: var(--bg-raised);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-menu);
+  transform: translateX(-50%);
+}
+
+@media (pointer: coarse) {
+  .dock-item {
+    min-width: 48px;
+    min-height: 48px;
+  }
+}
+
+@media (max-width: 380px) {
+  .dock {
+    gap: 4px;
+    padding: 5px;
+  }
+
+  .dock-summary {
+    max-width: 72px;
+    padding: 0 2px;
+  }
+
+  .dock-items {
+    gap: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-item {
+    transition: none;
+  }
+}

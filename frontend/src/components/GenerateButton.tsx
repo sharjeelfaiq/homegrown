@@ -1,11 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { MOD_ARIA, MOD_KEY } from '../keys'
+import Kbd from './Kbd'
+import SpecularButton from './SpecularButton'
 
 interface Props {
   disabled: boolean
-  /** Why the button is disabled, shown in place of "Generate". A greyed-out
-   * control that says nothing leaves the user guessing what is missing. */
+  /** Why the button is disabled. Shown from the adjacent warning icon so the
+   * control keeps its stable action label. */
   blockedReason?: string | null
   busy: boolean
   /** True while waking the backend, before any job has been submitted. */
@@ -40,38 +42,39 @@ export default function GenerateButton({
   // job ran; reporting on work in flight is the Voiceovers column's job, and a
   // button that renames itself for a state it does not control reads as a
   // status light rather than as an action.
+  // The plural branch is UNREACHABLE today and is kept rather than deleted:
+  // StudioShell passes `count` as `scriptReady ? 1 : 0`, because one submission
+  // is one script. It costs one line and it is the only thing that would need
+  // writing if batching ever lands. Do not document it as a label users see.
   const label = warming
     ? 'Starting the voice model…'
     : busy
       ? 'Submitting…'
-      : blockedReason
-        ? blockedReason
-        : count > 1
-          ? `Generate ${count} voiceovers`
-          : 'Generate'
+      : count > 1
+        ? `Generate ${count} voiceovers`
+        : 'Generate'
 
   // flex-none, but no longer ml-auto: the voice controls anchor the right of
   // the compose row now, and Generate sits at the left. The slack between
   // them is taken by the wrapper around the voice field in StudioShell.
   return (
-    <section className="flex flex-none flex-col gap-2.5">
+    <section className="flex flex-none flex-wrap items-center gap-x-2 gap-y-1">
       {/* Tooltip, not a visible key cap -- unlike the script box and the play
-          control, which wear theirs. This button already carries the longest
-          and most changeable label in the app (blockedReason substitutes into
-          it, and reads as a whole sentence), so a cap would sit beside text
-          that is sometimes "Generate" and sometimes "Pick a voice first".
+          control, which wear theirs. The button stays a stable action label;
+          any missing prerequisite is carried by the adjacent warning icon.
 
           aria-keyshortcuts is NOT the tooltip text: it takes a fixed
           vocabulary ("Control+Enter"), which is why MOD_ARIA is separate from
           the display glyph in MOD_KEY. Assistive tech announces the shortcut
           from that attribute, so nothing is lost by the cap being absent. */}
-      <button
+      <SpecularButton
         type="button"
         className="generate-btn"
         disabled={disabled}
         onClick={onClick}
         aria-keyshortcuts={`${MOD_ARIA}+Enter`}
         title={`Generate (${MOD_KEY}+Enter)`}
+        reducedMotion={reduced}
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
@@ -84,7 +87,11 @@ export default function GenerateButton({
             {label}
           </motion.span>
         </AnimatePresence>
-      </button>
+      </SpecularButton>
+      {blockedReason && <span className="text-[12px] text-muted" role="status">{blockedReason}</span>}
+      <span className="flex items-center gap-1 text-[11px] text-faint coarse:hidden" aria-hidden="true">
+        <Kbd>{`${MOD_KEY}+Enter`}</Kbd><span>to generate</span>
+      </span>
     </section>
   )
 }

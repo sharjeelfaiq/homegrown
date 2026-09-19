@@ -105,14 +105,13 @@ GLUED_CLASS = re.compile(r"[A-Za-z0-9_:./%\[\]-]+\$\{")
 def glued_classes() -> list[str]:
     out: list[str] = []
     for path in sorted(FRONTEND.rglob("*.tsx")):
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if "className" not in line and "`" not in line:
-                continue
-            for m in GLUED_CLASS.finditer(line):
+        text = path.read_text(encoding="utf-8")
+        for attribute in CLASSNAME_ATTR.finditer(text):
+            literal = next(group for group in attribute.groups() if group is not None)
+            lineno = text.count("\n", 0, attribute.start()) + 1
+            for m in GLUED_CLASS.finditer(literal):
                 token = m.group()[:-2]
-                # Only care inside template literals that look like class lists.
-                if "`" in line or "className" in line:
-                    out.append(f"{path.relative_to(ROOT)}:{lineno}  {token}${{…}}")
+                out.append(f"{path.relative_to(ROOT)}:{lineno}  {token}${{…}}")
     return out
 
 

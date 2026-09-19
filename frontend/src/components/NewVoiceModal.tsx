@@ -174,6 +174,31 @@ export default function NewVoiceModal({
                   </span>
                 ) : (
                   <span className="flex flex-none items-center gap-0.5">
+                    {/* The busy/reference badge leads the action rail so it
+                        reads as row status, not as a replacement for the
+                        download control that follows the preview button. */}
+                    {runningPresetIds.has(preset.id) ? (
+                      <span
+                        className="mono mr-1 text-[10px] text-progress"
+                        title="This voice is generating a voiceover right now"
+                      >
+                        busy
+                      </span>
+                    ) : (
+                      overCap(preset) && (
+                        <span
+                          className="mono mr-1 text-[10px] text-progress"
+                          title={
+                            `Cloned from a ${Math.round(preset.ref_seconds ?? 0)}s reference clip, which leaves ` +
+                            `room for only ${preset.chunk_chars}-character chunks -- below the ` +
+                            `${PADDING_SAFE_MIN_CHARS}-character point where quality starts to suffer. ` +
+                            `Delete this voice and re-create it from a 10-20s clip.`
+                          }
+                        >
+                          {Math.round(preset.ref_seconds ?? 0)}s
+                        </span>
+                      )
+                    )}
                     <button
                       type="button"
                       className="icon-btn"
@@ -203,37 +228,6 @@ export default function NewVoiceModal({
                     >
                       <DownloadIcon size={13} />
                     </a>
-                    {/* At most ONE badge, never both. The row is a fixed
-                        height (voice-list is 6 x --voice-row-h, so a second
-                        line cannot be accommodated -- a per-voice note under
-                        the row was tried once and broke exactly this), and two
-                        badges plus three icon buttons crowd the name out at the
-                        modal's width. `busy` wins while it applies: it is
-                        transient and time-sensitive, whereas an over-long
-                        reference clip is a standing property of the voice and
-                        will still be there when the render finishes. */}
-                    {runningPresetIds.has(preset.id) ? (
-                      <span
-                        className="mono mr-1 text-[10px] text-progress"
-                        title="This voice is generating a voiceover right now"
-                      >
-                        busy
-                      </span>
-                    ) : (
-                      overCap(preset) && (
-                        <span
-                          className="mono mr-1 text-[10px] text-progress"
-                          title={
-                            `Cloned from a ${Math.round(preset.ref_seconds ?? 0)}s reference clip, which leaves ` +
-                            `room for only ${preset.chunk_chars}-character chunks -- below the ` +
-                            `${PADDING_SAFE_MIN_CHARS}-character point where quality starts to suffer. ` +
-                            `Delete this voice and re-create it from a 10-20s clip.`
-                          }
-                        >
-                          {Math.round(preset.ref_seconds ?? 0)}s
-                        </span>
-                      )
-                    )}
                     <button
                       type="button"
                       className="icon-btn icon-btn-danger"

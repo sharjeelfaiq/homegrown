@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { AnimatePresence, motion, useIsPresent } from 'framer-motion'
 import {
   ApiError,
   cancelQueuedJob,
   deleteQueueJob,
+  reorderQueue,
   retryQueueJob,
   zipHistory,
   downloadUrl,
@@ -13,10 +14,8 @@ import {
 } from '../api'
 import { downloadName, formatClock, formatTimeOfDay, formatTimestampFull, timeAgo } from '../format'
 import { useGenerationActivity } from '../GenerationActivityContext'
-import { useElapsed } from '../hooks/useElapsed'
 import { useOptimisticProgress } from '../hooks/useOptimisticProgress'
 import { toast } from 'sonner'
-import { useCopyToClipboard } from '../hooks/useCopyToClipboard'
 import { useFlushOnHide } from '../hooks/useFlushOnHide'
 import { usePersistedDraft } from '../hooks/usePersistedDraft'
 import { usePersistedRecord } from '../hooks/usePersistedRecord'
@@ -25,25 +24,46 @@ import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import InlineName from './InlineName'
 import UndoCountdown from './UndoCountdown'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import { CopyIcon, DownloadIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrossIcon, DownloadIcon, MoreIcon, PlayIcon, StopIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
+import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
+import Dock, { type DockItemData } from './Dock'
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from '../historyPageSize'
+
+/** How many numbered buttons the pager shows, whatever page you are on.
+ *
+ * This is the whole reason the pager is hand-rolled rather than react-paginate.
+ * That component sizes its own output from `pageRangeDisplayed` and
+ * `marginPagesDisplayed`, and the number of buttons it emits CHANGES WITH THE
+ * SELECTED PAGE: with six pages it rendered `< 1 2 3 … 6 >` on page 1 and
+ * `< 1 2 3 4 5 6 >` on page 2, so clicking a page number reshaped the control
+ * that was just clicked. No combination of its two props fixes that -- the
+ * break only appears when there is a gap to collapse, so the count is a
+ * function of the selection by construction.
+ *
+ * A sliding window of a fixed size has no such state: the count is
+ * `min(PAGE_WINDOW, pageCount)` at every selection, so the row is the same
+ * shape on every page. It also drops the ellipsis, which was only ever a
+ * symptom of the variable window. */
+const PAGE_WINDOW = 5
+
+/** The window's page indices, clamped so it never runs past either end. */
+function pageWindow(page: number, pageCount: number): number[] {
+  const size = Math.min(PAGE_WINDOW, Math.max(1, pageCount))
+  const start = Math.max(0, Math.min(page - Math.floor(size / 2), pageCount - size))
+  return Array.from({ length: size }, (_, i) => start + i)
+}
 
 interface Props {
   history: HistoryEntry[]
+  presets: import('../api').Preset[]
+  filters: VoiceoverFilterState
+  onFiltersChange: (filters: VoiceoverFilterState) => void
   total: number
   /** Focused (and selected) by the Ctrl/Cmd+F shortcut, which is bound in
    *  StudioShell -- the same arrangement as the script box and "/". */
   searchRef?: RefObject<HTMLInputElement | null>
-  /** Fires when a search starts or stops. The caller's job is to make sure
-   *  the WHOLE history is loaded while one is running -- filtering happens
-   *  here, over what has been fetched, so a half-loaded list would silently
-   *  hide matches. */
-  onSearchActiveChange?: (active: boolean) => void
-  /** True while more entries exist past what `history` already holds. */
-  hasMore: boolean
-  /** Fetch the next slice. Safe to call repeatedly -- the caller de-dupes. */
-  onLoadMore: () => void
   /** Voiceovers that finished while the user was scrolled away from the top. */
   pendingNew: number
   onShowNew: () => void
@@ -53,6 +73,8 @@ interface Props {
   onAtTopChange: (atTop: boolean) => void
   onDelete: (id: string, opts?: { unloading?: boolean }) => void
   onRequeue: (entry: HistoryEntry) => void
+  /** Fetches and restores a pending job's full script on demand. */
+  onReusePendingScript: (jobId: string) => void
   /** Surfaces a failed Retry. Without it an ApiError from the retry endpoint
    * is swallowed and the click looks like it did nothing -- the exact failure
    * mode this whole row state exists to remove. */
@@ -71,6 +93,10 @@ interface Props {
  * A voice with a long reference clip chunks at ~80 characters, which turns the
  * 60,000-character limit into ~750 chunks, so this end of the range is real. */
 const MAX_TICKS = 60
+
+/** Search terms stay intentionally short: unlike scripts, this is a quick
+ * client-side filter that is persisted and restored with the workspace. */
+const MAX_SEARCH_CHARS = 100
 
 /* The two-column layout, and with it the fixed-height scrolling Voiceovers
  * block. Mirrors the `@media (min-width: 1025px)` / `(max-width: 1024px)` pair
@@ -142,6 +168,7 @@ function RowHead({
         ariaLabel={placeholder ?? `Name of voiceover ${number}`}
         title={nameTitle}
         onCommit={onCommitRename}
+        className="result-name voiceover-name"
       />
 
       <span className="mono ml-auto max-w-[55%] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-faint" title={`Voice: ${voiceName}`}>
@@ -237,40 +264,60 @@ function TransportTime({
  * hold that lock and stall every other queued job. Cancel is the honest
  * control, and it lands at the next chunk boundary (~1s).
  *
- * Download and "reuse this script" are absent for the obvious reason -- there
- * is nothing to download yet, and the script is still in flight. */
+ * Download is absent because there is nothing to download yet, and Reuse is
+ * present but DISABLED for the same reason -- the script preview's control only
+ * becomes live once the row is a voiceover. The fetch behind it (the complete
+ * text, pulled on demand rather than on every one-second queue poll) is
+ * therefore currently unreachable; see onReuseScript below. */
 function PendingRow({
   job,
   nameControl,
   onCancel,
+  cancelPending = false,
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
+  reordering = false,
   onRetry,
+  onReuseScript,
 }: {
   job: QueueEntry
   nameControl: NameControl
   onCancel: () => void
+  /** True while the Undo toast still allows this cancellation to be reversed. */
+  cancelPending?: boolean
+  canMoveUp?: boolean
+  canMoveDown?: boolean
+  onMoveUp?: () => void
+  onMoveDown?: () => void
+  reordering?: boolean
   /** Only meaningful on a failed row; undefined elsewhere. */
   onRetry?: () => void
+  /** Present for running, canceling, and queued jobs; failed jobs omit it. */
+  onReuseScript?: () => void
 }) {
   const running = job.status === 'running'
   const canceling = job.status === 'canceling'
-  // Armed only for a RUNNING job. Cancelling a queued one costs nothing --
-  // no GPU time has been spent on it yet -- so making every cancel two clicks
-  // would tax the cheap case to protect the expensive one.
-  //
-  // A confirm rather than the undo-toast used for deleting a voiceover,
-  // because cancel is not undoable in the same sense: the generation stops and
-  // the partial audio is discarded, so "undo" could only mean re-queueing from
-  // scratch and paying the whole render again.
+  // A running render cannot be paused and resumed, so ask before stopping it.
+  // The tick does not stop the GPU on the spot, though: it starts the same
+  // UNDO_MS hold a queued cancellation gets (see holdCancel). Nothing is
+  // paused during that window -- the job carries on generating exactly as it
+  // was -- so an Undo needs no state restored, and the row stays amber and
+  // ticking until the hold commits.
   const [confirmingCancel, setConfirmingCancel] = useState(false)
-  // Read from context rather than threaded through the map -- PendingRow is a
-  // sibling component, not a closure over HistoryList's scope.
-  const { reachable } = useGenerationActivity()
-  // useOptimisticProgress is deliberately NOT frozen: it is self-bounding, it
-  // never crosses the next chunk boundary, so with a dead backend it stalls
-  // within one chunk instead of running away. The clock had no such bound --
-  // it counted up forever -- which is why only it needs this.
-  const progress = useOptimisticProgress(running ? job : undefined)
-  const elapsed = useElapsed(job, reachable)
+  // useOptimisticProgress is self-bounding: it never crosses the next chunk
+  // boundary, so with a dead backend it stalls within one chunk instead of
+  // running away. That is why it needs no liveness flag. The elapsed clock DID
+  // need one -- its advance was local and unbounded, so a dead backend counted
+  // up forever -- and that whole apparatus (useElapsed, the `reachable` read
+  // here) went with the clock.
+  // `canceling` is passed in too, or the hook resets to 0 the moment the
+  // status flips and the bar -- which is supposed to FREEZE where it is --
+  // animates back to the left edge instead. useOptimisticProgress already
+  // stops advancing on `canceling` (it clamps to chunks_done/total_chunks), so
+  // handing it the job is what holds the width at the last committed chunk.
+  const progress = useOptimisticProgress(running || canceling ? job : undefined)
   const reduced = usePrefersReducedMotion()
 
   const total = job.total_chunks || 0
@@ -280,8 +327,8 @@ function PendingRow({
 
   // Queued is the only state that gets its own colour. `canceling` deliberately
   // does not: the job is still running until the current chunk ends, so
-  // painting it as "not started" would be a lie -- the row already says
-  // "Cancelling…".
+  // painting it as "not started" would be a lie. The row no longer says
+  // "Cancelling…" either -- the disabled Cancel button carries that.
   const queued = job.status === 'queued'
   // Terminal and unrecoverable. The row stays so the failure is visible, but
   // everything that implies work in progress -- the sheen, the elapsed clock,
@@ -292,6 +339,43 @@ function PendingRow({
   // instantly on every attempt looks like a button that does nothing. The
   // count is the proof that something happened.
   const attempt = job.attempt ?? 1
+  // Why this row will leave, decided while it is still mounted -- framer reads
+  // the LAST rendered props on unmount, and `canceled` never appears in
+  // /api/queue, so there is no render in which the row knows it has already
+  // gone. `canceling` covers the running path (the backend reports it until the
+  // current chunk ends); `cancelPending` covers the queued path, whose request
+  // is held behind the Undo toast and fires only when that window closes.
+  //
+  // cancelPending drives the COLOUR as well, and this note used to say the
+  // opposite -- that a row turning red mid-countdown would claim a cancellation
+  // that had not happened. The call went the other way: the red is feedback
+  // that the tick registered, and the Undo toast counting down beside it is
+  // what says the decision is still reversible. A row that stayed amber for
+  // seven seconds after the tick read as a click that did nothing.
+  //
+  // It is qualified by `queued`, and that qualification is load-bearing now
+  // that a RUNNING cancel is held too. A queued job leaves the queue the
+  // instant its cancel commits, still reporting `queued`, so nothing but this
+  // flag can identify it. A running job cannot be read that way: it leaves the
+  // queue for two different reasons -- it was cancelled, or it simply FINISHED
+  // inside the seven seconds -- and the last render looks identical either way.
+  // So the running path relies on `canceling` instead, which the backend
+  // reports once the request has actually been sent. A job that completes
+  // mid-hold therefore keeps the completion fade, which is what covers the
+  // handoff seam.
+  const leavingCancelled = canceling || (cancelPending && queued)
+  // False for exactly as long as AnimatePresence is holding this row on screen
+  // after React has removed it. Paired with leavingCancelled it is the one bit
+  // the content needs: "you are on your way out, and it was a cancellation".
+  const present = useIsPresent()
+  const sliding = !present && leavingCancelled && !reduced
+  // Red from the tick, not from the backend's reply. `canceling` arrives only
+  // after the request is sent -- up to UNDO_MS later on a held cancel, and then
+  // only at the next chunk boundary -- so keying the colour on it alone left
+  // the row unchanged through the entire undo window. Both kinds of row get it:
+  // is-canceling is written after is-queued, so a queued row's purple hands
+  // over to red for the countdown and back again on Undo.
+  const showCanceling = canceling || cancelPending
 
   return (
     // Enter AND exit, unlike a VoiceoverRow, which only exits. A pending row
@@ -312,15 +396,65 @@ function PendingRow({
     // No height collapse, only opacity -- collapsing would move every row below
     // it twice, once shut and once open again, for a row that is being replaced
     // at its own height.
+    //
+    // A CANCELLED row leaves differently, and the two exits must not be
+    // unified. A completing job is a handoff and has to be covered; a cancelled
+    // one is not replaced by anything, so the same quiet fade reads as the row
+    // having been dropped rather than stopped. It slides out to the right
+    // instead -- the one exit in this column that says "removed" rather than
+    // "became something else".
+    //
+    // The slide is on the row's CONTENT, not on the <li>, and the <li> carries
+    // overflow-hidden to clip it. Translating the <li> itself would have had to
+    // be clipped by .result-list, whose overflow-y is `auto` above the
+    // breakpoint and deliberately `visible` below it -- an overflow-x there
+    // would either add a horizontal scrollbar or turn the mobile list back into
+    // the nested scroll region its own comment forbids.
+    //
+    // The content learns it is leaving through useIsPresent, NOT through a
+    // framer variant label, and that is a correction rather than a preference.
+    // The label version (parent `exit="slide"`, child `variants={{slide}}`) was
+    // built first and measured: the child applied translateX(100%) as a static
+    // jump, the <li>'s own opacity never left 1, and because the parent's exit
+    // animation therefore never completed, AnimatePresence kept the row mounted
+    // FOREVER -- 259 consecutive samples of a row that had already left the
+    // queue, translated off its own edge and still in the DOM. Plain objects on
+    // both elements have no such coupling: the <li>'s opacity drives the
+    // presence completion, the content's x is an ordinary `animate`.
     <motion.li
       initial={reduced ? false : { opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={reduced ? undefined : { opacity: 0 }}
+      exit={
+        reduced
+          ? undefined
+          : { opacity: 0, transition: { duration: leavingCancelled ? 0.22 : 0.16 } }
+      }
       transition={{ duration: reduced ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
       className={[
-        'flex flex-col gap-0.5 border-b border-hairline py-[7px] last:border-b-0',
+        // px-2 -mx-2 is padding that COSTS NOTHING, and the pair is the whole
+        // trick. This row is tinted (amber running, purple queued, red
+        // cancelling) while VoiceoverRow is not, so its content sits against a
+        // coloured edge and reads as cramped -- but padding it inward moves the
+        // progress track, and the track is aligned to a finished row's waveform
+        // on both edges. That was measured going wrong once: a bare px-2 here
+        // put the bar 8px inside the waveform at dL +8.0 / dR -8.1 in the real
+        // app, while a synthetic harness (which gave both row kinds px-2)
+        // reported 0.0 and hid it for an iteration.
+        //
+        // The negative margin cancels the padding for layout, so the CONTENT
+        // does not move at all -- only the tint, the hairline and the
+        // is-canceling stripe grow 8px outward into .result-list's own 12px of
+        // side padding. Content stays on the finished row's pixel (dL 0.0 /
+        // dR -0.1 re-measured after this), and the band gains its breathing
+        // room. Keep the two numbers equal.
+        'group/row -mx-2 flex overflow-hidden border-b border-hairline px-2 py-[7px] last:border-b-0',
         queued && 'is-queued',
         failed && 'is-failed',
+        // Written after is-queued and is-running in index.css, so it wins the
+        // tint, the bar fill and the .result-time colour off source order for
+        // as long as it applies -- and stops applying, restoring amber or
+        // purple, the moment an Undo clears cancelPending.
+        showCanceling && 'is-canceling',
         // is-over used to sit beside this, tinting the clock once elapsed
         // passed the estimate. Both it and the estimate are gone: a prediction
         // that was beaten by 12 of 12 measured jobs is not worth showing, and
@@ -330,14 +464,55 @@ function PendingRow({
         .filter(Boolean)
         .join(' ')}
     >
+      <motion.div
+        className="flex min-w-0 flex-1 flex-col gap-0.5"
+        animate={{ x: sliding ? '100%' : 0 }}
+        transition={{ duration: reduced || !sliding ? 0 : 0.22, ease: [0.2, 0, 0, 1] }}
+      >
       <RowHead {...nameControl} voiceName={job.preset_name} nameTitle="Click to rename" />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
           so the two row kinds line up down the column. */}
-      <div className="flex min-w-0 items-center gap-2.5">
-        {/* One bar for every chunk count. The boundary ticks are a repeating
-            gradient driven by --chunks rather than one element per chunk, so
-            three chunks and seven hundred cost the same. */}
+      <div className="flex min-h-7 min-w-0 items-center gap-2.5">
+        {/* Queued is the only state that still spells itself out, because it is
+            the only one with nothing else to say: no bar, no moving clock.
+            "Generating" and "Cancelling" are gone -- an amber bar that is
+            filling, beside a pulsing dot and a ticking clock, already says the
+            GPU is working, and the word was the one thing on this line whose
+            width changed as the state did. "Failed" is not repeated here
+            either; `.result-time` renders it (with the attempt count). */}
+        {queued && (
+          <span className="mono flex-none text-[10px] font-medium text-queued">Queued</span>
+        )}
+        {/* Queued work has no progress to report. Its reorder controls and
+            status lead this line instead of an empty bar.
+
+            Everything else gets the bar inside a wrapper that MIRRORS
+            VoiceoverPlayer's own box -- same `flex min-w-0 flex-1 items-center
+            gap-2`, led by an element carrying the play button's exact classes.
+            That is what makes the bar start and end on the same two pixels as a
+            finished row's waveform, and it stays true if those classes ever
+            change, which a hardcoded 32px spacer would not. The right edge is
+            held by `.result-actions`' shared min-width.
+
+            That leading box held nothing but air while the row carried an
+            elapsed clock, then briefly held a percentage ring. It now holds the
+            REAL control, disabled: the same play button, with the same classes
+            and the same glyph, that this row will own the moment it becomes a
+            voiceover. A second reading of the percentage was redundant beside
+            the track; an empty box was a hole where a control belongs. Disabled
+            says the right thing -- there is nothing to play YET -- and
+            `icon-btn:disabled` already dims it, so no new style. */}
+        {!queued && <div className="flex min-w-0 flex-1 items-center gap-2">
+        <button
+          type="button"
+          className="icon-btn size-6 flex-none border-none bg-transparent text-muted"
+          disabled
+          aria-label="Not ready to play yet"
+          title="Not ready to play yet"
+        >
+          <PlayIcon size={16} />
+        </button>
         <div
           className={['result-bar', showTicks && 'has-ticks'].filter(Boolean).join(' ')}
           role="progressbar"
@@ -362,69 +537,74 @@ function PendingRow({
           }
           style={{ '--chunks': total || 1 } as CSSProperties}
         >
+          {/* `result-bar-fill` rather than the bg-progress utility: the fill's
+              colour is a property of the ROW's state, and a utility class here
+              could not be overridden by `is-canceling` without an !important
+              fight. Width holds during `canceling` for the same reason the hook
+              is still fed the job -- `running ? progress : 0` sent a cancelled
+              bar sliding back to zero, which reads as work undone rather than
+              work stopped. */}
           <motion.div
-            className="relative h-full overflow-hidden rounded-sm bg-progress"
+            className="result-bar-fill relative h-full overflow-hidden rounded-sm"
             initial={false}
-            animate={{ width: `${running ? progress : 0}%` }}
+            animate={{ width: `${running || canceling ? progress : 0}%` }}
             transition={reduced ? { duration: 0 } : { duration: 0.5, ease: [0.2, 0, 0, 1] }}
           >
             {running && !reduced && <span className="absolute inset-0 animate-sheen bg-[linear-gradient(90deg,transparent,var(--sheen),transparent)]" aria-hidden="true" />}
           </motion.div>
         </div>
+        </div>}
 
-        {/* Elapsed, never remaining: the backend's eta_s is a rolling
-            chars/second average that moves in both directions as chunks land,
-            so watching it told the user nothing. Same slot the finished row
-            puts its clock in, so the two line up. */}
-        {/* NOT aria-live. It was polite-live until the job-completion toast
-            existed, which meant a screen reader read a new elapsed time every
-            second for the whole render and said nothing when it finished --
-            the one event worth announcing was the one thing it did not cover.
-            useJobToasts now announces completion through sonner's own live
-            region. Visual output here is unchanged. */}
+        {/* No elapsed clock any more -- the ring in the leading box reports
+            progress instead, and nothing on a generating row reports time.
+            (`generation_s` is still written to every history entry; nothing
+            reads it, exactly as with the retired estimates.)
+
+            The span STAYS, and rendering it empty is not an oversight. It is
+            14ch of reserved width, and it is the only reason the track beside
+            it ends on the same pixel as a finished row's waveform -- the
+            alignment measured at dL/dR 0.0px across 340/420/560px columns.
+            Remove it and the bar grows 14ch past the waveform on every
+            generating row. It still carries the one thing here that is not a
+            time: a failed row's `Failed · try 3`. */}
         <span className="mono result-time">
-          {/* The same reserved slot TransportTime puts the minus in, and the
-              only place a working indicator can go without moving anything:
-              it is already 1ch wide and already empty on this row.
-
-              Reusing VoicePicker's busy dot rather than inventing a spinner --
-              one idiom for "this is working", and it is 1.5px of layout that
-              was already allocated. It earns its place while the first chunk
-              renders, when the progress bar is still at zero and a running row
-              would otherwise look identical to a queued one.
-
-              Gated on prefers-reduced-motion: --animate-pulse-soft is a literal
-              1.4s, NOT one of the tokens the reduced-motion block in tokens.css
-              zeroes, so it would otherwise pulse for whole generations. The
-              element stays either way; only the motion goes. */}
-          {/* The gap is on the RUNNING row only, and that is arithmetic rather
-              than taste. `.result-time` is 14ch, and a finished row's
-              "12:07 / 45:33" is 13 characters in a 1ch sign slot -- exactly 14,
-              with nothing spare. Widening the slot unconditionally would push
-              that past the box and into its `overflow: hidden`. A running row
-              shows elapsed only ("0:11"), so it has ~8ch of slack and can
-              afford the 4px without touching the width, the script preview
-              beside it, or the row height. */}
-          <span
-            className={`inline-block w-[1ch] ${running ? 'mr-1' : ''}`}
-            aria-hidden="true"
-          >
-            {running && (
-              <span
-                className={`inline-block size-1.5 rounded-full bg-progress align-middle ${reduced ? '' : 'animate-pulse-soft'}`}
-              />
-            )}
-          </span>
-          {failed
-            ? attempt > 1
-              ? `Failed · try ${attempt}`
-              : 'Failed'
-            : canceling
-              ? 'Cancelling…'
-              : elapsed == null
-                ? 'Queued'
-                : formatClock(elapsed)}
+          {/* The pulsing dot that used to live in this span's 1ch sign slot is
+              gone with the clock it was aligned against. It existed to separate
+              a running row from a queued one while the bar was still at zero;
+              the ring does that now, in a box of its own, and two "this is
+              working" signals on one line was one too many. */}
+          {failed ? (attempt > 1 ? `Failed · try ${attempt}` : 'Failed') : ''}
         </span>
+
+        {queued && (
+          <div className="order-first flex flex-none items-center gap-0.5" aria-label="Reorder queued generation">
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Move queued generation up"
+              title="Move up"
+              disabled={!canMoveUp || reordering || cancelPending}
+              onClick={onMoveUp}
+            >
+              <ArrowUpIcon size={15} />
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Move queued generation down"
+              title="Move down"
+              disabled={!canMoveDown || reordering || cancelPending}
+              onClick={onMoveDown}
+            >
+              <ArrowDownIcon size={15} />
+            </button>
+          </div>
+        )}
+
+        {/* The progress bar normally supplies this flexible space and keeps
+            Cancel on the right edge. Queued rows intentionally have no bar,
+            so retain only its layout role here. */}
+        {queued && <div className="min-w-0 flex-1" aria-hidden="true" />}
 
         <div className="result-actions flex flex-none items-center gap-0.5">
           {/* Retry first: after a failure that was not the script's fault --
@@ -435,35 +615,36 @@ function PendingRow({
               Retry
             </button>
           )}
-          {confirmingCancel ? (
-            // Inline two-step, matching the voices dialog. window.confirm
-            // blocks the page and looks nothing like the rest of the app.
+          {!failed && confirmingCancel ? (
             <>
-              <span className="mono text-[11px] whitespace-nowrap text-muted">Stop it?</span>
               <button
                 type="button"
-                className="ghost-btn ghost-btn-danger h-6 px-2.5 text-[11px]"
+                className="icon-btn icon-btn-danger"
+                aria-label="Confirm cancellation"
+                title="Cancel generation"
                 onClick={() => {
                   setConfirmingCancel(false)
                   onCancel()
                 }}
               >
-                Stop
+                <CheckIcon size={15} />
               </button>
               <button
                 type="button"
-                className="ghost-btn h-6 px-2.5 text-[11px]"
+                className="icon-btn"
+                aria-label="Keep generation running"
+                title="Keep generating"
                 onClick={() => setConfirmingCancel(false)}
               >
-                Keep going
+                <CrossIcon size={15} />
               </button>
             </>
           ) : (
             <button
               type="button"
               className="ghost-btn ghost-btn-danger h-6 px-2.5 text-[11px]"
-              onClick={() => (running ? setConfirmingCancel(true) : onCancel())}
-              disabled={canceling}
+              onClick={() => (failed ? onCancel() : setConfirmingCancel(true))}
+              disabled={canceling || cancelPending}
             >
               {failed ? 'Dismiss' : 'Cancel'}
             </button>
@@ -474,12 +655,35 @@ function PendingRow({
       {/* Script left, submitted-at right -- the same one-left-fact,
           one-right-fact pairing lines 1 and 2 already use, which is what keeps
           this narrow column readable. The preview gives up exactly the
-          timestamp's width; it does NOT get a line of its own, because the row
-          must stay --result-row-h tall for the eight-row window cap to hold. */}
+          timestamp's width; it does NOT get a line of its own -- every row in
+          this list is one height, and a second line here would break that. */}
       <div className="flex min-w-0 items-center gap-2.5">
-        <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-muted" title={failed ? reason : job.text_preview}>
-          {failed ? truncate(reason) : previewOf(job.text_preview)}
-        </p>
+        {failed || !onReuseScript ? (
+          <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-faint" title={failed ? reason : job.text_preview}>
+            {failed ? truncate(reason) : previewOf(job.text_preview)}
+          </p>
+        ) : (
+          // Disabled until the job lands. The affordance stays visible --
+          // removing it would make the control appear only once, at the moment
+          // the row is replaced -- but it does nothing while the voiceover is
+          // still being made. Consequence worth stating: `onReusePendingScript`
+          // and the `GET /api/queue/{id}/script` endpoint behind it are now
+          // unreachable from the UI. Both are left wired, because re-enabling
+          // this is deleting one word.
+          <button
+            type="button"
+            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint enabled:hover:text-ink disabled:opacity-55"
+            title={job.text_preview}
+            aria-label={`Reuse the script of ${nameControl.name || nameControl.placeholder || 'this pending voiceover'}`}
+            disabled
+            onClick={onReuseScript}
+          >
+            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+              {previewOf(job.text_preview)}
+            </span>
+            <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
+          </button>
+        )}
         {/* When it was SENT, not when it will finish -- a queued row has no
             other indication of how long it has been waiting. */}
         <time
@@ -490,6 +694,7 @@ function PendingRow({
           {formatTimeOfDay(job.submitted_at)}
         </time>
       </div>
+      </motion.div>
     </motion.li>
   )
 }
@@ -508,8 +713,8 @@ function VoiceoverRow({
   onDelete,
   selected,
   onToggleSelect,
-  onCopy,
   animateExit,
+  menuPlacement = 'up',
 }: {
   entry: HistoryEntry
   nameControl: NameControl
@@ -519,12 +724,30 @@ function VoiceoverRow({
   onDelete: () => void
   selected: boolean
   onToggleSelect: (shiftKey: boolean) => void
-  onCopy: () => void
   animateExit: boolean
+  menuPlacement?: 'up' | 'down'
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const created = timeAgo(entry.created_at)
   const reduced = usePrefersReducedMotion()
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [menuOpen])
 
   return (
     // EXIT ONLY -- no initial/animate. The three ways a row appears here are a
@@ -545,7 +768,8 @@ function VoiceoverRow({
         ? { opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }
         : undefined}
       transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
-      className="group/row flex flex-col gap-0.5 overflow-hidden border-b border-hairline py-[7px] last:border-b-0">
+      className={`group/row ${selected ? 'is-selected' : ''} flex ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline py-[7px] last:border-b-0`}>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <RowHead
         {...nameControl}
         voiceName={entry.preset_name}
@@ -557,26 +781,6 @@ function VoiceoverRow({
           have the last line to itself and the row get shorter. The player is
           the flexible element, so the icon strip is never pushed off. */}
       <div className="flex min-w-0 items-center gap-2.5">
-        {/* Ahead of the transport rather than at the row's edge: it lines up
-            with the play buttons down the column, so the checkboxes read as
-            one strip instead of a second ragged column. Dimmed until the row
-            is hovered or the box is checked, matching .result-actions -- a
-            column of eight permanently visible checkboxes was the thing this
-            list was pared back to avoid. */}
-        <input
-          type="checkbox"
-          className={`size-3.5 flex-none accent-audio transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100 ${
-            selected ? 'opacity-100' : 'opacity-0'
-          }`}
-          checked={selected}
-          // onChange, not onClick, so the keyboard (space) works. shiftKey is
-          // read off the native event: a click-driven change carries it, a
-          // keyboard one does not, which is the correct behaviour either way.
-          onChange={(e) =>
-            onToggleSelect('shiftKey' in e.nativeEvent && (e.nativeEvent as MouseEvent).shiftKey)
-          }
-          aria-label={`Select ${name}`}
-        />
         <VoiceoverPlayer
           src={mediaUrl(entry.audio_url)}
           durationS={entry.duration_s}
@@ -587,74 +791,54 @@ function VoiceoverRow({
 
         <TransportTime audioRef={audioRef} fallbackDurationS={entry.duration_s} />
 
-        <div className="result-actions flex flex-none items-center gap-0.5 opacity-50 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
-          <a
-            href={downloadHref}
-            download
-            className="icon-btn"
-            aria-label={`Download ${name}`}
-            title="Download"
-          >
-            <DownloadIcon size={14} />
-          </a>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={`Reuse ${name} script`}
-            title="Reuse this script"
-            onClick={onRequeue}
-          >
-            <WandIcon size={14} />
-          </button>
-          <button
-            type="button"
-            className="icon-btn icon-btn-danger"
-            aria-label={`Delete ${name}`}
-            title="Delete"
-            onClick={onDelete}
-          >
-            <TrashIcon size={14} />
-          </button>
+        <div className="result-actions flex flex-none items-center gap-0.5" ref={menuRef}>
+          {/* Selection lives in the action strip, rather than reserving a left
+              gutter on every row. It is subtly visible at rest, then brightens
+              on hover, focus, or selection without moving row content. */}
+          <input
+            type="checkbox"
+            className={`size-3.5 flex-none accent-audio transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100 ${
+              selected ? 'opacity-100' : 'opacity-45'
+            }`}
+            checked={selected}
+            // onChange, not onClick, so keyboard selection works too. A native
+            // click carries shiftKey; a keyboard change correctly does not.
+            onChange={(e) =>
+              onToggleSelect('shiftKey' in e.nativeEvent && (e.nativeEvent as MouseEvent).shiftKey)
+            }
+            aria-label={`Select ${name}`}
+          />
+          <div className="row-overflow-action relative flex flex-none opacity-70 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
+            <button type="button" className="icon-btn" aria-label={`More actions for ${name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="More actions" onClick={() => setMenuOpen((open) => !open)}>
+              <MoreIcon size={15} />
+            </button>
+          {menuOpen && (
+              <div className={`voiceover-actions-menu absolute right-0 z-150 min-w-40 rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) ${menuPlacement === 'down' ? 'top-full mt-1' : 'bottom-full mb-1'}`} role="menu">
+                <a href={downloadHref} download className="voiceover-action-item" role="menuitem" onClick={() => { setMenuOpen(false); toast('Download started') }}><DownloadIcon size={14} />Download</a>
+                <button type="button" className="voiceover-action-item voiceover-action-danger" role="menuitem" onClick={() => { setMenuOpen(false); onDelete() }}><TrashIcon size={14} />Delete</button>
+              </div>
+          )}
+          </div>
         </div>
       </div>
 
-      {/* Click to COPY. It used to unfold the full script in the row, with a
-          Copy button inside the expansion -- which made the common intent (get
-          the script out) two clicks and a layout change to reach a button that
-          was always the point. Nothing opens now.
-
-          The copy glyph appears on hover/focus using the row's existing
-          group/row hooks, the same idiom .result-actions already uses, rather
-          than a second hover convention.
-
-          `title` carries the full script again. It was dropped while the
-          expander existed -- a native tooltip duplicating a proper reader is a
-          worse second copy -- but with the expander gone it is the only way to
-          read past 96 characters in place, and it costs nothing.
-
-          Writing the clipboard works in EVERY deployment mode, unlike reading
-          it: useCopyToClipboard falls back to an off-screen textarea plus
-          execCommand when navigator.clipboard is absent, which is the case on
-          LAN over plain http. */}
-      <div className="flex min-w-0 items-center gap-2.5">
+      {/* The script preview is also the direct route to reusing it. This keeps
+          the common follow-up action beside the text it acts on instead of
+          burying it under the row's overflow menu. */}
+      <div className="flex min-h-7 min-w-0 items-center gap-2.5">
         <button
           type="button"
-          className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-muted hover:text-ink"
+          className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
           title={entry.text}
-          aria-label={`Copy the script of ${name}`}
-          onClick={onCopy}
+          aria-label={`Reuse the script of ${name}`}
+          onClick={onRequeue}
         >
           <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
             {truncate(entry.text)}
           </span>
-          <CopyIcon
-            size={12}
-            className="flex-none opacity-0 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100"
-          />
+          <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
         </button>
-        {/* Outside the copy button on purpose: clicking the row's script copies
-            the script, and a timestamp inside that target would copy the script
-            too while looking like its own control. */}
+        {/* Outside the reuse button so the timestamp remains a separate fact. */}
         <time
           className="result-stamp mono"
           dateTime={new Date(entry.created_at * 1000).toISOString()}
@@ -662,6 +846,7 @@ function VoiceoverRow({
         >
           {formatTimeOfDay(entry.created_at)}
         </time>
+      </div>
       </div>
     </motion.li>
   )
@@ -706,21 +891,27 @@ function VoiceoverRow({
  * Delete any of them and the thing it hooks stops happening, silently. */
 export default function HistoryList({
   history,
+  presets,
+  filters,
+  onFiltersChange,
   total,
   searchRef,
-  onSearchActiveChange,
-  hasMore,
-  onLoadMore,
   pendingNew,
   onShowNew,
   onAtTopChange,
   onDelete,
   onRequeue,
+  onReusePendingScript,
   onError,
   gpuFault = false,
   loading = false,
 }: Props) {
   const { queue, refresh } = useGenerationActivity()
+  // Read by held-cancel timers, which fire from a closure captured several
+  // renders earlier -- `queue` there would be whatever it was when the hold
+  // started, which is precisely the value that cannot be trusted.
+  const queueRef = useRef(queue)
+  queueRef.current = queue
   const [entryFileNames, setFileName, removeFileName] = usePersistedRecord('historyFileNames')
   // Names for jobs that have no history entry yet, keyed by job id.
   //
@@ -742,10 +933,11 @@ export default function HistoryList({
   // Without this flag Enter would commit twice, and Escape would commit the
   // very edit it just discarded.
 
-  // Rows deleted in the UI but NOT yet on the server. A voiceover can be forty
-  // minutes of GPU time and the delete is irreversible server-side -- it
-  // rewrites history.json and unlinks both the .wav and the .mp3 -- so the
-  // click hides the row and the request is held for UNDO_MS.
+  // Rows awaiting their irreversible server-side delete. A voiceover can be
+  // forty minutes of GPU time and the delete rewrites history.json and unlinks
+  // both the .wav and the .mp3, so the request is held for UNDO_MS. The row
+  // remains visible throughout that Undo window; only a committed delete lets
+  // the subsequent history refresh remove it.
   //
   // Deferred on the client rather than soft-deleted on the server: a real
   // undo would need a deleted_at flag, a restore route, a purge policy, and a
@@ -762,20 +954,21 @@ export default function HistoryList({
   // silently do less than the count says.
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [zipping, setZipping] = useState(false)
+  const [reordering, setReordering] = useState(false)
   // Anchor for shift-click ranges. An index into `shown`, NOT into `history`:
   // a range drawn across a filtered list has to select what lies between the
   // two rows the user can see.
   const lastClickedIndex = useRef<number | null>(null)
-  const copy = useCopyToClipboard()
 
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(() => new Set())
   const deleteTimers = useRef(new Map<string, number>())
 
-  /** Jobs whose cancel is held behind an Undo toast. They are still generating
-   *  on the GPU -- this only hides them, so the row reads as stopped while the
-   *  cancel can still be called off. */
+  /** Queued jobs whose cancel is held behind an Undo toast. They remain in
+   *  view until the timer commits their cancellation. */
   const [pendingCancels, setPendingCancels] = useState<Set<string>>(() => new Set())
-  const cancelTimers = useRef(new Map<string, { timer: number; flush: () => void }>())
+  const cancelTimers = useRef(
+    new Map<string, { timer: number; flush: () => void; toastId: string | number }>(),
+  )
 
   // Timers are cleared, NOT flushed, on unmount. Flushing would turn a
   // navigation into a destructive act the user never confirmed.
@@ -788,7 +981,12 @@ export default function HistoryList({
   }, [])
 
   const listRef = useRef<HTMLUListElement>(null)
-  const sentinelRef = useRef<HTMLLIElement>(null)
+
+  useEffect(() => {
+    setSelected(new Set())
+    lastClickedIndex.current = null
+    listRef.current?.scrollTo({ top: 0 })
+  }, [filters])
 
   // The search is CLIENT-SIDE and undebounced, so it filters on the keystroke.
   //
@@ -806,29 +1004,45 @@ export default function HistoryList({
   // safe here and needs no extra affordance: the box renders whenever
   // `searching` is true (so it cannot vanish leaving an uncleadable filter),
   // it is type="search" so it keeps the native clear button, and Escape
-  // clears it. The knock-on matters -- onSearchActiveChange fires on mount
-  // with a restored query, which is what makes the parent load the whole
-  // history; filtering only ever sees what has been fetched.
-  const [draft, setDraft] = usePersistedDraft('voiceoverSearch')
+  // clears it. A restored query is safe to filter on immediately because the
+  // parent fetches the WHOLE server-filtered history before this renders a
+  // page -- filtering only ever sees what has been fetched, and there is no
+  // longer a half-loaded state for it to miss matches in.
+  const [persistedDraft, setPersistedDraft] = usePersistedDraft('voiceoverSearch')
+  const [page, setPage] = useState(0)
+  // How many completed rows one page shows. Read synchronously from
+  // localStorage so the first paint is already the user's size; see
+  // historyPageSize.ts for why an unrecognised stored value is discarded.
+  const [pageSize, setPageSize] = useState<HistoryPageSize>(readHistoryPageSize)
+  // Cap restored drafts too. Keeping the derived value here means an old,
+  // overlong localStorage value can neither render nor filter before the
+  // persistence effect below replaces it with its bounded equivalent.
+  const draft = persistedDraft.slice(0, MAX_SEARCH_CHARS)
+
+  useEffect(() => {
+    if (persistedDraft !== draft) setPersistedDraft(draft)
+  }, [draft, persistedDraft, setPersistedDraft])
+
+  const setDraft = (next: string) => setPersistedDraft(next.slice(0, MAX_SEARCH_CHARS))
   const reducedMotion = usePrefersReducedMotion()
   const searching = draft.trim() !== ''
-
-  // Filtering only sees what has been fetched, so while a search runs the
-  // parent has to finish loading the history. Without this, a query would
-  // quietly miss every voiceover past the first page.
-  useEffect(() => {
-    onSearchActiveChange?.(searching)
-  }, [searching, onSearchActiveChange])
+  const filtering = searching || filters.status !== 'all' || filters.presetId !== undefined || filters.createdFrom !== undefined || filters.createdTo !== undefined || filters.durationMin !== undefined || filters.durationMax !== undefined
 
   // Failures are included, and sorted to the bottom. That ordering does not
   // come for free: /api/queue sorts by `queue_position if not None else -1`,
   // and a terminal job has no position -- so a job that failed BEFORE the
   // current one started shares the running job's -1 and can sort above it.
   //
-  // `canceled` stays out. The user stopped that one deliberately and does not
-  // need telling. (Those entries do sit in the backend's in-memory _jobs
-  // unclaimed; dismissing them would mean firing a side-effectful request from
-  // a poll loop, which is the worse trade.)
+  // `canceled` stays out, and it is the ABSENCE of that status here that the
+  // row's slide-out exit is built around: the backend drops a cancelled job
+  // from /api/queue outright, so the row never renders in a terminal state --
+  // it simply unmounts between two polls. PendingRow therefore decides how it
+  // is leaving while it is still mounted (`leavingCancelled`), and framer plays
+  // that decision on the way out. Listing `canceled` here instead would leave a
+  // dead row on screen that the user has to dismiss, which is the thing the
+  // exit animation exists to avoid. (Those entries do sit in the backend's
+  // in-memory _jobs unclaimed; dismissing them would mean firing a
+  // side-effectful request from a poll loop, which is the worse trade.)
   //
   // A RUNNING SEARCH HIDES THEM. An in-flight job has no finished script to
   // match -- its text_preview is truncated to 80 chars server-side and the
@@ -836,21 +1050,20 @@ export default function HistoryList({
   // leaving these visible would put rows in a filtered list that the filter
   // never considered, and make the heading's count disagree with what is on
   // screen. Clearing the box brings them straight back.
+  const queuedJobIds = queue.filter((job) => job.status === 'queued').map((job) => job.job_id)
   const active =
-    searching
+    filters.status === 'completed'
       ? []
       : queue
           .filter(
             (e) =>
-              e.status === 'running' ||
-              e.status === 'queued' ||
-              e.status === 'canceling' ||
-              e.status === 'error',
+              (filters.status === 'failed'
+                ? e.status === 'error'
+                : filters.status === 'active'
+                  ? e.status === 'running' || e.status === 'queued' || e.status === 'canceling'
+                  : e.status === 'running' || e.status === 'queued' || e.status === 'canceling' || e.status === 'error') &&
+              (!searching || e.preset_name.toLowerCase().includes(draft.trim().toLowerCase()) || (pendingNames[e.job_id] ?? '').toLowerCase().includes(draft.trim().toLowerCase())),
           )
-          // A held cancel is hidden on the strength of the click alone. The
-          // job is still running and the 1s queue poll would otherwise put its
-          // row straight back on the next tick.
-          .filter((e) => !pendingCancels.has(e.job_id))
           .sort((a, b) => Number(a.status === 'error') - Number(b.status === 'error'))
 
   // Numbered FIRST, filtered second, and the order is load-bearing. The
@@ -859,7 +1072,7 @@ export default function HistoryList({
   // search narrowed it -- "Voiceover 26" would become "Voiceover 3" while you
   // typed, and the name you were searching for would stop matching itself.
   const numbered = history.map((entry, i) => {
-    const number = total - i
+    const number = entry.history_number ?? total - i
     return {
       entry,
       number,
@@ -872,16 +1085,11 @@ export default function HistoryList({
   // matches nearly everything and the result is a list that has not been
   // narrowed. Names are short, deliberate and the thing people actually
   // remember a voiceover by.
-  // Pending deletes are dropped here, with the search, and for the same
-  // reason they cannot be dropped earlier: `number` is a row's position in the
-  // WHOLE list, so removing rows before numbering would renumber everything
-  // beneath a row the user just deleted.
-  const visible = numbered.filter(({ entry }) => !pendingDeletes.has(entry.id))
-  // What the heading reports. Held deletes are already off the screen, so they
-  // must already be off the count -- including while the Undo toast is still
-  // up. Clamped, because a pending id whose entry has since gone (deleted in
-  // another tab, say) would otherwise push this negative.
-  const visibleTotal = Math.max(0, total - pendingDeletes.size)
+  // A held delete remains on screen until its Undo window ends. Besides making
+  // the deferred action legible, this preserves numbering and the heading
+  // count until the server-side delete has actually been committed.
+  const visible = numbered
+  const visibleTotal = total
 
   // A selected row that has since been deleted (here or in another tab) must
   // not keep inflating the count or be sent to the zip endpoint.
@@ -898,60 +1106,29 @@ export default function HistoryList({
       )
     : visible
 
-    // Load the next slice when the end of the list scrolls into view.
-  // IntersectionObserver rather than a scroll handler: it fires once per
-  // crossing instead of on every frame of a scroll.
-  //
-  // The root has to follow the layout. Above the breakpoint the list is a
-  // fixed-height scroller and is the correct root. Below it the CSS sets
-  // `overflow-y: visible`, so the <ul> grows to fit its rows and the sentinel
-  // is ALWAYS inside its bounds -- rooted there, the observer reports
-  // intersecting immediately and every append re-arms it, which chain-loads the
-  // entire history in one go. `null` (the viewport) is what actually works down
-  // there, since the page is the scroller.
-  useEffect(() => {
-    const sentinel = sentinelRef.current
-    if (!sentinel || !hasMore || searching) return
-    const mq = window.matchMedia(TWO_COLUMN_QUERY)
-    let io: IntersectionObserver | undefined
-    const arm = () => {
-      io?.disconnect()
-      io = new IntersectionObserver(
-        (entries) => {
-          if (entries.some((e) => e.isIntersecting)) onLoadMore()
-        },
-        { root: mq.matches ? listRef.current : null, rootMargin: '120px' },
-      )
-      io.observe(sentinel)
-    }
-    arm()
-    mq.addEventListener('change', arm)
-    return () => {
-      mq.removeEventListener('change', arm)
-      io?.disconnect()
-    }
-  }, [hasMore, onLoadMore, history.length, searching])
+  const pageCount = Math.ceil(shown.length / pageSize)
+  const pageRows = shown.slice(page * pageSize, page * pageSize + pageSize)
+  // Clamped rather than trusted: the window hands back real indices, but a
+  // chevron can be pressed on the last render before a delete shortens the
+  // list. Scrolling the list to its top is part of the move -- a page change
+  // that left the reader halfway down the previous page reads as nothing
+  // having happened.
+  const goToPage = (next: number) => {
+    const target = Math.max(0, Math.min(next, pageCount - 1))
+    if (target === page) return
+    setPage(target)
+    lastClickedIndex.current = null
+    listRef.current?.scrollTo({ top: 0 })
+    listRef.current?.scrollIntoView({ block: 'start' })
+  }
+  const shownSignature = useMemo(() => shown.map(({ entry }) => entry.id).join(','), [shown])
 
-  // The observer above cannot save us when the list is EMPTY, because the
-  // sentinel it watches lives inside the <ul> and the <ul> is not rendered when
-  // there is nothing to show. That is a real hole, not a theoretical one:
-  // select-all + delete hides every fetched row via pendingDeletes, `shown`
-  // goes to zero, the whole list subtree unmounts, the sentinel goes with it,
-  // and onLoadMore can never fire again -- so a history with more rows on the
-  // server renders as a blank column claiming "No voiceovers yet".
-  //
-  // Deliberately an effect rather than rendering an empty <ul> just to keep the
-  // sentinel alive: above the breakpoint the list IS the scroll root, so a
-  // sentinel with no rows above it sits inside the root's bounds and would
-  // chain-load the entire history at once -- the exact failure the comment
-  // above this describes.
-  //
-  // Terminates on its own. loadMoreHistory() returns early once
-  // loadedRef >= totalRef, and every call that does fetch advances loadedRef.
+  // A changed query/filter/match set must never leave the reader on a now
+  // invalid page. Selection itself deliberately survives page changes.
   useEffect(() => {
-    if (shown.length > 0 || !hasMore || searching || loading) return
-    onLoadMore()
-  }, [shown.length, hasMore, searching, loading, onLoadMore])
+    setPage(0)
+    lastClickedIndex.current = null
+  }, [pageSize, draft, filters, shownSignature])
 
   // Whether the reader is at the top decides if a finished voiceover may be
   // inserted above them or has to be announced. Reported up rather than decided
@@ -1112,7 +1289,7 @@ export default function HistoryList({
 
   /** Toggle one row, or shift-click to fill the range from the last one.
    *
-   * `index` is the row's position in `shown` -- what is on screen after the
+   * `index` is the row's position in `pageRows` -- what is on screen after the
    * search filter -- so a range drawn across a filtered list selects the span
    * the user actually drew, not whatever sits between those two rows in the
    * unfiltered history. */
@@ -1125,7 +1302,7 @@ export default function HistoryList({
         // gesture or a stray shift-click wipes a carefully built selection.
         const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
         for (let i = from; i <= to; i++) {
-          const row = shown[i]
+          const row = pageRows[i]
           if (row) next.add(row.entry.id)
         }
         return next
@@ -1141,7 +1318,7 @@ export default function HistoryList({
    *  claim to have selected rows a search is hiding. Rows already selected but
    *  filtered out stay selected -- clearing them would silently undo work the
    *  user did before they typed a query. */
-  const shownIds = shown.map(({ entry }) => entry.id)
+  const shownIds = pageRows.map(({ entry }) => entry.id)
   const shownSelectedCount = shownIds.filter((id) => selected.has(id)).length
   const allShownSelected = shownIds.length > 0 && shownSelectedCount === shownIds.length
 
@@ -1153,15 +1330,6 @@ export default function HistoryList({
       return next
     })
     lastClickedIndex.current = null
-  }
-
-  async function handleCopyScript(text: string) {
-    const ok = await copy(text)
-    // Never claim a success that did not happen. Over LAN the page is not a
-    // secure context, so navigator.clipboard is absent and the execCommand
-    // fallback is what runs -- and it can still be refused.
-    if (ok) toast.success('Script copied')
-    else onError('Could not copy the script. Select the text and copy it manually.')
   }
 
   async function handleZipSelected() {
@@ -1265,32 +1433,26 @@ export default function HistoryList({
     })
   }
 
-  /** The CANCEL ITSELF is deferred, so its Undo is a real undo.
+  /** Hold a cancellation behind an Undo toast for UNDO_MS, then send it.
    *
-   *  The obvious build -- cancel now, and let Undo resubmit via
-   *  POST /api/queue/{job_id}/retry -- was written first and measured. It does
-   *  not work, and not for a tuning reason: POST /cancel only moves the job to
-   *  `canceling`, the worker reaches `canceled` whenever it next escapes the
-   *  chunk it is inside, and retry_job rejects anything in between. Every Undo
-   *  pressed inside the toast's own window came back
-   *  "Only a failed or canceled job can be retried." Widening the retry only
-   *  trades a broken button for a slow one, and even when it lands it buys a
-   *  fresh render of the whole script, having thrown away the partial audio.
+   *  Both kinds of job come through here, and the running one is the reason the
+   *  word "held" is accurate rather than hopeful: deferring the request does
+   *  not pause anything. The job keeps generating on the GPU exactly as it was,
+   *  so Undo has no state to restore -- it simply never sends. That is a
+   *  different thing from pausing a render, which is still impossible and still
+   *  the reason there is no pause control.
    *
-   *  Holding the cancel instead costs at most UNDO_MS of GPU on a job that was
-   *  already running, and in exchange Undo means the generation was never
-   *  interrupted: no resubmission, no lost chunks, no new job_id, no new place
-   *  in the queue. The row is hidden immediately, so it reads as stopped.
-   *
-   *  `pendingCancels` filters the row out of `active`; without it the queue
-   *  poll puts the row straight back on the next tick. */
-  function handleCancel(jobId: string) {
+   *  The cost is real and was accepted deliberately: confirming no longer frees
+   *  the GPU immediately. A cancel already lands at the next chunk boundary
+   *  (~1s); this adds the undo window on top, so someone cancelling to get a
+   *  different script running waits longer. The trade is that the one
+   *  irreversible control in this column stops being irreversible. */
+  function holdCancel(jobId: string, running: boolean) {
+    // The row remains visible during the hold, so guard a second click from
+    // creating another timer and toast for the same job.
+    if (cancelTimers.current.has(jobId)) return
     setPendingCancels((prev) => new Set(prev).add(jobId))
-    cancelTimers.current.set(jobId, {
-      timer: window.setTimeout(() => void settleCancel(jobId, true), UNDO_MS),
-      flush: () => void settleCancel(jobId, true, true),
-    })
-    toast('Generation stopped', {
+    const toastId = toast(running ? 'Generation canceled' : 'Queued generation canceled', {
       duration: UNDO_MS,
       icon: <StopIcon size={15} />,
       action: {
@@ -1303,7 +1465,67 @@ export default function HistoryList({
         onClick: () => void settleCancel(jobId, false),
       },
     })
+    cancelTimers.current.set(jobId, {
+      timer: window.setTimeout(() => void settleCancel(jobId, true), UNDO_MS),
+      flush: () => void settleCancel(jobId, true, true),
+      toastId,
+    })
   }
+
+  /** Reorders only the caller's queued jobs. The API preserves every other
+   * user's slots, so this array must contain every queued id owned by this
+   * view, in its intended order. */
+  async function moveQueuedJob(jobId: string, direction: -1 | 1) {
+    if (reordering) return
+    const ids = queue.filter((job) => job.status === 'queued').map((job) => job.job_id)
+    const from = ids.indexOf(jobId)
+    const to = from + direction
+    if (from < 0 || to < 0 || to >= ids.length) return
+
+    const moved = ids[from]
+    ids[from] = ids[to]
+    ids[to] = moved
+    setReordering(true)
+    try {
+      await reorderQueue(ids)
+    } catch (e) {
+      onError(e instanceof ApiError ? e.message : 'Failed to reorder queued generations')
+    } finally {
+      setReordering(false)
+      refresh()
+    }
+  }
+
+  /** True while a job can still be cancelled at all. Read from queueRef, so it
+   *  answers about the job as it is NOW rather than as it was when the hold
+   *  started. */
+  function stillCancellable(jobId: string): boolean {
+    const live = queueRef.current.find((e) => e.job_id === jobId)
+    return (
+      live !== undefined &&
+      (live.status === 'running' || live.status === 'queued' || live.status === 'canceling')
+    )
+  }
+
+  // A job can FINISH inside its own undo window -- that is the whole risk of
+  // holding a running cancel, and it is not hypothetical on short scripts.
+  // Committing then would post a cancel at a job that is already in history and
+  // earn a rejection for something the user cannot act on, while the Undo
+  // button goes on offering to undo an event that can no longer happen. So the
+  // hold is released the moment the job stops being cancellable, as if Undo had
+  // been pressed, and its toast is dismissed with it.
+  useEffect(() => {
+    if (pendingCancels.size === 0) return
+    for (const jobId of pendingCancels) {
+      if (stillCancellable(jobId)) continue
+      const held = cancelTimers.current.get(jobId)
+      if (held?.toastId !== undefined) toast.dismiss(held.toastId)
+      void settleCancel(jobId, false)
+    }
+    // settleCancel and stillCancellable are fresh closures every render; the
+    // queue and the held set are what this actually watches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCancels, queue])
 
   /** Settle a held cancel. Idempotent: the timer is the token, so whichever of
    *  the timer, the Undo and the unload flush gets here first wins and the rest
@@ -1320,6 +1542,17 @@ export default function HistoryList({
         return next
       })
       refresh()
+      return
+    }
+    // Nothing left to cancel -- the job landed, or failed, inside the window.
+    // Checked on BOTH paths: an unload flush has no way to report a rejection,
+    // so posting one blind is the version of this that fails silently.
+    if (!stillCancellable(jobId)) {
+      setPendingCancels((prev) => {
+        const next = new Set(prev)
+        next.delete(jobId)
+        return next
+      })
       return
     }
     if (unloading) {
@@ -1378,16 +1611,18 @@ export default function HistoryList({
   // comes from main's wide:pb-8.
   //
   // wide:h-full wide:min-h-0 -- this is the link the documented min-h-0 chain
-  // was missing. .result-list is `flex: 1 1 auto; min-height: 0` so it can
-  // shrink below eight rows on a short viewport, but a flex child can only
-  // shrink against a parent with a constrained height, and this section was
-  // height:auto. So the list took its full max-height at every viewport and
-  // the overflow was CLIPPED by the shell's wide:overflow-hidden rather than
-  // scrolling. Measured before this: 716px list and 8.00 visible rows at
-  // 1100/900/768/700, with the root overflowing by 101/233/301px at the last
-  // three.
+  // was missing, and it is now the ONLY thing sizing the list: .result-list has
+  // no max-height any more, so `flex: 1 1 auto; min-height: 0` both grows it
+  // into a tall viewport and shrinks it on a short one. A flex child can only
+  // do either against a parent with a constrained height, and this section was
+  // height:auto -- so the list took its full (then-capped) height at every
+  // viewport and the overflow was CLIPPED by the shell's wide:overflow-hidden
+  // rather than scrolling. Measured before this: 716px list at 1100/900/768/700
+  // with the root overflowing by 101/233/301px at the last three. Measured now,
+  // at 1440 wide: 471 / 539 / 671 / 871 / 1171px of list at viewport heights
+  // 700 / 768 / 900 / 1100 / 1400, root overflow 0 at all five.
   return (
-    <section className="results mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
+    <div className="mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
       <h2 className="section-rule">
         <span>Voiceovers</span>
         {/* Select-all, in the heading rather than as a new row -- the heading
@@ -1396,7 +1631,7 @@ export default function HistoryList({
             selected earlier but now filtered out stay selected rather than
             being silently dropped. `indeterminate` is a DOM property with no
             HTML attribute, so it can only be set through a ref. */}
-        {shown.length > 0 && (
+        {pageRows.length > 0 && (
           <input
             type="checkbox"
             className="order-2 size-3.5 flex-none accent-audio"
@@ -1409,24 +1644,16 @@ export default function HistoryList({
             title={allShownSelected ? 'Deselect all' : 'Select all'}
           />
         )}
-        {/* The count must drop the moment rows are hidden by a pending delete,
-            or the heading still says 34 while 14 rows are on screen and the
-            deletion looks like it did not happen.
-
-            Display only -- `total` itself is NOT adjusted, because row
-            numbering is `total - i` (see `numbered` above) and shifting it
-            would renumber every surviving voiceover the instant a delete was
-            held, then renumber them all back on Undo.
-
-            Subtracting pendingDeletes rather than counting `shown` keeps this
-            honest under a search: it is the number of voiceovers that exist,
-            not the number currently matching a filter. */}
+        {/* Keep the count aligned with the rows while a delete is held behind
+            its Undo toast. Once the timer commits and the server refreshes,
+            both update together without renumbering the remaining entries. */}
         {visibleTotal > 0 && <span className="mono order-3 text-[11px]">{visibleTotal}</span>}
       </h2>
+      <p className="sr-only" role="status">{filters.status === 'active' || filters.status === 'failed' ? `Showing ${filters.status === 'active' ? 'generating and queued' : 'failed'} live voiceovers.` : `Showing ${total} completed voiceover${total === 1 ? '' : 's'}${filters.status === 'completed' ? '.' : ' with live jobs above.'}`}</p>
 
-      {/* Rendered whenever there is anything to search OR a search is already
-          running -- the second half matters, or the box vanishes the moment a
-          query matches nothing and there is no way to clear it.
+      {/* Keep the controls mounted even for an empty history. This is important
+          when a persisted filter or search hides every row: the user must
+          still have a visible way to clear it and recover the list.
 
           type="search", not "text": it gets the native clear affordance and
           the right on-screen keyboard, and Escape clears it for free. The
@@ -1435,7 +1662,7 @@ export default function HistoryList({
           typing a search would fire shortcuts. isTyping() already covers
           INPUT, but Escape is NOT gated by it and would clear the composer's
           error banner behind the column. */}
-      {(total > 0 || searching || history.length > 0) && (
+      {(
         <div
           // shrink-0 is the whole reason the height works. .results is a flex
           // column with a CONSTRAINED height above 1025px (wide:h-full), and a
@@ -1445,17 +1672,19 @@ export default function HistoryList({
           // separate increases to the h-* utility changed the emitted CSS and
           // nothing on screen. .result-list is flex: 1 1 auto and takes the
           // space instead.
-          className="relative mb-2 shrink-0"
+          className="mb-2 flex shrink-0 gap-2"
         >
+          <div className="relative min-w-0 flex-1">
           <input
             ref={searchRef}
             type="search"
             aria-keyshortcuts={`${MOD_ARIA}+F`}
             title={`Search voiceovers (${MOD_KEY}+F)`}
-            className="peer h-10 w-full rounded-sm border border-control bg-surface-raised pr-16 pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line coarse:pr-3"
+            className={`voiceover-search peer h-10 w-full rounded-sm border border-control bg-surface-raised ${draft === '' ? 'pr-16' : 'pr-3'} pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line coarse:pr-3`}
             placeholder="Search by name or voice…"
             aria-label="Search voiceovers by name or voice"
             value={draft}
+            maxLength={MAX_SEARCH_CHARS}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               e.stopPropagation()
@@ -1482,9 +1711,23 @@ export default function HistoryList({
               {`${MOD_KEY}+F`}
             </Kbd>
           )}
+          </div>
+          <VoiceoverFilters presets={presets} history={history} value={filters} onChange={onFiltersChange} />
+        </div>
+      )}
+      {filtering && (
+        <div className="-mt-1 mb-2 flex shrink-0 items-center gap-2 text-[11px] text-muted" role="status">
+          <span>{shown.length + active.length} result{shown.length + active.length === 1 ? '' : 's'}</span>
+          <button type="button" className="ghost-btn h-6 px-2 text-[11px]" onClick={() => { setDraft(''); onFiltersChange({ status: 'all' }) }}>
+            Clear
+          </button>
         </div>
       )}
 
+      {/* The controls intentionally live outside this panel. The list remains
+          in the same flex slot, but the glass starts with voiceover content
+          rather than tinting the heading, select-all checkbox, or search. */}
+      <section className="results flex min-h-0 flex-1 flex-col gap-1">
       {/* Surfaced instead of scrolling the list out from under a reader. */}
       {pendingNew > 0 && (
         <button
@@ -1531,38 +1774,43 @@ export default function HistoryList({
             exit={reducedMotion ? undefined : { opacity: 0, y: 8, x: '-50%' }}
             transition={{ duration: reducedMotion ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
             style={{ x: '-50%' }}
-            className="fixed bottom-4 left-1/2 z-100 flex items-center gap-2 rounded-md border border-control bg-surface-card px-3 py-2 shadow-(--shadow-menu)"
-            role="group"
-            aria-label="Actions for selected voiceovers"
+            className="fixed bottom-4 left-1/2 z-100"
           >
-            <span className="mono text-[11px] whitespace-nowrap text-muted">
-              {selectedCount} selected
-            </span>
-            <button type="button" className="ghost-btn" disabled={zipping} onClick={handleZipSelected}>
-              {zipping ? 'Zipping…' : 'Download'}
-            </button>
-            <button
-              type="button"
-              className="ghost-btn ghost-btn-danger"
-              onClick={handleDeleteSelected}
+            <Dock
+              aria-label="Actions for selected voiceovers"
+              items={[
+                {
+                  icon: <DownloadIcon size={19} />,
+                  label: zipping ? 'Zipping…' : 'Download',
+                  disabled: zipping,
+                  onClick: handleZipSelected,
+                },
+                {
+                  icon: <TrashIcon size={19} />,
+                  label: 'Delete',
+                  className: 'dock-item-danger',
+                  onClick: handleDeleteSelected,
+                },
+                {
+                  icon: <CheckIcon size={19} />,
+                  label: 'Clear selection',
+                  onClick: () => setSelected(new Set()),
+                },
+              ] satisfies DockItemData[]}
             >
-              Delete
-            </button>
-            <button type="button" className="ghost-btn" onClick={() => setSelected(new Set())}>
-              Clear
-            </button>
+              {selectedCount} selected
+            </Dock>
           </motion.div>
         )}
       </AnimatePresence>
 
       {shown.length === 0 && active.length === 0 ? (
-        <p className="m-0 py-5 text-[13px] text-faint">
-          {loading || hasMore
-            ? // `hasMore` matters as much as `loading` here. With every fetched
-              // row hidden by a pending delete, this branch renders while the
-              // effect above is still pulling the next slice -- and telling
-              // someone with voiceovers on the server to go and generate their
-              // first one is simply false.
+        <p className="m-0 max-w-full break-all py-5 text-[13px] text-faint wide:min-h-0 wide:flex-1 wide:overflow-y-auto">
+          {loading
+            ? // The whole server-filtered history is fetched in one batched
+              // pass, so `loading` alone is the honest condition here: while it
+              // is true there may well be voiceovers on the server, and telling
+              // someone to go and generate their first one would be false.
               'Loading your voiceovers…'
             : searching
               ? // Distinct from the never-generated-anything copy below. Telling
@@ -1570,7 +1818,11 @@ export default function HistoryList({
                 // Generate" because their search missed reads as the app having
                 // lost their work.
                 `No voiceovers match “${draft.trim()}”.`
-              : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
+              : filters.status === 'active'
+                ? 'No generating or queued voiceovers.'
+                : filters.status === 'failed'
+                  ? 'No failed voiceovers.'
+                  : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
         </p>
       ) : (
         <>
@@ -1593,6 +1845,7 @@ export default function HistoryList({
                 // using the map index. (Failures sort last, so the count is
                 // already complete by the time one is reached.)
                 const failed = job.status === 'error'
+                const queuedIndex = job.status === 'queued' ? queuedJobIds.indexOf(job.job_id) : -1
                 const pendingBefore = active.slice(0, i).filter((e) => e.status !== 'error').length
                 const number = total + 1 + pendingBefore
                 return (
@@ -1606,15 +1859,26 @@ export default function HistoryList({
                       true,
                       failed ? 'Failed' : undefined,
                     )}
-                    onCancel={() => (failed ? handleDismiss(job.job_id) : handleCancel(job.job_id))}
+                    onCancel={() =>
+                      failed
+                        ? handleDismiss(job.job_id)
+                        : holdCancel(job.job_id, job.status === 'running')
+                    }
+                    cancelPending={pendingCancels.has(job.job_id)}
+                    canMoveUp={queuedIndex > 0}
+                    canMoveDown={queuedIndex >= 0 && queuedIndex < queuedJobIds.length - 1}
+                    onMoveUp={() => void moveQueuedJob(job.job_id, -1)}
+                    onMoveDown={() => void moveQueuedJob(job.job_id, 1)}
+                    reordering={reordering}
                     onRetry={failed && !gpuFault ? () => handleRetry(job.job_id) : undefined}
+                    onReuseScript={!failed ? () => onReusePendingScript(job.job_id) : undefined}
                   />
                 )
               })}
             </AnimatePresence>
 
             <AnimatePresence initial={false}>
-              {shown.map(({ entry, number, name }, i) => {
+              {pageRows.map(({ entry, number, name }, i) => {
                 return (
                   <VoiceoverRow
                     key={entry.id}
@@ -1629,28 +1893,125 @@ export default function HistoryList({
                     onDelete={() => handleDelete(entry.id, name)}
                     selected={selected.has(entry.id)}
                     onToggleSelect={(shiftKey) => toggleSelected(entry.id, i, shiftKey)}
-                    onCopy={() => handleCopyScript(entry.text)}
                     // Not while searching. A keystroke can filter out a dozen
                     // rows at once, and a dozen simultaneous height collapses is
                     // the one place in this column that would feel slow -- the
                     // filter has to narrow the list on the keystroke.
                     animateExit={!searching}
+                    menuPlacement={i === 0 ? 'down' : 'up'}
                   />
                 )
               })}
             </AnimatePresence>
 
-            {/* The trigger for the next slice, and the only "there is more"
-                signal the user gets. Inside the <ul> so it scrolls with the
-                rows and so IntersectionObserver can scope to this list. */}
-            {hasMore && !searching && (
-              <li className="py-3.5 text-center text-[11px] text-faint" ref={sentinelRef}>
-                Loading more…
-              </li>
-            )}
           </ul>
+          {/* The footer. Both halves are ALWAYS rendered once there is a
+              completed row, and that is the fix for a layout shift rather than
+              a preference.
+
+              The page links used to be gated on `pageCount > 1` -- "one page of
+              links is a control that cannot do anything" -- which meant picking
+              100 per page on a 53-voiceover history unmounted the whole nav.
+              Measured before: footer 34.1px with links and 32px without, and
+              the label box growing 96.9 -> 244px as the link row shrank, which
+              dragged the select across the column. So the nav stays mounted and
+              goes INERT instead; `inert` (not just a class) is what stops a
+              control that looks disabled still taking a Tab and a click.
+
+              .voiceover-pager is `flex: none` with a FIXED height, so a page of
+              any size scrolls inside .result-list rather than moving this row
+              or being pushed off a viewport the shell has pinned to 100svh. Its
+              12px side padding mirrors .result-list's -- the two numbers move
+              together -- which is what puts the label's left edge on the same
+              pixel as the rows above it. */}
+          {shown.length > 0 && (
+          <div className="voiceover-pager">
+            {/* A native <select>, not the @utility select used by VoicePicker:
+                that one draws its caret with ::after, which a form control does
+                not render. color-scheme is per-theme (tokens.css), so the
+                browser's own caret and option popup already follow the theme.
+
+                The keydown guard is the same one the search field carries.
+                useHotkeys' isTyping() already covers SELECT, so "/" is safe --
+                but Escape is NOT gated by it, and without this an Escape aimed
+                at closing the native option popup would also clear the
+                composer's state behind this column. */}
+            {/* Deliberately the smaller half of the footer: this is a setting
+                you touch once, next to the page buttons you touch constantly. */}
+            <label className="flex items-center gap-1.5 text-[10px] text-faint">
+              <span className="mono uppercase tracking-[0.08em]">Per page</span>
+              <select
+                className="h-7 rounded-sm border border-control bg-surface-raised px-1.5 text-[11px] text-ink outline-none focus:border-audio-line"
+                value={pageSize}
+                aria-label="Voiceovers per page"
+                onKeyDown={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const next = Number(e.target.value) as HistoryPageSize
+                  const size = (PAGE_SIZE_OPTIONS as readonly number[]).includes(next) ? next : DEFAULT_PAGE_SIZE
+                  setPageSize(size)
+                  writeHistoryPageSize(size)
+                  listRef.current?.scrollTo({ top: 0 })
+                }}
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </label>
+            <nav
+              aria-label="Voiceover pages"
+              // Mounted at every page count. `inert` rather than a class alone:
+              // a control that only LOOKS disabled still takes a Tab and a
+              // click, and this one is right next to the control that put it
+              // in that state.
+              className={pageCount > 1 ? undefined : 'is-disabled'}
+              aria-disabled={pageCount > 1 ? undefined : true}
+              inert={pageCount <= 1}
+            >
+              {/* Buttons, not links: these go nowhere, and a <button disabled>
+                  is removed from the tab order by the platform rather than by
+                  a class. The window is a fixed size (see PAGE_WINDOW), so the
+                  row holds its shape as the selection moves. */}
+              <ul className="voiceover-pager-list">
+                <li className="voiceover-pager-prev">
+                  <button
+                    type="button"
+                    aria-label="Previous page"
+                    disabled={page === 0}
+                    onClick={() => goToPage(page - 1)}
+                  >
+                    ‹
+                  </button>
+                </li>
+                {pageWindow(page, pageCount).map((index) => (
+                  <li key={index} className={['voiceover-pager-page', index === page ? 'is-active' : ''].filter(Boolean).join(' ')}>
+                    <button
+                      type="button"
+                      aria-label={`Page ${index + 1}`}
+                      aria-current={index === page ? 'page' : undefined}
+                      onClick={() => goToPage(index)}
+                    >
+                      {index + 1}
+                    </button>
+                  </li>
+                ))}
+                <li className="voiceover-pager-next">
+                  <button
+                    type="button"
+                    aria-label="Next page"
+                    disabled={page >= pageCount - 1}
+                    onClick={() => goToPage(page + 1)}
+                  >
+                    ›
+                  </button>
+                </li>
+              </ul>
+            </nav>
+          </div>
+          )}
         </>
       )}
-    </section>
+      </section>
+    </div>
   )
 }

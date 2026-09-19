@@ -151,8 +151,10 @@ Flat JSON in `backend/storage/` (gitignored), written via temp-file + `.replace(
 resumed **from the start of the job**, not mid-chunk. Completed jobs live in `history.json`; the job dicts
 themselves (`_jobs`) are in-memory only, so a restart loses status of finished/failed jobs.
 
-Generation time is reported, never predicted: the running row counts elapsed seconds. Two estimators
-were built and both retired — see the no-predicted-time note below, and `docs/gpu-notes.md`.
+Generation time is neither predicted nor reported any more. Two estimators were built and both
+retired (see the no-predicted-time note below and `docs/gpu-notes.md`), and the elapsed clock that
+replaced them has since gone too — a generating row shows chunk progress and nothing else.
+`generation_s` is still written to every history entry; nothing reads it.
 
 ### Frontend
 
@@ -182,26 +184,27 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   satisfies the same requirement *and* stops a failed upload growing the panel, which had been the
   one remaining thing that could shift the fixed-height voices dialog.
 
-- **Deleting a voiceover is DEFERRED on the client, not soft-deleted on the server.** The click hides
-  the row and holds the request for `UNDO_MS` (7s) behind an Undo toast; the backend's
+- **Deleting a voiceover is DEFERRED on the client, not soft-deleted on the server.** The row stays
+  visible while the request is held for `UNDO_MS` (7s) behind an Undo toast; the backend's
   `DELETE /api/history/{id}` is unchanged and still irreversible — it rewrites `history.json` and
   unlinks both the `.wav` and the `.mp3`. A real server-side undo would need a `deleted_at` flag, a
   restore route, a purge policy and a way to un-unlink files, which is a lot for a single-user local
-  tool. **The failure mode, so it is not later found as a bug:** close the tab inside the undo window
-  and the `DELETE` never fires, so the row returns on reload. Safe direction, real inconsistency.
+  tool. Leaving the page inside the Undo window commits the delete with a keepalive request, so the
+  server-side action is not silently lost.
   `removeFileName` is deferred with it, or an Undo would restore the row under its default
-  `Voiceover N` instead of its custom name. Pending ids are filtered **after** numbering, with the
-  search — same trap, same fix.
+  `Voiceover N` instead of its custom name. The history refresh removes the row only after the held
+  delete is committed.
 
 - **Rows animate OUT, not IN -- and the pending rows are the exception.** framer-motion
   (already a dependency) drives all of it; there are no new CSS classes, so
   `check_orphan_css.py` is untouched. The asymmetry is the whole design and is easy to
   "fix" back into a bug:
   a **`VoiceoverRow` has no `initial`/`animate` at all**, because the three ways one
-  appears are a job completing, a load-more append, and first paint. The first is a
+  appears are a job completing, a page change, and first paint. The first is a
   handoff -- `PendingRow` and `VoiceoverRow` are two `.map()`s in one `<ul>`, and the
   completing job's row is replaced in the same frame, so an entrance there reads as a
-  flicker. The second is pagination. Neither is an event the user caused at that row.
+  flicker. The second is a page transition, where every row changes at once. Neither is
+  an event the user caused at that row.
   A **`PendingRow` animates both ways**: it appears only because Generate was pressed.
   **Its exit fade is load-bearing, and was removed once on a misreading before being
   measured properly.** A finishing job does not hand off atomically -- the queue poll
@@ -233,11 +236,11 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   was still 0.86, and 0.0px row/list shift at 700/1024/1440px -- unchanged from before the
   animation existed.
 
-- **Menu transforms go on the MENU, never on `ThemeSwitch`'s root.** The root is the thing
+- **Header-menu transforms go on the MENU, never on a control root.** The root is the thing
   that must stay transform-free (see the `ThemeSwitch` note below for what a transform there
-  breaks). Both menus scale-and-fade from the corner they are anchored to -- theme menu
-  `origin-top-right`, measured `transform-origin: 208px 0px`; voice menu `origin-top`, which
-  hangs directly under its control. Neither menu has `fixed` descendants, so scaling them is
+  breaks). The theme and voiceover-display menus scale-and-fade from `origin-top-right`; the
+  voice-row menu uses `origin-top`, which hangs directly under its control. Neither menu has
+  `fixed` descendants, so scaling them is
   safe. Under `prefers-reduced-motion` the menu appears at opacity 1 / `transform: none` and
   is removed immediately on close -- element kept, motion gone.
 
@@ -251,19 +254,33 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   and sonner (999999999). Selection is keyed by id and is **not** filtered to what is visible — the
   count must not lie when a search is active.
 
+- **The script box is `clamp(240px, 32svh, 340px)`, and both bounds are load-bearing.** It was
+  `40svh` (a slab, and most of the compose column), then a flat `220px` (about six lines, too short
+  for a paragraph). The ceiling stops a tall monitor reproducing the slab; the floor stops a short
+  laptop going below the flat value that was already too small. Measured against the built app at
+  1424px wide: viewport 1005 → 321.6px/10 lines, 805 → 257.6px/8, and 673/605/545 → 240px/7 at the
+  floor, with **root overflow 0 and Generate fully visible at all five**. That last number is the
+  constraint — above 1025px `.studio` is `height: 100svh; overflow: hidden`, so the page cannot
+  scroll to reveal anything this box pushes off. Keep `h`/`min-h`/`max-h` identical: the box must not
+  move with its content.
 - **The script box is persisted (`usePersistedDraft`), which is why there is no `beforeunload`.**
   It was the one place real work lived only in memory; a reload or a closed tab discarded up to
   `MAX_SCRIPT_CHARS` silently. Restoring it removes the need for a "Leave site?" prompt guarding
   something already safe. Debounced (400ms) because the naive version serialises the whole script per
   keystroke, and restored in the `useState` initialiser rather than an effect — an effect renders an
-  empty box first, which reads as losing the script and then finding it. The re-queue wand now offers
-  an **Undo** instead of silently overwriting a typed script; a confirm would tax every re-queue to
+  empty box first, which reads as losing the script and then finding it. The script-preview reuse control
+  offers an **Undo** instead of silently overwriting a typed script; a confirm would tax every reuse to
   protect the rare one, and `window.confirm` is already rejected elsewhere in this app.
 
 - **Everything the user types survives an immediate reload, and `useFlushOnHide` is what closes the
   gap in each case.** Four stores, four different holes, one primitive:
   `homegrown-script-draft` and `voiceoverSearch` (`usePersistedDraft`), `historyFileNames` and
-  `pendingVoiceoverNames` (`usePersistedRecord`).
+  `pendingVoiceoverNames` (`usePersistedRecord`), plus `voiceoverPageSize.v1` (a synchronous,
+  validated browser preference for how many completed rows a page shows — it replaced
+  `voiceoverDisplay.v1`, which chose between infinite scroll and pagination and went with infinite
+  scroll itself).
+  `voiceoverSearch` is additionally clamped to `MAX_SEARCH_CHARS` (100) on input and restoration, so an
+  old localStorage value cannot render or filter beyond the field's limit.
   **The debounce used to eat the last edit.** `usePersistedDraft`'s timeout cleanup cancelled the
   pending write without performing it, so a reload inside the 400ms window discarded everything typed
   since the previous flush — precisely the case the persistence exists for. It now writes on the way
@@ -302,61 +319,156 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   download. Names are de-duplicated inside the archive (`name (2).mp3`), or two voiceovers called the
   same thing silently overwrite each other and the user gets fewer files than they selected.
 
-- **`navigator.clipboard` DOES NOT EXIST in the deployment this ships in.** It needs a secure
-  context; LAN mode serves the app from `http://<lan-ip>:8000`, which is not one, so it is
-  `undefined` for every device that is not this machine. `useCopyToClipboard` feature-detects and
-  falls back to an off-screen `<textarea>` + `document.execCommand('copy')` — off-screen rather than
-  `display: none`, because an unrendered element cannot be selected and the selection *is* the
-  mechanism. It returns a boolean so the caller never claims a success that did not happen.
-
-- **Selecting rows: `shown`-indexed ranges, `shown`-scoped select-all.** Shift-click fills the range
-  between two positions in `shown` (what is on screen after the filter), not in `history` — the same
+- **Selecting rows: visible-row-indexed ranges and select-all.** Shift-click fills the range
+  between two visible positions (the current page of the filtered list), not in `history` — the same
   indices in the unfiltered array are different voiceovers, verified against the real store. A
   shift-range only ever ADDS, or a stray shift-click wipes a carefully built selection. The header
-  checkbox acts on the shown rows only (13 of 23 under a filter, measured), and rows selected earlier
+  checkbox acts on the visible rows only (13 of 23 under a filter, measured), and rows selected earlier
   but now filtered out stay selected rather than being silently dropped. `indeterminate` is a DOM
   property with no HTML attribute, so it is set through a ref.
 
-- **The script preview COPIES; it does not expand.** It was an accordion for one round — clicking
-  unfolded the full script with a `Copy script` button inside a `max-h-[180px]` scroller. That made
-  the common intent, getting the script out, two clicks and a layout change to reach a button that
-  was always the point. Clicking now copies and raises a toast, and `ChevronIcon` went with the
-  expander rather than being left as an unused export.
-  Two things this restored: **rows are uniform height again** (measured 86.8px for a one-word and a
-  170-character script alike), which the eight-row window
-  (`max-height: calc(8 * var(--result-row-h) + 12px)`) assumes; and `title={entry.text}` is back,
-  since with no in-place reader the native tooltip is the only way to see past `PREVIEW_CHARS`.
-  (That was 96 when this was written and is 80 now — see the one-preview-length note below;
-  the number is stated once, there, so this reads it rather than restating it.)
-  **Copy works in every deployment mode**, unlike *reading* the clipboard: `useCopyToClipboard` falls
-  back to an off-screen `<textarea>` + `execCommand('copy')` where `navigator.clipboard` is absent,
-  which is the case on LAN over plain http.
+- **The script preview REUSES; it does not expand.** It is the direct route to placing that completed
+  voiceover's script and voice back in the composer, with the same Undo protection as any script
+  replacement. The wand affordance appears on hover; `title={entry.text}` remains the in-place way to
+  inspect the full script. **On a PENDING row the control is disabled** — there is no voiceover to
+  reuse yet — which is why `onReusePendingScript` and `GET /api/queue/{id}/script` are currently
+  unreachable from the UI.
+  `title={entry.text}` is the in-place way to see past `PREVIEW_CHARS`. Every generated and pending
+  row reserves a `min-h-7` action line: the normal Cancel button, queued up/down controls, and
+  tick/cross confirmation controls therefore cannot change row height or shift the fixed window.
+- **EVERY voiceover cancellation is now held behind the `UNDO_MS` toast, running ones included.** This
+  bullet used to say the opposite — that confirming a running cancel sends
+  `POST /api/queue/{job_id}/cancel` immediately, "because there is no resumable model state and a paused
+  job would monopolise the GPU lock". That reasoning was about **pausing**, and it still holds: there is
+  no pause control and cannot be one. Deferring the *request* pauses nothing. The job carries on
+  generating exactly as it was for the whole seven seconds, so Undo has no state to restore — it simply
+  never sends. Both kinds go through one `holdCancel(jobId, running)`; `handleRunningCancel` is gone.
+  **The cost was accepted, not overlooked**: confirming no longer frees the GPU at once. A cancel already
+  lands at the next chunk boundary (~1s); the hold adds `UNDO_MS` on top, so someone cancelling to get a
+  different script running waits longer. The trade is that the only irreversible control in this column
+  stops being irreversible.
+  **The row turns red the moment the tick is clicked**, and this reverses what was written here first —
+  that `cancelPending` should disable Cancel and nothing else, because nothing had been sent yet and
+  Undo must read as reversible. The call went the other way: the red is the feedback that the tick
+  registered, and the Undo toast counting down beside it is what carries the reversibility. A row that
+  stayed amber for seven seconds after the tick read as a click that did nothing.
+  So `showCanceling = canceling || cancelPending` drives the tint, the bar fill and `.result-time`,
+  while `canceling` alone — which arrives only once the request is actually sent — still drives the
+  **freeze**. The bar therefore keeps advancing in red through the window, which is honest: the job is
+  still generating. Undo clears `cancelPending` and the row returns to amber (or to purple, for a
+  queued row: `is-canceling` is written after `is-queued`, so it wins on source order while it applies
+  and gives the colour back when it stops).
+  Measured in a real browser: **Undo** — tick 1.21s, red by 2.4s with the bar still climbing, Undo
+  2.42s, amber again by 3.9s, bar on to 136px, 0 requests sent. **Commit** — tick 1.02s, red from
+  1.5s and held through all 14 samples to 8.0s, `POST cancel` at 8.02s (tick + 7.01s), bar frozen at
+  32px from 8.0s to 11.0s, row gone at 11.5s.
+  **A job can FINISH inside its own undo window**, which is the one hazard holding a *running* cancel
+  introduces and is not hypothetical on a short script. Committing then would post a cancel at a job
+  already in history, and the Undo button would go on offering to undo an event that can no longer
+  happen. Two layers stop it: an effect releases the hold (as if Undo had been pressed) and dismisses the
+  toast the moment the job stops being cancellable, and `settleCancel` re-checks `stillCancellable`
+  before sending — **on the unload path too**, since a `keepalive` flush has no way to report a
+  rejection. Both read `queueRef`, never the captured `queue`: a timer armed seven seconds ago closes
+  over exactly the value that cannot be trusted.
+  Measured in a real browser against a mock backend, 500ms sampling: **Undo** — tick at 1.02s, toast up,
+  Cancel disabled, row still amber (`is-canceling` absent) with the bar advancing 5→15px, Undo at 2.22s,
+  toast gone, Cancel re-enabled, bar still climbing to 133px at +6s, and **0** cancel requests reaching
+  the server. **Commit** — tick at 1.02s, bar advancing 5→31px through the hold, `POST cancel` at
+  **8.02s (tick + 7.00s exactly)**, red on the next poll at 8.2s, bar frozen at 36px from 8.2s to 11.0s,
+  row gone at 11.5s. **Finished mid-hold** — job left the queue at 7.5s, toast dismissed with it, and
+  **0** cancel requests sent.
+  Voice and completed-voiceover deletes are likewise deferred, but their row visibility differs:
+  completed voiceovers remain in the list until the commit refresh; voices are hidden and restored at
+  their original position on Undo.
 
-- **Every destructive action confirms AND undoes, and all three undos work the same way: by not
-  sending the request yet.** This note previously read "Cancel confirms; delete undoes. The
-  asymmetry is deliberate" — that asymmetry is gone by request. A voiceover delete, a voice delete
-  and now a **cancel** are all held for `UNDO_MS`; Undo simply cancels the timer.
-  **The obvious build for cancel was written first, measured, and thrown away.** Cancel immediately,
-  and let Undo resubmit through `POST /api/queue/{job_id}/retry` — which looks right, because
-  `retry_job` accepts a `canceled` job and still holds the full script. It does not work.
-  `POST /cancel` only moves the job to `canceling`; the worker reaches `canceled` whenever it next
-  escapes the chunk it is inside, and `retry_job` rejects everything in between. Every Undo pressed
-  inside the toast's own window returned *"Only a failed or canceled job can be retried."* — measured,
-  including with four retries 500ms apart. Widening the retry only trades a broken button for a slow
-  one, and even when it lands it buys a **fresh render of the whole script**, the partial audio having
-  already been discarded.
-  **Holding the cancel instead costs at most `UNDO_MS` of GPU on a job that was already running**, and
-  in exchange Undo means the generation was never interrupted: no resubmission, no lost chunks, no new
-  `job_id`, no new queue position. Verified against the server: `running` during the window, still
-  `running` with `attempt: 1` after Undo, `canceling` only once the window lapsed.
-  **`pendingCancels` is what makes the row disappear on the click**, and it is not optional — the job
-  really is still running, so the 1s queue poll puts the row straight back on the next tick without it.
-  Same shape as `pendingDeletes`, and filtered out of `active` for the same reason.
-  **The two-step confirms both stay**, against the usual argument that a confirm is the alternative to
-  an undo rather than its companion. The voices dialog's confirm is where "In use — queued voiceovers
-  will fail" is shown, which is information at decision time rather than friction; and the cancel
-  confirm is still **only on a running job**, since cancelling a queued one has spent no GPU time and
-  two clicks there would tax the cheap case to protect the expensive one.
+- **A generating row's progress bar spans EXACTLY a finished row's waveform, and two things hold
+  that.** Both line 2s are `[leading control][flexible track][.result-time][.result-actions]`, so
+  only the first and last can move the track's edges. The left edge: `PendingRow` wraps its bar in a
+  copy of `VoiceoverPlayer`'s own box (`flex min-w-0 flex-1 items-center gap-2`) led by a placeholder
+  carrying the play button's exact classes (`icon-btn size-6 flex-none`) — a mirrored element, not a
+  hardcoded 32px spacer, so it stays true if those classes change. The right edge: `@utility
+  result-actions` takes `min-width: 58px` + `justify-content: flex-end`, because the strip holds a
+  14px checkbox + 28px overflow button on a finished row against a 58px Cancel (or two 28px confirm
+  buttons) on a generating one. `min-width`, not `width`, so a failed row's Retry + Dismiss can still
+  grow past it — that row's bar is an empty outline with no fill to align.
+  **The third thing was a stray `px-2`, and a synthetic harness hid it for a whole iteration.** This
+  bullet first claimed `dL`/`dR` of **0.0px**, measured in headless Chrome against the built CSS — but
+  the page being measured was a hand-written harness reproducing both row kinds, and it gave both of
+  them `px-2`. The real `PendingRow` carried `px-2`; `VoiceoverRow` never did, and `.result-list`
+  supplies the side padding for both. So the generating row was double-padded and its track sat
+  **8px inside the waveform at both ends** — measured in the real app at `dL +8.0`, `dR -8.1`, bar
+  516.5px against waveform 532.6px — while the harness reported a confident zero. Re-measured in the
+  real app across 33 samples once the padding was removed: `dL` **0.0px**, `dR` **-0.1px** (sub-pixel,
+  bar 532.5 against waveform 532.6), holding through the cancelling state.
+  **`px-2` is BACK on `PendingRow`, paired with `-mx-2`, and the pair is the point.** A pending row is
+  tinted — amber running, purple queued, red cancelling — where a finished row is not, so its content
+  sits against a coloured edge and reads as cramped. Padding it inward is the bug above. The negative
+  margin cancels the padding for layout, so only the tint, the hairline and the `is-canceling` stripe
+  grow 8px outward into `.result-list`'s own side padding (now **12px**, widened at the same time so
+  every row kind sits further off the panel edge). Measured after, at 1440×900 / 1440×1400 / 1025×900 /
+  700×900: the band spans 770→1272 against a finished row's 778→1264, i.e. 8px wider on each side,
+  while `dL` is **0.0px** and `dR` **-0.1px** at all four — the content did not move. Keep the two
+  numbers equal, and keep the bleed ≤ the list's padding or the band will clip.
+  One number moves as a result, and it is the right one: the footer's "Per page" label sits 0.0px from
+  a **finished** row's left edge and from a pending row's CONTENT, and therefore 8px inside the pending
+  row's tinted band. Measure against the content, not the band.
+  **The lesson is the measurement, not the padding.** A harness you wrote from the same mental model
+  as the code confirms the model, not the code. Measure the built app.
+- **A generating row shows no `Generating` or `Cancelling` word.** The filling amber bar already says
+  the GPU is working, and the word was the only thing on that line whose width changed with the state.
+  A cancellation shows as a **disabled Cancel**, plus the bar freezing and the row turning red once the
+  request is actually sent. `Failed` is not repeated there either (`.result-time` renders it, with the
+  attempt count). **`Queued` stays**: that row has no bar at all, so the word is its only statement, and
+  the greyscale-legibility rule behind the purple depends on it.
+- **A cancelled row freezes, turns red, and slides out — three separate mechanisms.**
+  *Freeze*: `useOptimisticProgress` already clamped to `chunks_done / total_chunks` on `canceling`,
+  but the row was passing it `running ? job : undefined` and animating `width` to
+  `running ? progress : 0` — so the hook reset to 0 and the bar slid back to the left edge the moment
+  the status flipped, which reads as work undone rather than work stopped. Both now test
+  `running || canceling`. Measured in a real browser: 269px held across 9 consecutive 500ms samples
+  while `is-canceling` was on the row.
+  *Red*: `@utility is-canceling`, built like `is-failed` (inset box-shadow, never a border, so the row
+  does not grow by the outline's width). It needs `.result-bar-fill` — a utility of its own — because the fill used
+  the `bg-progress` utility inline, and a utility cannot be beaten by a state rule at equal
+  specificity without `!important`. Measured: fill `rgb(255,180,58)` → `rgb(255,97,105)`, row tint
+  `--progress-soft` → `--danger-soft`.
+  *Slide*: `leavingCancelled` is `canceling || (cancelPending && queued)`, and the `queued` qualifier
+  became load-bearing once running cancels were held too. A queued job leaves the queue the instant its
+  cancel commits, still reporting `queued`, so only the flag identifies it. A running job cannot be read
+  that way — it leaves for two different reasons, cancelled or simply **finished**, and the last render
+  is identical either way — so the running path relies on `canceling`, which only appears once the
+  request has actually been sent. A job that lands mid-hold therefore keeps the completion fade, which is
+  what covers the handoff seam.
+  The `<li>` fades (0.22s) and its **content** translates `x: '100%'`, clipped by
+  `overflow-hidden` on the `<li>`. The transform must NOT go on the `<li>`: it would have to be
+  clipped by `.result-list`, whose `overflow-y` is `auto` above the breakpoint and deliberately
+  `visible` below it, so an `overflow-x` there either adds a horizontal scrollbar or turns the mobile
+  list back into the nested scroll region its own comment forbids. The content learns it is leaving
+  through **`useIsPresent`**, not a framer variant label: the label version was built first and
+  measured, and it left the row **permanently mounted** — the child jumped to `translateX(100%)` as a
+  static value, the `<li>`'s opacity never left 1, so the exit never completed and AnimatePresence
+  never removed it. Which row leaves how is decided while it is still mounted (`leavingCancelled =
+  canceling || cancelPending`), because `canceled` never appears in `/api/queue` — there is no render
+  in which the row knows it has already gone. `cancelPending` picks the exit but deliberately **not**
+  the colour: during the Undo hold nothing has been sent, and a row that turned red mid-countdown
+  would claim a cancellation that has not happened.
+  Measured exits, real browser, 500ms/frame sampling plus a per-frame transform reader:
+  cancelled → 13 frames, x 13→718px while opacity 0.81→0, row gone on the next sample;
+  completed → 13 frames, **x = 0 at every one**, opacity 0.77→0. The completion fade is unchanged.
+- **Measuring this list needs Chrome's throttling flags, or you will measure nothing.** Three long
+  detours came from the same cause: an unfocused or headless Chrome throttles `setTimeout`, so
+  `GenerationActivityContext`'s 1s queue poll fired **once in 15 seconds** and the queue never
+  advanced — which looks exactly like a row that refuses to unmount. `--disable-background-timer-
+  throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+  --disable-features=CalculateNativeWinOcclusion` fixes the polling. Separately,
+  `--virtual-time-budget` does **not** run framer's exit animations to completion (they are WAAPI),
+  so a row held by `AnimatePresence` stays in the DOM forever there — including on code paths nobody
+  touched. Static layout and colour measure fine headless; anything that has to *finish animating*
+  needs a real browser window.
+- **Queued rows own their reorder controls.** The up/down icon buttons sit between `.result-time` and
+  the cancel strip. `moveQueuedJob` sends the complete ordered list of queued ids to
+  `POST /api/queue/reorder`; the backend validates that it is exactly the caller's pending jobs and
+  preserves other users' slots. The first/last direction and all buttons during a reorder are disabled.
 
 - **A voice delete is deferred client-side, exactly like a voiceover delete.** `DELETE
   /api/presets/{id}` rewrites `presets.json` **and unlinks the reference clip**, so there is nothing
@@ -379,7 +491,7 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
 - **There is NO predicted generation time anywhere in the product, and re-adding one needs evidence.**
   Two estimators shipped and both were retired. A chars/second model was wrong by a mean of 50%, with
   the rounded string wrong on 65% of jobs. Its replacement —
-  `_JOB_OVERHEAD_S + chunks × median(seconds per chunk)` — scored 20% mean error against
+  `_JOB_OVERHEAD_S + chunks × median(seconds per chunk)` — scored 22% mean error against
   `history.json`, which was a real improvement and still **not good enough in the way that mattered**:
   measured on a 50-job batch, **12 of 12 completed jobs ran OVER, by 1.2×–2.5×, none under**.
   The reason is structural, not a tuning miss. The model was fitted to minimise **mean absolute
@@ -388,31 +500,47 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   construction**, and the tail is fat because `_chunk_duration_is_sane` resamples a degenerate chunk up
   to `CHUNK_ATTEMPTS` times while a median deliberately discards exactly those runs (measured p90
   32.4s/chunk against p50 19.3s).
-  So the app reports **elapsed** time only, which is measured. `formatDuration` and `formatClock` stay;
-  `approxDuration` existed solely for the prediction and is gone. `generation_s` and `total_chunks` are
-  still written to every history entry — the raw material survives — but nothing consumes them.
+  So the app reported **elapsed** time only, which was measured — and the clock has since gone as well,
+  leaving a generating row with no time readout at all (see the ProgressRing/play-button bullet).
+  `formatClock` stays, on the finished row's playback transport. `approxDuration` existed solely for the
+  prediction and is gone; **`formatDuration` is now unreferenced** — nothing outside `format.ts` imports
+  it — and is left in place rather than deleted. `generation_s` and `total_chunks` are still written to
+  every history entry — the raw material survives — but nothing consumes them.
   **If you want to bring an estimate back**, read the model-selection table in `docs/gpu-notes.md`
   first, and score candidates on **overrun rate**, not mean error. Two traps recorded there: a
   least-squares `a·frames + b·chunks` fit scores best (26%) but its seconds-per-frame coefficient is
   **negative at every sample count** because the two terms are collinear; and per-voice chars/second
   spans 3.2× purely from job-length mix, which is not evidence that the estimate is voice-blind.
 
-- **The running row's clock shows ELAPSED time only, plus a pulsing dot.** It briefly read
-  `elapsed / ~guess` against `QueueEntry.estimated_s`; both the denominator and `is-over` (the tint
-  that fired once elapsed passed the guess) are gone with the estimate — "over" is undefined without
-  a prediction. `is-running` stays, so a running row's clock is still `--progress` amber against a
-  finished row's faint grey.
-  The working indicator is **VoicePicker's busy dot reused**, not a new spinner, and it sits in the
-  clock's already-reserved 1ch sign slot — the one `TransportTime` puts its minus in, empty on this
-  row and there purely to keep the digits column-aligned with a finished row's. So it costs **zero
-  layout**. It earns its place while the first chunk renders: the progress bar is still at zero then,
-  and a running row would otherwise look identical to a queued one.
-  It is gated on `prefers-reduced-motion`, because `--animate-pulse-soft` is a literal 1.4s and **not**
-  one of the tokens the reduced-motion block in `tokens.css` zeroes — the same trap that once let the
-  voice-picker dot pulse for whole generations. The element stays when reduced; only the motion goes.
-  `.result-time` went back to **14ch** when the `~` left, which is what a finished row's
-  `12:07 / 45:33` needs. Never clamp elapsed to anything; a frozen clock beside a live bar reads as a
-  hung job.
+- **A generating row reports NO time at all, and its leading box holds a DISABLED play button.**
+  This bullet used to describe an elapsed clock and a pulsing dot beside the bar. Both are removed, and
+  so is the percentage ring that briefly replaced them — a second reading of the number the track
+  already shows was redundant, and an empty box is a hole where a control belongs. The box now holds
+  the same `icon-btn size-6` play button, with the same glyph, that the row will own once it becomes a
+  voiceover, `disabled` because there is nothing to play yet. `icon-btn:disabled` already dims it, so
+  no new style, and the box is identical in both row kinds — which is what the bar's left-edge
+  alignment depends on. Three consequences, each easy to undo by accident:
+  **`useElapsed` is deleted**, and with it the `reachable` read inside `PendingRow`. That hook's whole
+  reason for a `live` flag was that its advance was local and unbounded, so a dead backend counted up
+  forever. `useOptimisticProgress` needs no such flag — it never crosses the next chunk boundary, so
+  it stalls within one chunk instead of running away. The unreachable-backend detection itself is
+  untouched; it lives in `GenerationActivityContext` and `StudioShell`.
+  **`.result-time` still renders on a generating row, empty, and deleting it breaks the alignment.**
+  It is 14ch of reserved width and it is the only thing making the track end on the same pixel as a
+  finished row's waveform. Remove it and the bar grows 14ch past the waveform on every generating row.
+  It still carries `Failed · try 3`, which is not a time. (`is-running & .result-time { color:
+  --progress }` now colours nothing visible; it is left in place for the failed/cancelling states that
+  do use the slot.)
+  **The pulsing dot went with the clock.** It existed to separate a running row from a queued one
+  while the bar was still at zero. The track and the row tint carry that now. The
+  `--animate-pulse-soft` reduced-motion trap it documented still applies to `VoicePicker`, which is
+  where that animation still lives.
+  **The script preview's Reuse is disabled on a pending row**, for the same reason as the play button:
+  the voiceover does not exist yet. The affordance stays visible rather than appearing for the first
+  time at the moment the row is replaced. Consequence worth stating so it is not filed later as dead
+  code: `onReusePendingScript` and the `GET /api/queue/{id}/script` endpoint behind it are now
+  unreachable from the UI. Both are left wired — re-enabling is deleting one word — and the endpoint's
+  reason for existing is unchanged (the full script must not ride on a 1s queue poll).
   **`.result-stamp` is 17ch, and the number comes from the LONGEST LOCALE FORM.** The timestamp is
   `toLocaleTimeString`, so on an `en-US` machine `14:32` is rendered `02:32 PM` and the dated form
   becomes `Sep 11, 02:32 PM` — **16 characters**, not 13. Sized against a 24-hour example it
@@ -429,6 +557,27 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   it always meant. **The general trap stands**: an undefined `var()` fails silently and no gate sees
   it, so raw CSS here uses tokens that exist in layer 1 — `--progress`, `--queued`, `--danger-text` —
   as `is-queued`/`is-failed` already do.
+  **And it had already recurred four more times, each in a different feature, each invisible.** A doc
+  sweep in 2026-09-19 diffed every `var(--x)` in the stylesheets against the tokens actually declared
+  and found `--audio`, `--audio-soft`, `--audio-line`, `--bg` and `--surface-hover` — all of them
+  **bridge names only**. `audio` exists as `--color-audio: var(--accent-2)` for the `text-audio` /
+  `bg-audio-soft` utilities; `surface-hover` as `--color-surface-hover: var(--bg-hover)`. In raw CSS
+  they are undefined, so the whole declaration is dropped. Dead as a result, all measured in the built
+  app before the fix: `voice-picker-trigger.is-selected` (the selected voice had **no** tint and no
+  border colour), `@utility is-selected` (a bulk-selected row had no tint and no inset edge — the
+  signal the floating bar depends on), the pager's hover and active-page rules (the active button
+  computed `background: rgba(0,0,0,0)`), and `OptionWheel.css`'s centre band. They now use
+  `--accent-2`, `--accent-2-soft`, `--accent-2-line`, `--bg-base` and `--bg-hover`.
+  **The pager's active page deliberately did NOT take the literal reading of its dead rule.** Restoring
+  `background: var(--accent-2); color: var(--bg-base)` measures **3.06:1** on daylight for a 12px
+  numeral — a fail nothing would have caught, since `check_contrast.py` validates tokens rather than
+  composed surfaces. It uses `voice-picker-trigger.is-selected`'s treatment instead (accent-2-soft fill,
+  accent-2-line border, `--text-primary` text), computed across all nine themes at **11.33:1 worst case
+  (tide)**, and hover follows `ghost-btn` rather than inventing an accent-tinted hover.
+  **The sweep that found these is worth keeping in the toolbox**: collect `^\s*--x:` declarations from
+  `tokens.css` + `index.css`, collect every `var(--x)` across `frontend/src/**/*.css`, and diff. The
+  only legitimate absentees are properties set inline from TSX (`--chunks`, `--option-wheel-*`,
+  `--specular-*`) and Tailwind's own `--tw-border-style`.
 
 - **`ThemeSwitch`'s root must not carry a transform.** It centred itself with
   `top-1/2 -translate-y-1/2`, and a transform does two things beyond moving the box: it creates a
@@ -457,11 +606,11 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   effect re-runs on tab-visible**, because a hidden tab was not failing, it was not asking; and the
   flip is **downward only** — `/api/queue` answering again does not mean the model reloaded, so
   clearing the banner is the health check's job.
-  **`useElapsed` takes a `live` flag and freezes when it is false.** Its advance is local, so before
-  this a dead backend produced a row that counted up forever — the comment claiming "every poll
-  re-anchors it, so it cannot drift" was true only while polls succeed, which it did not say.
-  `useOptimisticProgress` is deliberately NOT frozen: it never crosses the next chunk boundary, so it
-  stalls within one chunk instead of running away. The clock had no such bound.
+  **There is no longer an elapsed clock to freeze.** `useElapsed` and its `live` flag existed because
+  a local, unbounded advance kept counting through a dead backend; both are deleted with the clock
+  (see the ProgressRing bullet). `useOptimisticProgress` never needed the flag — it cannot cross the
+  next chunk boundary, so it stalls within one chunk instead of running away. If a time readout ever
+  comes back on a generating row, it needs that liveness gate again.
 
 - **`animate-pulse-soft` is gated on `prefers-reduced-motion` at both `VoicePicker` call sites.** Its
   duration is a literal `1.4s` in `--animate-pulse-soft`, **not** one of the `--fast/--base/--slow`
@@ -475,8 +624,8 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   React removes the element — a detached media element keeps playing in Chrome. So a playing
   voiceover whose row disappeared went on playing with no transport anywhere to stop it, while
   `AudioActivityContext` still held it as the active element and `AudioEngine` stayed attached to a
-  node no longer in the document. Two ways to reach it, both added late: **deleting** a voiceover
-  (the undo-delete hides the row at once) and **typing a search** that filters the playing row out.
+  node no longer in the document. Two ways to reach it are a **committed delete** (after its Undo
+  window) and **typing a search** that filters the playing row out.
   Pause BEFORE release, and let the release be a no-op when another row has already claimed the slot
   — `releaseAudio` ignores a non-current element on purpose, which is how a superseded element's
   late `pause` event is discarded, and the cleanup must not fight that.
@@ -536,8 +685,9 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   Everything else auto-dismisses, and the undo toasts already have the action that is their whole
   point; a second dismiss affordance beside Undo is noise. Before this it was global, and sonner's
   default placement hung it **6px outside the toast on both axes**, straddling the corner.
-  Relatedly, the elapsed-time span in `HistoryList` is **no longer `aria-live`** -- it announced a
-  new time every second and said nothing at the finish. Sonner's own polite region replaced it.
+  Relatedly, the elapsed-time span in `HistoryList` was made **not `aria-live`** before it was removed
+  outright -- it announced a new time every second and said nothing at the finish. Sonner's own polite
+  region replaced it, and remains the only announcement of a finished job.
 
 - **Voiceover search matches NAME and VOICE only, client-side, and a server `q` was built and then
   removed.** Script text is deliberately excluded: a script runs to `MAX_TOTAL_CHARS` (60,000), so a
@@ -551,16 +701,19 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   `usePersistedDraft`'s 400ms debounce, which is a different thing: it delays the *save*, not the
   filter, so typing still narrows the list on the keystroke. A restored query boots the column into a
   filtered view, which is safe because the box renders whenever `searching` is true — it cannot vanish
-  and leave a filter with no way to clear it — and `onSearchActiveChange` firing on mount is what
-  makes the parent load the whole history, without which the filter would only see the first page.)
+  and leave a filter with no way to clear it. The parent has always loaded the complete
+  server-filtered history before the first page renders, so a restored query has everything to filter
+  over.)
   Two consequences that are easy to break:
   **numbering happens BEFORE filtering.** The number is `total - i` over the *whole* list, so
   numbering the filtered array would renumber every row as you typed — "Voiceover 26" becoming
   "Voiceover 3" mid-search, so the name being searched for stops matching itself.
-  And **the parent must finish loading the history while a search runs** (`onSearchActiveChange` →
-  `listHistory(totalRef.current, 0)`), because filtering only sees what was fetched; without it a
-  query over a 200-row history would silently consider the first 20. The load-more sentinel and its
-  `IntersectionObserver` are both switched off while searching for the same reason.
+  And **the parent must load the WHOLE history, which it now always does** — `StudioShell` pulls the
+  complete server-filtered result in <=100-entry batches before `HistoryList` renders a page, because
+  filtering *and* paging both happen on the client and neither can see an unfetched row. This used to
+  be conditional: infinite mode fetched a prefix and `onSearchActiveChange` told the parent to top it
+  up when a search started, so a query over a 200-row history would otherwise have considered only the
+  first 20. That prop, the sentinel `<li>` and its `IntersectionObserver` are gone with infinite mode.
 
 - **Shortcut caps: `MOD_KEY` is the glyph, `MOD_ARIA` is the attribute, and they are not
   interchangeable.** `aria-keyshortcuts` takes a fixed vocabulary (`Control+Enter`), so it can
@@ -569,8 +722,8 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   keystroke. Placement is deliberately not uniform: Generate is **tooltip-only** (its label
   substitutes `blockedReason` and reads as a sentence), and `/` sits on the Script heading at
   `order-3` past the `section-rule` hairline (inside the box it overlapped line one -- measured,
-  cap 11-29px against a 15-40.5px first line, and the bottom corners belong to the word count, the
-  resize grip and the scrollbar).
+  cap 11-29px against a 15-40.5px first line, and the bottom-right corner belongs to the word count and
+  the scrollbar).
 
 - **`Ctrl/Cmd+F` focuses the voiceovers search, and its `preventDefault` is CONDITIONAL.** Taking
   Ctrl+F from the browser is the one hijack every user would notice, so `onFindInApp` returns a
@@ -624,41 +777,122 @@ position, so failures are re-sorted client-side or they surface *above* the runn
 `total + 1 + i` row numbering must skip them, since a failed job never becomes a voiceover and numbering it
 shifts every row beneath. `canceled` stays excluded — the user stopped it and knows.
 
-The **Voiceovers column is a fixed window, not a paginated list.** `HISTORY_INITIAL_COUNT` (20) fills it
-on first paint and `HISTORY_LOAD_MORE_COUNT` (10) is the scroll increment — two constants because the two
-jobs differ: the first batch has to fill the window and absorb the first scrolls, the increment only has to
-arrive before the reader reaches the bottom. `.result-list` is capped at `calc(8 * var(--result-row-h))`
-with `overflow-y: auto`; an `IntersectionObserver` on a sentinel `<li>` fetches the next slice as it scrolls
-into view. `history` accumulates rather than swapping pages. Two consequences worth knowing before touching
-it:
-- **Reloads refetch the whole prefix** (`listHistory(max(PAGE_SIZE, loaded), 0)`), they do not patch the
-  array. Deleting an entry shifts every later one up by one, so an offset-based append would silently skip
-  a voiceover. Appends de-duplicate by `id` for the same reason — a job finishing between two requests
-  shifts the offsets under you.
+The **Voiceovers column is PAGINATED — there is one display mode, and infinite scroll is gone.**
+`StudioShell` fetches the whole server-filtered history in <=100-entry batches, `HistoryList` applies
+its client-only name search and slices one page of completed rows, and the user picks the page size
+from a dropdown in the column's footer. `.result-list` is `flex: 1 1 auto; min-height: 0;
+overflow-y: auto` with **no `max-height`**, so the list fills whatever height the column has and a page
+longer than that scrolls inside it.
+**What was removed, so it is not rebuilt by reflex:** the `voiceoverDisplay.v1` preference and the gear
+button beside `ThemeSwitch` that set it (`HistoryDisplaySettings.tsx`), the sentinel `<li>` and its
+`IntersectionObserver`, the empty-list rescue effect behind it, `hasMore` / `onLoadMore` /
+`loadMoreHistory`, `onSearchActiveChange` (the parent now always holds the whole history, so there is
+nothing to tell it), and `HISTORY_LOAD_MORE_COUNT`. `HISTORY_INITIAL_COUNT` (20) survives only as
+`listHistory`'s default limit.
+**Page size is `voiceoverPageSize.v1`: 10 / 25 / 50 / 100, default 10** (`historyPageSize.ts`). Read
+synchronously so the first paint is already the chosen size, and validated against the option list —
+localStorage is user-editable, and an unbounded value would slice an arbitrary number of rows into a
+column whose height the viewport already decides. Changing it resets to page 1 (the old page number is
+meaningless at a new size) and scrolls the list to the top. Measured against the built app with 53
+voiceovers: 10 → 10 rows / 6 pages, 25 → 25 / 3, 50 → 50 / 2, 100 → 53 rows on one page. A junk stored
+value renders 10.
+**Changing the page size must move NOTHING, and three separate things had to be nailed down to get
+there.** The first version moved four: the nav was gated on `pageCount > 1`, so choosing 100 unmounted
+it; the footer was `height: auto`, so it measured 34.1px with a six-page link row, 32px with none and
+**64px** at a 1025px viewport where the links wrapped to a second line; the label sat in a `1fr` track
+that the link row squeezed, so its box ran 96.9 → 244px and the words wrapped to `PER` / `PAGE` exactly
+when the links were widest; and the list resized under the reader each time.
+Now: **`.voiceover-pager` is a three-track grid,
+`minmax(max-content, 1fr) auto minmax(0, 1fr)`, at a fixed `height: 36px`.** The label is
+`white-space: nowrap` in the first track, the page buttons sit in the middle one as a **fixed 220px slot**
+(`--pager-slot`), and the third track exists purely so the middle one is centred on the FOOTER rather
+than on the space the label leaves — measured `navCenterOffset` **0.0px** at 1440px wide. At the narrow
+end the first track's `max-content` floor wins and the offset becomes a constant **44.7px** at a 1025px
+viewport; constant is the requirement, since both the label and the slot are fixed widths.
+`.voiceover-pager-list` is `flex-wrap: nowrap` — wrapping is what produced the 64px footer.
+**The pager is hand-rolled, and `react-paginate` was uninstalled with it.** That component sizes its own
+output from `pageRangeDisplayed`/`marginPagesDisplayed`, and **the number of buttons it emits changes
+with the selected page**: with six pages it rendered `‹ 1 2 3 … 6 ›` on page 1 and `‹ 1 2 3 4 5 6 ›` on
+page 2, so clicking a page number reshaped the control that had just been clicked. No prop combination
+fixes it — the break only appears when there is a gap to collapse, so the count is a function of the
+selection by construction. `PAGE_WINDOW` (5) plus `pageWindow()` in `HistoryList.tsx` is a sliding window
+instead: `min(PAGE_WINDOW, pageCount)` buttons at every selection, clamped at both ends, no ellipsis
+(the ellipsis was only ever a symptom of the variable window). Walking pages 1→2→3→4→5→6→3→1 at
+10/page: **7 buttons, a 220px row and `navLeft` 916 at every step**, the window sliding `1-5` → `2-6`.
+**The buttons are `<button>`, not `<a>`**, so `:disabled` (not a class) takes the chevrons out of the tab
+order at the ends of the range, and they are the larger half of the footer at **28×28px / 12px** against
+the label's **10px text and 28px select** — the setting you touch once should not outweigh the control
+you touch constantly. Widest row (chevron + 5 pages + chevron = 220px) fits the narrowest two-column
+footer (~373px at a 1025px viewport, less ~113px of label and gaps).
+Measured across 10 / 25 / 50 / 100 at 1440×900, 1440×1400 and 1025×900, and again while switching sizes
+live on one page load: footer top/height, label box, nav left/width and `.result-list` height are
+**identical to 0.0px at every size**, root overflow 0. `padding: 0 12px` mirrors the list's — the two
+move together, and they were widened together from 8px — so the label's left edge still sits
+**0.0px** from a finished row's left edge and from a pending row's content (8px inside its tinted
+band, which bleeds outward; see the PendingRow bullet). Keyboard: Enter on `Page 3` selects page 3, Space on
+the next chevron moves to 4, and every page change returns `.result-list` to `scrollTop: 0`.
+**At one page the nav stays mounted and goes `inert`**, with `aria-disabled` and the `is-disabled` class
+(opacity 0.45). `inert` rather than a class alone is the point: a control that only *looks* disabled
+still takes a Tab and a click. Verified at 100/page — both chevrons `disabled`, five Tabs from the
+select never land inside the nav, clicking every button leaves the row count at 53, and a hit test at a
+chevron's centre returns `DIV.voiceover-pager`, not the button. The select renders whenever a completed
+row exists — it is how the reader asks for more rows, so hiding it until there are several pages hides
+it exactly when it would help.
+**The `calc(8 * var(--result-row-h) + 12px)` cap is GONE, and re-adding one re-adds the bug.** It read as
+an eight-row window and behaved as a 716px ceiling, which bound on exactly the viewports with room to
+spare: measured against the built app at 1440 wide, the list was 471 / 539 / 671px at viewport heights
+700 / 768 / 900 (the flex chain already sizing it, cap never applying) and then **froze at 716px at both
+1100 and 1400** while `.results` grew to 871 and 1171 — so a tall monitor got 455px of empty glass panel
+under the last row, and the pager sat at y=951 in a 1400px viewport. Immediately after the removal, same
+matrix: **471 / 539 / 671 / 871 / 1171px**, root overflow 0 at all five.
+**Those five numbers are now 44px smaller, and that is the footer, not a regression.** The pager row
+became an always-present, fixed 36px (see the footer bullet above), and the list is the flex child that
+gives up the space. Re-measured against the current build at 1440 wide with 25 per page:
+**427 / 495 / 627 / 827 / 1127px** at viewport heights 700 / 768 / 900 / 1100 / 1400, root overflow 0 at
+all five, footer bottom 1368 at 1400. Rows fully visible: **4 / 4 / 6 / 8 / 11** (was 4 / 5 / 6 / 7 / 7
+under the cap) — the 768px viewport lost a row to the footer, and the two tall ones gained one and four.
+**`--result-row-h` (88px) is still what a row is specified to be and no row is actually that tall** — a
+finished row renders **101px**, a generating one **91.6px**, which is why the token multiplied into a
+window always under-counted (7 rows at a 1005px viewport, not 8). The token survives as the row's spec,
+and the `is-failed` / `is-canceling` outlines are still inset box-shadows so a state cannot change a row's
+height; nothing multiplies it into a height any more.
+Two consequences worth knowing before touching it:
+- **Reloads refetch from offset 0 and rebuild the array**, they do not patch it. Deleting an entry shifts
+  every later one up by one, so an offset-based append would silently skip a voiceover. The batch loop
+  de-duplicates by `id` for the same reason — a job finishing between two batches shifts the offsets
+  under it — and its `cancelled` flag aborts a half-finished sweep when the filters change.
+- **The fetch is unconditionally complete, and that is load-bearing rather than lazy.** Both the name
+  search and the paging happen on the client, over names (`historyFileNames`) and positions the server
+  has never seen, so a prefix fetch would make page 4 of a 200-row history render empty. The cost is
+  bounded by `/api/history`'s own `HISTORY_PAGE_MAX` batching, not by the page size.
 - **Above 1025px the page itself does not scroll** (`.studio` is `height: 100svh; overflow: hidden`, with a
-  `min-height: 0` chain down through `.workspace` → `.aside` → `.results` → `.result-list`). The row cap is
-  a ceiling, not a height: `flex: 1 1 auto` clamps the list to whatever the aside actually has, so on a
-  768px-tall laptop it renders fewer than eight rows and the `max-height` never applies. Raising the
-  multiplier alone does nothing there.
+  `min-height: 0` chain down through `.workspace` → `.aside` → `.results` → `.result-list`), and that chain
+  is now the ONLY thing sizing the list in both directions: `flex: 1 1 auto; min-height: 0` shrinks it on a
+  768px-tall laptop and grows it on a 1400px monitor. There is no second bound to keep in sync — which is
+  the point, since the cap that used to be there only ever disagreed with the chain on tall viewports.
 - **1025px is now written in two places, and one of them is a token.** `--breakpoint-wide: 1025px` in
   `frontend/src/index.css` gives the `wide:` utility prefix used throughout the layout, and
   `TWO_COLUMN_QUERY` in `HistoryList.tsx` still hardcodes the same number. **Use `wide:`, never Tailwind's
-  `lg:` — `lg` is 1024px and the off-by-one decides which element is the scroll root.** The component needs
-  the query because both of its scroll effects have to pick a root: above the breakpoint the list is the
-  scroller, below it the page is. Rooting the `IntersectionObserver` at the list below the breakpoint
-  reports intersecting immediately and chain-loads the whole history in one go; reading `list.scrollTop`
-  there returns 0 forever, i.e. permanently "at the top". Below the breakpoint all of that is switched off
-  and the page scrolls normally — a short inner scroller inside a locked page is two nested scroll regions
-  on a phone. A missing `min-h-0` anywhere in the shell → `main` → `.aside` → `.results` →
+  `lg:` — `lg` is 1024px and the off-by-one decides which element is the scroll root.** The component still
+  needs the query for its at-top effect: above the breakpoint the list is the scroller, below it the page
+  is, and `list.scrollTop` down there returns 0 forever, i.e. permanently "at the top", so a finished
+  voiceover would always be inserted under the reader. (The other consumer was the load-more
+  `IntersectionObserver`, which had to be rooted at the list above the breakpoint and at the viewport
+  below it or it chain-loaded the whole history; that observer is gone with infinite scroll.) Below the
+  breakpoint the page scrolls normally — a short inner scroller inside a locked page is two nested scroll
+  regions on a phone. A missing `min-h-0` anywhere in the shell → `main` → `.aside` → `.results` →
   `.result-list` chain stops the list shrinking, and `scripts/check_orphan_css.py` guards the class
   hooks that chain depends on. **`.results` was the missing link for a long time.** It is a flex
-  column but was `height: auto`, and a flex child can only shrink against a parent with a
+  column but was `height: auto`, and a flex child can only shrink or grow against a parent with a
   constrained height — so `.result-list`'s `flex: 1 1 auto; min-height: 0` never engaged, the list
-  took its full `max-height` at every viewport, and the overflow was **clipped** by the shell's
+  took its full (then-capped) height at every viewport, and the overflow was **clipped** by the shell's
   `wide:overflow-hidden` rather than scrolling. Measured before the fix, at widths ≥1025px: a 716px
-  list and 8.00 visible rows at viewport heights 1100/900/768/700, with the root overflowing by
-  101/233/301px at the last three. After adding `wide:h-full wide:min-h-0` to `.results`: 8.00 rows
-  at 1100, 6.64 at 900, 5.14 at 768, 4.36 at 700, and no overflow anywhere. Note the shell root
+  list at viewport heights 1100/900/768/700, with the root overflowing by 101/233/301px at the last
+  three. After adding `wide:h-full wide:min-h-0` to `.results`: the list tracks the column's real
+  height and there is no overflow anywhere. **Those "8.00 / 6.64 / 5.14 / 4.36 rows" figures were
+  `listHeight / --result-row-h`, not counted rows, and the token is smaller than a row** — counted
+  properly, and with the cap now gone, it is 6 rows at a 900px viewport, 8 at 1100px and 11 at 1400px
+  (1440 wide, real rows fully inside the list). Note the shell root
   itself carries no `min-h-0` and no `.studio` class — it is the flex *container*, not an item.
 
 ### Styling: Tailwind v4, nine themes, no App.css
@@ -727,24 +961,18 @@ never eyeballed.
   as muddy brown. Only text needs 4.5:1; a bar or badge is non-text at 3:1. Daylight and score also
   had to darken `--bg-base` to separate the card — **which means the `index.html` mirror changed
   too**, the drift `check_design_tokens.py` watches for.
-- **The theme menu groups by mode.** Six dark and three light in one flat list meant reading every
-  hint to tell which was which. `role="group"` with an `aria-label`, not a bare heading: the outer
-  list is `role="menu"`, whose only valid children are menuitems and groups, so a decorative `<li>`
-  heading would be announced as an empty item.
+**The default theme picker is `OptionWheel`, not a scrolling menu.** It presents the nine explicit
+themes in a compact right-curving `role="listbox"`; its children are `role="option"`. The wheel owns
+Arrow-key movement, supports pointer dragging, clicking, and a native non-passive `wheel` listener that
+prevents page scrolling while it is operated. It only calls `onChange` after its 160ms settle delay, and
+continued input cancels stale notifications. Keep its rAF and timer cleanup intact. The fixed menu root
+is still necessary: `ThemeSwitch` closes when an *outside* scroller moves, but ignores events that begin
+inside its own menu.
 
-**The theme menu is capped and scrolls.** `max-h-[min(60svh,332px)]` with `overflow-y: auto` and
-`scrollbar-gutter: stable`, the same shape as `result-list` and `voice-list`. It was uncapped when
-there were five themes; at nine the content is 570px, which ran off the bottom of a 605px viewport.
-
-**Making it scrollable immediately broke it, and the cause is worth knowing.** `ThemeSwitch` closes
-the menu on scroll — it is `position: fixed`, so a scroll underneath would leave it floating away
-from its trigger — and that listener is registered in the **capture** phase, which sees scroll events
-from *every* element. Harmless while the menu was too short to scroll; the moment it had
-`overflow-y`, dragging its scrollbar or wheeling over it closed the menu, and every theme past the
-seventh was unreachable. The listener now ignores events whose target is inside the menu.
-**Dropping capture is not the fix**: `scroll` does not bubble, and capture is exactly what lets one
-listener cover both scrollers (the page below 1025px, the results list above it) without naming
-either.
+**Reduced motion deliberately has a different presentation.** `ThemeSwitch` renders the same nine themes
+as an immediate, static accessible list grouped under Dark and Light headings; it does not mount the
+wheel. The visible picker offers only explicit themes. `ThemeChoice` retains `system` to resolve old
+stored preferences and the first-run default, but System is not a selectable row.
 
 **`@theme inline` is load-bearing.** A plain `@theme` copies the token's *value* into each utility at build
 time, freezing the palette on Studio. `inline` emits `var(--bg-card)` instead, which is the only reason
@@ -773,42 +1001,27 @@ cannot be React: `Modal.tsx` portals to `document.body` (outside `#root`), and i
 stylesheets arrive through the JS module graph, so the first frame has no CSS at all — hence the five
 inlined per-theme backgrounds in that same `<head>`. The script and `src/theme.ts` are a deliberate
 hand-mirror (a blocking script cannot import a module and stay blocking); `check_design_tokens.py` scans
-`index.html` for exactly that reason. localStorage carries the *choice* (`'system'` or a theme id); the
-attribute carries the *resolved* theme. Do not read the attribute as the source of truth — it cannot tell
-System-resolving-to-Studio from an explicit Studio.
+`index.html` for exactly that reason. localStorage carries the *choice* (`'system'` for an existing/default
+preference, or a theme id); the attribute carries the *resolved* theme. Do not read the attribute as the
+source of truth — it cannot tell System-resolving-to-Studio from an explicit Studio. The UI deliberately
+only exposes explicit theme ids even though the model continues to resolve System.
 
-**The animated background is a WebGL shader, and three things keep it from being a liability.**
-`WebThreads.tsx` (adapted from reactbits, `ogl` as its only new dependency -- +51.1 kB raw /
-+16.3 kB gzip) draws woven threads behind the whole app at `fixed inset-0 -z-10`.
+**The background is a Canvas 2D CursorGrid.** `CursorGrid.tsx` sits at `fixed inset-0 -z-10` and
+uses the theme's sole identity token, `var(--accent)`. A probe element resolves that token to an
+actual RGB value before Canvas draws; observing `<html>`'s theme attributes refreshes it immediately
+after a theme switch. Do not reintroduce per-theme grid colours or a separate grid palette.
 
-- **It stops while a voiceover is generating.** This shader and the TTS model share one GPU. The
-  vocoder is already capped to `DECODE_CHUNK_FRAMES=100` because a ~4s kernel tripped Windows' 2s
-  TDR watchdog and killed the CUDA context, and a persistent full-screen fragment shader is exactly
-  the contention that stretches kernel wall-time on a display-attached card. `anyRunning` from
-  `GenerationActivityContext` folds into the same `start()` gate as the IntersectionObserver and
-  `visibilitychange` checks, so the three compose instead of fighting. It holds its last frame; it
-  does not tear the context down.
-- **`pointer-events: none` is load-bearing, not tidiness.** The element covers the viewport, so
-  without it the canvas eats every click in the app. Verified by hit-testing three points: the
-  topmost element is `MAIN`, `H1` and `LI`, never `CANVAS`. That is also why the cursor effect
-  listens on **`window`** rather than on the canvas as the original does -- on a pointer-events:none
-  element those listeners are silently dead.
-- **It owns no colours.** `--thread-1/2/3` are derived in layer 2 of `tokens.css` from `--accent`,
-  `--accent-2-bright` and `--text-primary`, so all nine themes get a correct background with no new
-  raw value and no per-theme block, and a tenth theme would inherit one. They are read back through
-  `resolveThreadPalette()` in `theme.ts` -- **a probe element, not `getPropertyValue`**, which
-  returns the unevaluated `var()` chain that WebGL cannot parse. Same trap the waveform hit.
-  A **separate** probe from `resolveWavePalette` on purpose: widening that one changes the object
-  identity `WaveRibbon`'s `draw` callback depends on, and that dependency is the whole mechanism
-  repainting a *paused* ribbon. The cost is one extra style recalc per theme change, not per frame.
-- `prefers-reduced-motion` paints exactly one frame and never starts the loop -- an infinite rAF is
-  precisely what the `tokens.css` reduced-motion block cannot reach, since it only zeroes
-  `--fast/--base/--slow`. `dpr` is capped at **1.5**, not 2: it is a background, and the shader is
-  fragment-bound with a `pow()` per thread per pixel. A missing WebGL2 context is caught and the app
-  runs without it.
+- The faint lattice is drawn once at rest. A requestAnimationFrame loop runs only while a pointer
+  highlight is fading or a primary-click pulse is expanding, then stops. It deliberately remains
+  interactive under `prefers-reduced-motion`; the interaction is small, direct feedback rather than
+  decorative autoplay. Canvas DPR is capped at 2 and a `ResizeObserver` redraws it after viewport
+  changes.
+- **`pointer-events: none` is load-bearing.** The canvas covers the viewport, so it listens for
+  `pointermove` and `pointerdown` on `window`; controls remain normal hit targets while their hovers
+  and primary clicks still light the grid. Cleanup must cancel the frame, disconnect both observers,
+  and remove both listeners.
 - The shell root must stay **transform-free**, the same rule `ThemeSwitch` already carries: a
-  transform there would become the containing block for this `fixed` element and wrap it in a
-  stacking context.
+  transform would become the containing block for this fixed layer and create a stacking context.
 
 **The Voiceovers column's glass is painted on a PSEUDO-ELEMENT, and that is not a stylistic
 choice.** `backdrop-filter` makes an element the containing block for every `position: fixed`
@@ -822,8 +1035,10 @@ it cannot become anyone's containing block. Verified after the change: bulk-bar 
 
 Being absolutely positioned, it also costs **zero layout**, which a wrapper `<div>` with padding and
 a border could not: row height 91.6px and list heights 716/670/538/470 at viewport 1100/900/768/700
-with `rootOverflow: 0` are all byte-identical to before. `z-index: -1` keeps it behind this
-section's own content but above the WebThreads canvas at `-10`, so the blur has something to blur.
+with `rootOverflow: 0` were all byte-identical to before. (Those list heights are pre-cap-removal — the
+list is taller now at 1100 and 1400; what the measurement showed is that this pseudo-element changes
+none of them, which is still true.) `z-index: -1` keeps it behind this
+section's own content but above the CursorGrid canvas at `-10`, so the blur has something to blur.
 
 **`--glass-fill`'s alpha is a readability budget, and the honest worst case had to be measured, not
 assumed.** Compositing the fill over pure white -- the intuitive bound -- says 86% fails at 3.34:1
@@ -838,52 +1053,16 @@ otherwise the "brightest background pixel" is toast text, and every theme report
 because the sampled colour *is* the text colour. `--text-faint` is the binding token everywhere;
 `check_contrast.py` cannot see any of this, since it validates tokens rather than composed surfaces.
 
-**The blur sits over an animating canvas, and the existing mitigation carries it.** A
-`backdrop-filter` re-blurs whenever its backdrop changes, so the panel is re-blurring every frame the
-shader draws. It needs no separate gate: `WebThreads` already stops its rAF loop while `anyRunning`
-is true, which is exactly when the GPU is busy generating -- during a render the backdrop is static
-and the blur is effectively free.
+**The blur sits over a mostly static canvas.** `CursorGrid` leaves only its faint lattice at rest and
+runs its short animation loop only for pointer fades and click pulses, keeping backdrop re-blurs brief.
 
 **`body`'s background is `transparent`, and that is what makes the background visible at all.**
 CSS paints a stacking context in a fixed order: the context's own background, then negative-z-index
 descendants, **then** in-flow block backgrounds. `body` is in-flow, so an opaque
-`body { background: var(--bg-base) }` paints straight over every `-z-10` element beneath it. The
-canvas rendered perfectly and was invisible in all nine themes, and three rounds of shader tuning
-were spent on it before the cause was found -- forcing `z-index: 500` on the container made pixels
-change immediately, which proved the shader was fine and the stacking was not. `html` still carries
+`body { background: var(--bg-base) }` paints straight over every `-z-10` element beneath it. `html` still carries
 `background: var(--bg-base)` (it already did, for overscroll), and that is step one of the same
 context, i.e. below the canvas -- so the page colour is unchanged everywhere. **Do not put an opaque
 background back on `body`.**
-
-**Light themes paint pigment, not glow, and reuse the dark branch's own coverage.** Additive light
-on a near-white page is invisible; the published component re-derived its own coverage through
-`smoothstep(exp tone map)^2`, which at this shader's energy range collapsed to ~0.0005 alpha and
-rendered nothing on Daylight, Tape and Score -- a failure that hides on white rather than looking
-broken. The light branch now takes the same `clamp(gsum) * uOpacity` the dark branch uses and paints
-a darkened hue instead of a bright one. Both branches output **premultiplied** colour, because the
-renderer is `premultipliedAlpha: true`; returning a straight colour blends too light, which is again
-only obvious on the light themes.
-
-**The intensity numbers are measured, and they were wrong in BOTH directions first.** The published
-defaults (`falloff 0.62 / glow 0.016 / brightness 0.5 / opacity 0.34`) drew bright hairlines straight
-across the voiceover rows -- legible text with a lit wire through it. Damping that by eye then
-overshot into invisibility: measured as the mean per-pixel delta of the page with the canvas shown
-versus hidden, Studio sat at **0.55/255** with 6.5% of pixels changed by 3 or more, which is below
-the threshold of perception and read to the user as "the background isn't there".
-
-The current settings are `glow 0.024 / falloff 0.42 / thickness 1.7 / brightness 0.75 /
-opacity 0.82`, landing at a mean delta of **2.4-3.6/255** across dark and light themes. Two things
-worth keeping:
-- **Lower `falloff` is what makes a wash rather than a filament** -- it widens and softens the glow.
-  Reach for it before brightness when the threads look like wires.
-- **Light mode needs its own multiplier** (`* 0.16` inside the light branch). Dark pigment on a
-  near-white page shifts a pixel far more efficiently than additive glow on near-black: at one shared
-  opacity the dark themes measured 1.2/255 while Daylight was at 10.6 and looked muddy. One opacity
-  cannot serve both.
-- **Measure this with a with/without pixel diff, not by eye and not from a screenshot.** A screenshot
-  of a dark theme was misread as "the background is working" when it was the theme's own colours, and
-  the first-load run of any such probe reports zero because the canvas is not up yet -- reorder the
-  themes before believing a zero.
 
 **The canvas waveform no longer mirrors the palette by hand.** `WaveRibbon.tsx` used to carry three
 hardcoded colours. `resolveWavePalette()` in `theme.ts` now reads them through a one-off probe element:
@@ -1085,6 +1264,16 @@ below for why one wrong click there is unrecoverable.
   with a reason.
 - **`/api/queue` sorts by real position in `_pending_job_ids`**, not `_jobs` insertion order; reorder only
   splices the requesting user's own jobs so a shared FIFO can't be jumped.
+- **`SpecularButton` is presentation around a real button, not a new control.** `GenerateButton` supplies
+  the semantic `type`, disabled state, click handler and `aria-keyshortcuts`; `SpecularButton` forwards
+  them to its native `<button>`, keeps the 40px `generate-btn` geometry, and puts its canvas below the
+  content. Resolve `--btn-invert-fg` through `tokenColour()`'s temporary CSS probe — computed custom
+  properties preserve authored `var()` text. The OGL canvas is optional: CSS `::before` is the compositor
+  fallback, the canvas and fallback must never intercept pointers, and disabled controls hide both.
+  Do not run the effect for reduced motion, hidden documents, or offscreen controls; it observes resize,
+  viewport visibility and theme changes, and cleanup must cancel the frame, disconnect observers/listeners,
+  remove CSS pointer properties, lose the WebGL context, and remove the canvas. Keep the effect
+  pointer-local and layout-neutral.
 - **Doc hierarchy.** `README.md` (setup, features, troubleshooting) and this file are the maintained docs
   and stay at the repo root; all other prose lives under `docs/`. `docs/workflow.md` covers day-to-day
   usage and was rewritten against the current UI; `docs/BUILD.md` is the build procedure;
@@ -1096,9 +1285,9 @@ below for why one wrong click there is unrecoverable.
   written relative to the repo root.
 - **Two things the UI does not do, despite appearances.** `startGenerate()` sends only
   `preset_id`/`text`/`language`, so Style/Stability never leave the browser (the backend defaults to
-  `natural`/`balanced`). **The estimate is no longer among them** -- `estimated_s` and `chunks` now
-  reach the running row's clock as its `~guess` denominator -- **not** beside Generate, where a figure
-  quoted before committing reads as a promise rather than the ~20%-error guess it is. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
+  `natural`/`balanced`). **Nothing predicts duration.** `/api/estimate` is still fetched on a 400ms
+  debounce for exact chunking and the long-reference warning, but neither it nor `/api/generate` returns
+  `estimated_s`; the running row reports chunk progress only, and no time of any kind. Measured 2026-09-09: `stable` and `balanced` produce indistinguishable output on
   this machine, so wiring Stability up would buy nothing — see `docs/gpu-notes.md`. Style is untested. And `is_builtin` is dead weight: the backend hardcodes it `False`
   (`main.py`), no "Studio Voices" gallery section exists in the frontend any more, and
   `NewVoiceModal` no longer filters on it -- the field survives only in `Preset` on both sides.
@@ -1133,8 +1322,9 @@ below for why one wrong click there is unrecoverable.
   the first voice jump by a whole list. Measured against the built CSS: panel 487.5px at 0, 1, 5,
   6, 9 and 20 voices, and during an upload.
   `voice-list` also carries `flex: none`, the deliberate **opposite** of `result-list`'s
-  `flex: 1 1 auto; min-height: 0` — that one must shrink below eight rows on a short laptop,
-  this one must not shrink at all. Different containers, opposite requirements; don't unify them.
+  `flex: 1 1 auto; min-height: 0` — that one must track its column's height in both directions,
+  shrinking on a short laptop and growing on a tall monitor; this one must not move at all.
+  Different containers, opposite requirements; don't unify them.
   `--voice-row-h` is 45px (py-1 8 + a 36px `min-h-9` row + 1px hairline) with a
   `@media (pointer: coarse)` override to 49px, because `icon-btn` takes a 40px floor on touch and
   lifts the row with it. Without the override a tablet reserves 24px too little. Verified: 49px

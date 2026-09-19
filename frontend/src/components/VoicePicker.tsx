@@ -158,7 +158,7 @@ export default function VoicePicker({
       <button
         type="button"
         ref={triggerRef}
-        className="select flex w-full items-center gap-1.5 text-left"
+        className={`select voice-picker-trigger flex w-full items-center gap-1.5 text-left ${selected ? 'is-selected' : ''}`}
         aria-label={selected ? `Voice: ${selected.name}` : 'Choose a voice'}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -168,6 +168,7 @@ export default function VoicePicker({
             and a long name is genuinely cut -- measured at 126px visible of
             258px, i.e. under half. Widening it is not the fix; that was tried
             and read as a search bar. Hover reveals the rest instead. */}
+        <span className="mono flex-none text-[10px] text-muted" aria-hidden="true">Voice</span>
         <span
           className="overflow-hidden text-ellipsis whitespace-nowrap"
           title={selected ? selected.name : undefined}
