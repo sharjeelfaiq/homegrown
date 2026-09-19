@@ -1921,8 +1921,9 @@ export default function HistoryList({
               .voiceover-pager is `flex: none` with a FIXED height, so a page of
               any size scrolls inside .result-list rather than moving this row
               or being pushed off a viewport the shell has pinned to 100svh. Its
-              8px side padding mirrors .result-list's, which is what puts the
-              label's left edge on the same pixel as the rows above it. */}
+              12px side padding mirrors .result-list's -- the two numbers move
+              together -- which is what puts the label's left edge on the same
+              pixel as the rows above it. */}
           {shown.length > 0 && (
           <div className="voiceover-pager">
             {/* A native <select>, not the @utility select used by VoicePicker:

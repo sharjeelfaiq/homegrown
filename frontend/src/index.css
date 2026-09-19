@@ -708,8 +708,9 @@ body {
      padding one kind and not the other is precisely the bug the PendingRow
      comment in HistoryList.tsx records (dL +8.0 / dR -8.1, measured in the real
      app while a harness reported zero). One declaration on the container cannot
-     drift that way. The footer's own `padding: 0 8px` was widened to match, or
-     the "Per page" label stops sitting on the same pixel as the row content. */
+     drift that way. The footer's own side padding was widened from 8px to 12px
+     with it, or the "Per page" label stops sitting on the same pixel as the row
+     content. */
   padding: 6px 12px;
   overflow-y: auto;
   list-style: none;
