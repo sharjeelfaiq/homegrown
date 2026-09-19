@@ -25,7 +25,11 @@
   transform: translateY(-50%);
   border-top: 1px solid var(--line-ink);
   border-bottom: 1px solid var(--line-ink);
-  background: color-mix(in srgb, var(--surface-hover) 72%, transparent);
+  /* --bg-hover, NOT --surface-hover. `surface-hover` is only the @theme bridge
+     name (--color-surface-hover: var(--bg-hover)) that backs the
+     `bg-surface-hover` utility; in raw CSS it is undefined, so the whole
+     color-mix -- and with it this band's fill -- was silently dropped. */
+  background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
   pointer-events: none;
 }
 

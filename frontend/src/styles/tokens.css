@@ -86,9 +86,10 @@
      ~548px there instead, and still reaches 520px once there is room for it. */
   --aside: clamp(360px, 38vw, 520px);
   /* One compacted voiceover row: 26px name line + 24px transport line + ~17px
-     script preview + gaps + padding + hairline. The Voiceovers block is capped
-     at eight of these, which is what makes the window a size rather than a
-     guess. Re-measure if the row gains or loses a line. */
+     script preview + gaps + padding + hairline. This is what a row is SPECIFIED
+     to be -- a real finished row measures ~101px, which is why it no longer
+     multiplies into a window: .result-list is sized by the flex chain now, not
+     by a row count. Re-measure if the row gains or loses a line. */
   --result-row-h: 88px;
   /* One voice row in the voices dialog: py-1 (4+4) + a 36px min-h-9 control
      row + the 1px hairline under it. Both controls inside are SHORTER than

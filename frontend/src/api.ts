@@ -241,15 +241,14 @@ export interface HistoryPage {
   total: number
 }
 
-// Two different jobs, deliberately two different numbers -- neither is a
-// "page", since the Voiceovers column scrolls rather than paginates.
+// The default page size for a bare listHistory() call, and nothing more.
 //
-// The first batch has to fill the fixed window (about eight rows) and absorb
-// the first few scrolls without a fetch. The increment only has to arrive
-// before the reader reaches the bottom, so it is smaller: fewer rows to render
-// per fetch, and a stall is less likely to be visible.
+// There WAS a second constant here, HISTORY_LOAD_MORE_COUNT, and it went with
+// infinite scroll: the column pages on the client now, so nothing appends a
+// slice at a time. StudioShell asks for 100 per batch explicitly and keeps
+// going until it holds the whole server-filtered history -- client-side paging
+// and the name search both need all of it.
 export const HISTORY_INITIAL_COUNT = 20
-export const HISTORY_LOAD_MORE_COUNT = 10
 
 /** One page of history, newest first.
  *

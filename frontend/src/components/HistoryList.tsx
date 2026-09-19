@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { AnimatePresence, motion, useIsPresent } from 'framer-motion'
-import ReactPaginateModule from 'react-paginate'
 import {
   ApiError,
   cancelQueuedJob,
@@ -30,15 +29,31 @@ import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
 import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
 import Dock, { type DockItemData } from './Dock'
-import { type HistoryDisplayMode } from '../historyDisplay'
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from '../historyPageSize'
 
-// react-paginate ships a UMD bundle. Vite resolves that bundle as a namespace
-// object in development, while other bundlers resolve its default directly.
-// Normalize both forms so React always receives the component, never the
-// namespace object (which otherwise unmounts the whole app on paginated mode).
-const ReactPaginate = (
-  ReactPaginateModule as unknown as { default?: typeof ReactPaginateModule }
-).default ?? ReactPaginateModule
+/** How many numbered buttons the pager shows, whatever page you are on.
+ *
+ * This is the whole reason the pager is hand-rolled rather than react-paginate.
+ * That component sizes its own output from `pageRangeDisplayed` and
+ * `marginPagesDisplayed`, and the number of buttons it emits CHANGES WITH THE
+ * SELECTED PAGE: with six pages it rendered `< 1 2 3 … 6 >` on page 1 and
+ * `< 1 2 3 4 5 6 >` on page 2, so clicking a page number reshaped the control
+ * that was just clicked. No combination of its two props fixes that -- the
+ * break only appears when there is a gap to collapse, so the count is a
+ * function of the selection by construction.
+ *
+ * A sliding window of a fixed size has no such state: the count is
+ * `min(PAGE_WINDOW, pageCount)` at every selection, so the row is the same
+ * shape on every page. It also drops the ellipsis, which was only ever a
+ * symptom of the variable window. */
+const PAGE_WINDOW = 5
+
+/** The window's page indices, clamped so it never runs past either end. */
+function pageWindow(page: number, pageCount: number): number[] {
+  const size = Math.min(PAGE_WINDOW, Math.max(1, pageCount))
+  const start = Math.max(0, Math.min(page - Math.floor(size / 2), pageCount - size))
+  return Array.from({ length: size }, (_, i) => start + i)
+}
 
 interface Props {
   history: HistoryEntry[]
@@ -49,15 +64,6 @@ interface Props {
   /** Focused (and selected) by the Ctrl/Cmd+F shortcut, which is bound in
    *  StudioShell -- the same arrangement as the script box and "/". */
   searchRef?: RefObject<HTMLInputElement | null>
-  /** Fires when a search starts or stops. The caller's job is to make sure
-   *  the WHOLE history is loaded while one is running -- filtering happens
-   *  here, over what has been fetched, so a half-loaded list would silently
-   *  hide matches. */
-  onSearchActiveChange?: (active: boolean) => void
-  /** True while more entries exist past what `history` already holds. */
-  hasMore: boolean
-  /** Fetch the next slice. Safe to call repeatedly -- the caller de-dupes. */
-  onLoadMore: () => void
   /** Voiceovers that finished while the user was scrolled away from the top. */
   pendingNew: number
   onShowNew: () => void
@@ -80,8 +86,6 @@ interface Props {
    * tells a starting-up user to "pick a voice and press Generate", which is
    * advice they cannot act on yet. */
   loading?: boolean
-  /** Infinite is the legacy data/scroll model; paginated pages completed rows locally. */
-  displayMode: HistoryDisplayMode
 }
 
 /** Past this many chunks the boundary ticks fall below ~4px apart and read as
@@ -641,8 +645,8 @@ function PendingRow({
       {/* Script left, submitted-at right -- the same one-left-fact,
           one-right-fact pairing lines 1 and 2 already use, which is what keeps
           this narrow column readable. The preview gives up exactly the
-          timestamp's width; it does NOT get a line of its own, because the row
-          must stay --result-row-h tall for the eight-row window cap to hold. */}
+          timestamp's width; it does NOT get a line of its own -- every row in
+          this list is one height, and a second line here would break that. */}
       <div className="flex min-w-0 items-center gap-2.5">
         {failed || !onReuseScript ? (
           <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-faint" title={failed ? reason : job.text_preview}>
@@ -882,9 +886,6 @@ export default function HistoryList({
   onFiltersChange,
   total,
   searchRef,
-  onSearchActiveChange,
-  hasMore,
-  onLoadMore,
   pendingNew,
   onShowNew,
   onAtTopChange,
@@ -894,7 +895,6 @@ export default function HistoryList({
   onError,
   gpuFault = false,
   loading = false,
-  displayMode,
 }: Props) {
   const { queue, refresh } = useGenerationActivity()
   // Read by held-cancel timers, which fire from a closure captured several
@@ -971,7 +971,6 @@ export default function HistoryList({
   }, [])
 
   const listRef = useRef<HTMLUListElement>(null)
-  const sentinelRef = useRef<HTMLLIElement>(null)
 
   useEffect(() => {
     setSelected(new Set())
@@ -995,11 +994,16 @@ export default function HistoryList({
   // safe here and needs no extra affordance: the box renders whenever
   // `searching` is true (so it cannot vanish leaving an uncleadable filter),
   // it is type="search" so it keeps the native clear button, and Escape
-  // clears it. The knock-on matters -- onSearchActiveChange fires on mount
-  // with a restored query, which is what makes the parent load the whole
-  // history; filtering only ever sees what has been fetched.
+  // clears it. A restored query is safe to filter on immediately because the
+  // parent fetches the WHOLE server-filtered history before this renders a
+  // page -- filtering only ever sees what has been fetched, and there is no
+  // longer a half-loaded state for it to miss matches in.
   const [persistedDraft, setPersistedDraft] = usePersistedDraft('voiceoverSearch')
   const [page, setPage] = useState(0)
+  // How many completed rows one page shows. Read synchronously from
+  // localStorage so the first paint is already the user's size; see
+  // historyPageSize.ts for why an unrecognised stored value is discarded.
+  const [pageSize, setPageSize] = useState<HistoryPageSize>(readHistoryPageSize)
   // Cap restored drafts too. Keeping the derived value here means an old,
   // overlong localStorage value can neither render nor filter before the
   // persistence effect below replaces it with its bounded equivalent.
@@ -1013,13 +1017,6 @@ export default function HistoryList({
   const reducedMotion = usePrefersReducedMotion()
   const searching = draft.trim() !== ''
   const filtering = searching || filters.status !== 'all' || filters.presetId !== undefined || filters.createdFrom !== undefined || filters.createdTo !== undefined || filters.durationMin !== undefined || filters.durationMax !== undefined
-
-  // Filtering only sees what has been fetched, so while a search runs the
-  // parent has to finish loading the history. Without this, a query would
-  // quietly miss every voiceover past the first page.
-  useEffect(() => {
-    onSearchActiveChange?.(searching)
-  }, [searching, onSearchActiveChange])
 
   // Failures are included, and sorted to the bottom. That ordering does not
   // come for free: /api/queue sorts by `queue_position if not None else -1`,
@@ -1099,8 +1096,21 @@ export default function HistoryList({
       )
     : visible
 
-  const pageCount = Math.ceil(shown.length / 10)
-  const pageRows = displayMode === 'paginated' ? shown.slice(page * 10, page * 10 + 10) : shown
+  const pageCount = Math.ceil(shown.length / pageSize)
+  const pageRows = shown.slice(page * pageSize, page * pageSize + pageSize)
+  // Clamped rather than trusted: the window hands back real indices, but a
+  // chevron can be pressed on the last render before a delete shortens the
+  // list. Scrolling the list to its top is part of the move -- a page change
+  // that left the reader halfway down the previous page reads as nothing
+  // having happened.
+  const goToPage = (next: number) => {
+    const target = Math.max(0, Math.min(next, pageCount - 1))
+    if (target === page) return
+    setPage(target)
+    lastClickedIndex.current = null
+    listRef.current?.scrollTo({ top: 0 })
+    listRef.current?.scrollIntoView({ block: 'start' })
+  }
   const shownSignature = useMemo(() => shown.map(({ entry }) => entry.id).join(','), [shown])
 
   // A changed query/filter/match set must never leave the reader on a now
@@ -1108,62 +1118,7 @@ export default function HistoryList({
   useEffect(() => {
     setPage(0)
     lastClickedIndex.current = null
-  }, [displayMode, draft, filters, shownSignature])
-
-    // Load the next slice when the end of the list scrolls into view.
-  // IntersectionObserver rather than a scroll handler: it fires once per
-  // crossing instead of on every frame of a scroll.
-  //
-  // The root has to follow the layout. Above the breakpoint the list is a
-  // fixed-height scroller and is the correct root. Below it the CSS sets
-  // `overflow-y: visible`, so the <ul> grows to fit its rows and the sentinel
-  // is ALWAYS inside its bounds -- rooted there, the observer reports
-  // intersecting immediately and every append re-arms it, which chain-loads the
-  // entire history in one go. `null` (the viewport) is what actually works down
-  // there, since the page is the scroller.
-  useEffect(() => {
-    const sentinel = sentinelRef.current
-    if (!sentinel || displayMode !== 'infinite' || !hasMore || searching) return
-    const mq = window.matchMedia(TWO_COLUMN_QUERY)
-    let io: IntersectionObserver | undefined
-    const arm = () => {
-      io?.disconnect()
-      io = new IntersectionObserver(
-        (entries) => {
-          if (entries.some((e) => e.isIntersecting)) onLoadMore()
-        },
-        { root: mq.matches ? listRef.current : null, rootMargin: '120px' },
-      )
-      io.observe(sentinel)
-    }
-    arm()
-    mq.addEventListener('change', arm)
-    return () => {
-      mq.removeEventListener('change', arm)
-      io?.disconnect()
-    }
-  }, [displayMode, hasMore, onLoadMore, history.length, searching])
-
-  // The observer above cannot save us when the list is EMPTY, because the
-  // sentinel it watches lives inside the <ul> and the <ul> is not rendered when
-  // there is nothing to show. That is a real hole, not a theoretical one:
-  // select-all + delete hides every fetched row via pendingDeletes, `shown`
-  // goes to zero, the whole list subtree unmounts, the sentinel goes with it,
-  // and onLoadMore can never fire again -- so a history with more rows on the
-  // server renders as a blank column claiming "No voiceovers yet".
-  //
-  // Deliberately an effect rather than rendering an empty <ul> just to keep the
-  // sentinel alive: above the breakpoint the list IS the scroll root, so a
-  // sentinel with no rows above it sits inside the root's bounds and would
-  // chain-load the entire history at once -- the exact failure the comment
-  // above this describes.
-  //
-  // Terminates on its own. loadMoreHistory() returns early once
-  // loadedRef >= totalRef, and every call that does fetch advances loadedRef.
-  useEffect(() => {
-    if (displayMode !== 'infinite' || shown.length > 0 || !hasMore || searching || loading) return
-    onLoadMore()
-  }, [displayMode, shown.length, hasMore, searching, loading, onLoadMore])
+  }, [pageSize, draft, filters, shownSignature])
 
   // Whether the reader is at the top decides if a finished voiceover may be
   // inserted above them or has to be announced. Reported up rather than decided
@@ -1646,14 +1601,16 @@ export default function HistoryList({
   // comes from main's wide:pb-8.
   //
   // wide:h-full wide:min-h-0 -- this is the link the documented min-h-0 chain
-  // was missing. .result-list is `flex: 1 1 auto; min-height: 0` so it can
-  // shrink below eight rows on a short viewport, but a flex child can only
-  // shrink against a parent with a constrained height, and this section was
-  // height:auto. So the list took its full max-height at every viewport and
-  // the overflow was CLIPPED by the shell's wide:overflow-hidden rather than
-  // scrolling. Measured before this: 716px list and 8.00 visible rows at
-  // 1100/900/768/700, with the root overflowing by 101/233/301px at the last
-  // three.
+  // was missing, and it is now the ONLY thing sizing the list: .result-list has
+  // no max-height any more, so `flex: 1 1 auto; min-height: 0` both grows it
+  // into a tall viewport and shrinks it on a short one. A flex child can only
+  // do either against a parent with a constrained height, and this section was
+  // height:auto -- so the list took its full (then-capped) height at every
+  // viewport and the overflow was CLIPPED by the shell's wide:overflow-hidden
+  // rather than scrolling. Measured before this: 716px list at 1100/900/768/700
+  // with the root overflowing by 101/233/301px at the last three. Measured now,
+  // at 1440 wide: 471 / 539 / 671 / 871 / 1171px of list at viewport heights
+  // 700 / 768 / 900 / 1100 / 1400, root overflow 0 at all five.
   return (
     <div className="mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
       <h2 className="section-rule">
@@ -1839,12 +1796,11 @@ export default function HistoryList({
 
       {shown.length === 0 && active.length === 0 ? (
         <p className="m-0 max-w-full break-all py-5 text-[13px] text-faint wide:min-h-0 wide:flex-1 wide:overflow-y-auto">
-          {loading || (displayMode === 'infinite' && hasMore)
-            ? // `hasMore` matters as much as `loading` here. With every fetched
-              // row hidden by a pending delete, this branch renders while the
-              // effect above is still pulling the next slice -- and telling
-              // someone with voiceovers on the server to go and generate their
-              // first one is simply false.
+          {loading
+            ? // The whole server-filtered history is fetched in one batched
+              // pass, so `loading` alone is the honest condition here: while it
+              // is true there may well be voiceovers on the server, and telling
+              // someone to go and generate their first one would be false.
               'Loading your voiceovers…'
             : searching
               ? // Distinct from the never-generated-anything copy below. Telling
@@ -1938,40 +1894,109 @@ export default function HistoryList({
               })}
             </AnimatePresence>
 
-            {/* The trigger for the next slice, and the only "there is more"
-                signal the user gets. Inside the <ul> so it scrolls with the
-                rows and so IntersectionObserver can scope to this list. */}
-            {displayMode === 'infinite' && hasMore && !searching && (
-              <li className="py-3.5 text-center text-[11px] text-faint" ref={sentinelRef}>
-                Loading more…
-              </li>
-            )}
           </ul>
-          {displayMode === 'paginated' && pageCount > 1 && (
-            <nav className="voiceover-pager" aria-label="Voiceover pages">
-              <ReactPaginate
-                pageCount={pageCount}
-                forcePage={page}
-                onPageChange={({ selected: nextPage }) => {
-                  setPage(nextPage)
-                  lastClickedIndex.current = null
+          {/* The footer. Both halves are ALWAYS rendered once there is a
+              completed row, and that is the fix for a layout shift rather than
+              a preference.
+
+              The page links used to be gated on `pageCount > 1` -- "one page of
+              links is a control that cannot do anything" -- which meant picking
+              100 per page on a 53-voiceover history unmounted the whole nav.
+              Measured before: footer 34.1px with links and 32px without, and
+              the label box growing 96.9 -> 244px as the link row shrank, which
+              dragged the select across the column. So the nav stays mounted and
+              goes INERT instead; `inert` (not just a class) is what stops a
+              control that looks disabled still taking a Tab and a click.
+
+              .voiceover-pager is `flex: none` with a FIXED height, so a page of
+              any size scrolls inside .result-list rather than moving this row
+              or being pushed off a viewport the shell has pinned to 100svh. Its
+              8px side padding mirrors .result-list's, which is what puts the
+              label's left edge on the same pixel as the rows above it. */}
+          {shown.length > 0 && (
+          <div className="voiceover-pager">
+            {/* A native <select>, not the @utility select used by VoicePicker:
+                that one draws its caret with ::after, which a form control does
+                not render. color-scheme is per-theme (tokens.css), so the
+                browser's own caret and option popup already follow the theme.
+
+                The keydown guard is the same one the search field carries.
+                useHotkeys' isTyping() already covers SELECT, so "/" is safe --
+                but Escape is NOT gated by it, and without this an Escape aimed
+                at closing the native option popup would also clear the
+                composer's state behind this column. */}
+            {/* Deliberately the smaller half of the footer: this is a setting
+                you touch once, next to the page buttons you touch constantly. */}
+            <label className="flex items-center gap-1.5 text-[10px] text-faint">
+              <span className="mono uppercase tracking-[0.08em]">Per page</span>
+              <select
+                className="h-7 rounded-sm border border-control bg-surface-raised px-1.5 text-[11px] text-ink outline-none focus:border-audio-line"
+                value={pageSize}
+                aria-label="Voiceovers per page"
+                onKeyDown={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const next = Number(e.target.value) as HistoryPageSize
+                  const size = (PAGE_SIZE_OPTIONS as readonly number[]).includes(next) ? next : DEFAULT_PAGE_SIZE
+                  setPageSize(size)
+                  writeHistoryPageSize(size)
                   listRef.current?.scrollTo({ top: 0 })
-                  listRef.current?.scrollIntoView({ block: 'start' })
                 }}
-                previousLabel="Previous"
-                nextLabel="Next"
-                breakLabel="…"
-                pageRangeDisplayed={3}
-                marginPagesDisplayed={1}
-                containerClassName="voiceover-pager-list"
-                pageClassName="voiceover-pager-page"
-                previousClassName="voiceover-pager-prev"
-                nextClassName="voiceover-pager-next"
-                breakClassName="voiceover-pager-break"
-                activeClassName="is-active"
-                disabledClassName="is-disabled"
-              />
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </label>
+            <nav
+              aria-label="Voiceover pages"
+              // Mounted at every page count. `inert` rather than a class alone:
+              // a control that only LOOKS disabled still takes a Tab and a
+              // click, and this one is right next to the control that put it
+              // in that state.
+              className={pageCount > 1 ? undefined : 'is-disabled'}
+              aria-disabled={pageCount > 1 ? undefined : true}
+              inert={pageCount <= 1}
+            >
+              {/* Buttons, not links: these go nowhere, and a <button disabled>
+                  is removed from the tab order by the platform rather than by
+                  a class. The window is a fixed size (see PAGE_WINDOW), so the
+                  row holds its shape as the selection moves. */}
+              <ul className="voiceover-pager-list">
+                <li className="voiceover-pager-prev">
+                  <button
+                    type="button"
+                    aria-label="Previous page"
+                    disabled={page === 0}
+                    onClick={() => goToPage(page - 1)}
+                  >
+                    ‹
+                  </button>
+                </li>
+                {pageWindow(page, pageCount).map((index) => (
+                  <li key={index} className={['voiceover-pager-page', index === page ? 'is-active' : ''].filter(Boolean).join(' ')}>
+                    <button
+                      type="button"
+                      aria-label={`Page ${index + 1}`}
+                      aria-current={index === page ? 'page' : undefined}
+                      onClick={() => goToPage(index)}
+                    >
+                      {index + 1}
+                    </button>
+                  </li>
+                ))}
+                <li className="voiceover-pager-next">
+                  <button
+                    type="button"
+                    aria-label="Next page"
+                    disabled={page >= pageCount - 1}
+                    onClick={() => goToPage(page + 1)}
+                  >
+                    ›
+                  </button>
+                </li>
+              </ul>
             </nav>
+          </div>
           )}
         </>
       )}

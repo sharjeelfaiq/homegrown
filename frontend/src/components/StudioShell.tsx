@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NewVoiceModal from './NewVoiceModal'
 import ThemeSwitch from './ThemeSwitch'
-import HistoryDisplaySettings from './HistoryDisplaySettings'
 import ParticleText from './ParticleText'
 import VoicePicker from './VoicePicker'
 import ScriptBlock from './ScriptBlock'
@@ -19,7 +18,6 @@ import { useErrorToast } from '../hooks/useErrorToast'
 import Kbd from './Kbd'
 import { useTheme } from '../ThemeContext'
 import { themeMode } from '../theme'
-import { readHistoryDisplayMode, writeHistoryDisplayMode, type HistoryDisplayMode } from '../historyDisplay'
 import { useBootStatus } from '../hooks/useBootStatus'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useFlushOnHide } from '../hooks/useFlushOnHide'
@@ -31,8 +29,6 @@ import UndoCountdown from './UndoCountdown'
 import CursorGrid from './CursorGrid'
 import {
   ApiError,
-  HISTORY_INITIAL_COUNT,
-  HISTORY_LOAD_MORE_COUNT,
   createPreset,
   deleteHistoryEntry,
   deletePreset,
@@ -99,19 +95,10 @@ export default function StudioShell() {
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyNonce, setHistoryNonce] = useState(0)
   const [historyFilters, setHistoryFilters] = useState<VoiceoverFilterState>(restoreVoiceoverFilters)
-  // Not the query text -- just whether one is running. Filtering is
-  // client-side (HistoryList searches names the server has never seen), so
-  // all this has to do is make sure the whole history is loaded while a
-  // search is on.
-  const [searchActive, setSearchActive] = useState(false)
-  const [historyDisplayMode, setHistoryDisplayMode] = useState<HistoryDisplayMode>(readHistoryDisplayMode)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [pendingNew, setPendingNew] = useState(0)
-  // Refs, not state: read inside callbacks that must not be rebuilt (and so
-  // must not re-arm the IntersectionObserver) every time they change.
-  const loadedRef = useRef(0)
-  const totalRef = useRef(0)
-  const loadingMoreRef = useRef(false)
+  // A ref, not state: read inside a callback that must not be rebuilt on every
+  // scroll event.
   const atTopRef = useRef(true)
   const serverFilters = useMemo<HistoryFilters>(() => ({
     presetId: historyFilters.presetId, createdFrom: historyFilters.createdFrom,
@@ -214,93 +201,45 @@ export default function StudioShell() {
     setWakeMessage(boot.detail || 'The voice model failed to load.')
   }, [boot?.phase, boot?.detail])
 
-  // Reload from the top, refetching as many entries as are already on screen so
-  // the user's scroll depth survives. Refetching the whole prefix (rather than
-  // patching the array) is what keeps deletion correct: removing an entry
-  // shifts every later one up by one, so an offset-based append would skip a
-  // voiceover. The same applies when a new one lands at the top.
+  // PULL THE WHOLE SERVER-FILTERED HISTORY, always, in batches of at most 100.
+  // This is the only fetch path now that infinite scroll is gone, and the
+  // completeness is not incidental: HistoryList pages and searches on the
+  // CLIENT, over names the server has never seen, so anything unfetched could
+  // neither be searched nor paged to. A prefix fetch would make page 4 of a
+  // 200-row history render empty.
   //
-  // WHILE A SEARCH IS RUNNING, PULL EVERYTHING. Filtering happens on the
-  // client, so anything not fetched cannot match -- a search over the first
-  // 20 rows of a 200-row history would silently look like the rest do not
-  // exist. totalRef is the count the last response reported; on the very
-  // first load it is 0 and the normal page size applies, and the search can
-  // only start after that has returned anyway.
+  // Refetching from offset 0 (rather than patching the array) is what keeps
+  // deletion correct: removing an entry shifts every later one up by one, so an
+  // offset-based append would skip a voiceover. Entries are de-duplicated by id
+  // for the same reason -- a job finishing between two batches shifts the
+  // offsets under the loop.
   useEffect(() => {
     let cancelled = false
     if (!showingHistory) {
       setHistory([])
       setHistoryTotal(0)
       setHistoryLoading(false)
-      loadedRef.current = 0
-      totalRef.current = 0
       return
     }
-    if (historyDisplayMode === 'paginated') {
-      setHistoryLoading(true)
-      void (async () => {
-        const entries: HistoryEntry[] = []
-        let offset = 0
-        let total = 0
-        while (!cancelled) {
-          const page = await listHistory(100, offset, serverFilters)
-          total = page.total
-          const known = new Set(entries.map((entry) => entry.id))
-          entries.push(...page.history.filter((entry) => !known.has(entry.id)))
-          offset += page.history.length
-          if (page.history.length === 0 || entries.length >= total) break
-        }
-        if (cancelled) return
-        setHistory(entries)
-        setHistoryTotal(total)
-        loadedRef.current = entries.length
-        totalRef.current = total
-      })().catch(() => {}).finally(() => { if (!cancelled) setHistoryLoading(false) })
-      return () => { cancelled = true }
-    }
     setHistoryLoading(true)
-    const want = searchActive
-      ? Math.max(HISTORY_INITIAL_COUNT, totalRef.current)
-      : Math.max(HISTORY_INITIAL_COUNT, loadedRef.current)
-    listHistory(want, 0, serverFilters)
-      .then((r) => {
-        if (cancelled) return
-        setHistory(r.history)
-        setHistoryTotal(r.total)
-        loadedRef.current = r.history.length
-        totalRef.current = r.total
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setHistoryLoading(false) })
-    return () => {
-      cancelled = true
-    }
-  }, [historyNonce, historyDisplayMode, searchActive, serverFilters, showingHistory])
-
-  // Append the next slice. Stable identity on purpose -- HistoryList uses it as
-  // an effect dependency to arm its observer.
-  const loadMoreHistory = useCallback(() => {
-    if (loadingMoreRef.current || loadedRef.current >= totalRef.current) return
-    loadingMoreRef.current = true
-    listHistory(HISTORY_LOAD_MORE_COUNT, loadedRef.current, serverFilters)
-      .then((r) => {
-        setHistoryTotal(r.total)
-        totalRef.current = r.total
-        setHistory((prev) => {
-          // De-duplicated by id because offsets are not stable: a voiceover
-          // finishing between the two requests shifts everything down one, and
-          // a naive append would then show a row twice.
-          const seen = new Set(prev.map((e) => e.id))
-          const next = [...prev, ...r.history.filter((e) => !seen.has(e.id))]
-          loadedRef.current = next.length
-          return next
-        })
-      })
-      .catch(() => {})
-      .finally(() => {
-        loadingMoreRef.current = false
-      })
-  }, [serverFilters])
+    void (async () => {
+      const entries: HistoryEntry[] = []
+      let offset = 0
+      let total = 0
+      while (!cancelled) {
+        const page = await listHistory(100, offset, serverFilters)
+        total = page.total
+        const known = new Set(entries.map((entry) => entry.id))
+        entries.push(...page.history.filter((entry) => !known.has(entry.id)))
+        offset += page.history.length
+        if (page.history.length === 0 || entries.length >= total) break
+      }
+      if (cancelled) return
+      setHistory(entries)
+      setHistoryTotal(total)
+    })().catch(() => {}).finally(() => { if (!cancelled) setHistoryLoading(false) })
+    return () => { cancelled = true }
+  }, [historyNonce, serverFilters, showingHistory])
 
   // A finished job must not scroll the list out from under a reader. At the top
   // the new voiceover belongs there anyway, so refresh in place; scrolled down,
@@ -729,7 +668,6 @@ export default function StudioShell() {
           />
         </h1>
         <div className="absolute inset-y-0 right-(--gutter) z-150 flex items-center gap-1">
-          <HistoryDisplaySettings mode={historyDisplayMode} onChange={(mode) => { setHistoryDisplayMode(mode); writeHistoryDisplayMode(mode) }} />
           <ThemeSwitch />
         </div>
       </div>
@@ -875,10 +813,7 @@ export default function StudioShell() {
             filters={historyFilters}
             onFiltersChange={setHistoryFilters}
             searchRef={searchRef}
-            onSearchActiveChange={setSearchActive}
             total={historyTotal}
-            hasMore={history.length < historyTotal}
-            onLoadMore={loadMoreHistory}
             pendingNew={pendingNew}
             onShowNew={showNewVoiceovers}
             onAtTopChange={handleAtTopChange}
@@ -888,7 +823,6 @@ export default function StudioShell() {
             onError={setError}
             gpuFault={gpuFault != null}
             loading={modelStatus === 'checking' || historyLoading}
-            displayMode={historyDisplayMode}
           />
         </aside>
       </main>

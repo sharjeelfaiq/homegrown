@@ -42,6 +42,10 @@ export default function GenerateButton({
   // job ran; reporting on work in flight is the Voiceovers column's job, and a
   // button that renames itself for a state it does not control reads as a
   // status light rather than as an action.
+  // The plural branch is UNREACHABLE today and is kept rather than deleted:
+  // StudioShell passes `count` as `scriptReady ? 1 : 0`, because one submission
+  // is one script. It costs one line and it is the only thing that would need
+  // writing if batching ever lands. Do not document it as a label users see.
   const label = warming
     ? 'Starting the voice model…'
     : busy
