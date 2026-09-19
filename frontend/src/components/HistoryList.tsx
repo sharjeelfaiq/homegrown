@@ -431,13 +431,23 @@ function PendingRow({
       }
       transition={{ duration: reduced ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
       className={[
-        // No px-2, and its absence is load-bearing: VoiceoverRow has none
-        // either, and .result-list already supplies 8px of side padding. The
-        // extra padding here inset this row 8px on BOTH sides, which is exactly
-        // how far the progress track sat inside a finished row's waveform --
-        // measured in the real app at dL +8.0 / dR -8.1 while a synthetic
-        // harness (which gave both rows px-2) reported 0.0 and hid it.
-        'group/row flex overflow-hidden border-b border-hairline py-[7px] last:border-b-0',
+        // px-2 -mx-2 is padding that COSTS NOTHING, and the pair is the whole
+        // trick. This row is tinted (amber running, purple queued, red
+        // cancelling) while VoiceoverRow is not, so its content sits against a
+        // coloured edge and reads as cramped -- but padding it inward moves the
+        // progress track, and the track is aligned to a finished row's waveform
+        // on both edges. That was measured going wrong once: a bare px-2 here
+        // put the bar 8px inside the waveform at dL +8.0 / dR -8.1 in the real
+        // app, while a synthetic harness (which gave both row kinds px-2)
+        // reported 0.0 and hid it for an iteration.
+        //
+        // The negative margin cancels the padding for layout, so the CONTENT
+        // does not move at all -- only the tint, the hairline and the
+        // is-canceling stripe grow 8px outward into .result-list's own 12px of
+        // side padding. Content stays on the finished row's pixel (dL 0.0 /
+        // dR -0.1 re-measured after this), and the band gains its breathing
+        // room. Keep the two numbers equal.
+        'group/row -mx-2 flex overflow-hidden border-b border-hairline px-2 py-[7px] last:border-b-0',
         queued && 'is-queued',
         failed && 'is-failed',
         // Written after is-queued and is-running in index.css, so it wins the

@@ -395,11 +395,20 @@ No state library — `StudioShell.tsx` holds most state, plus two contexts:
   bullet first claimed `dL`/`dR` of **0.0px**, measured in headless Chrome against the built CSS — but
   the page being measured was a hand-written harness reproducing both row kinds, and it gave both of
   them `px-2`. The real `PendingRow` carried `px-2`; `VoiceoverRow` never did, and `.result-list`
-  already supplies 8px of side padding. So the generating row was double-padded and its track sat
+  supplies the side padding for both. So the generating row was double-padded and its track sat
   **8px inside the waveform at both ends** — measured in the real app at `dL +8.0`, `dR -8.1`, bar
-  516.5px against waveform 532.6px — while the harness reported a confident zero. The padding is gone;
-  re-measured in the real app across 33 samples: `dL` **0.0px**, `dR` **-0.1px** (sub-pixel, bar 532.5
-  against waveform 532.6), holding through the cancelling state.
+  516.5px against waveform 532.6px — while the harness reported a confident zero. Re-measured in the
+  real app across 33 samples once the padding was removed: `dL` **0.0px**, `dR` **-0.1px** (sub-pixel,
+  bar 532.5 against waveform 532.6), holding through the cancelling state.
+  **`px-2` is BACK on `PendingRow`, paired with `-mx-2`, and the pair is the point.** A pending row is
+  tinted — amber running, purple queued, red cancelling — where a finished row is not, so its content
+  sits against a coloured edge and reads as cramped. Padding it inward is the bug above. The negative
+  margin cancels the padding for layout, so only the tint, the hairline and the `is-canceling` stripe
+  grow 8px outward into `.result-list`'s own side padding (now **12px**, widened at the same time so
+  every row kind sits further off the panel edge). Measured after, at 1440×900 / 1440×1400 / 1025×900 /
+  700×900: the band spans 770→1272 against a finished row's 778→1264, i.e. 8px wider on each side,
+  while `dL` is **0.0px** and `dR` **-0.1px** at all four — the content did not move. Keep the two
+  numbers equal, and keep the bleed ≤ the list's padding or the band will clip.
   **The lesson is the measurement, not the padding.** A harness you wrote from the same mental model
   as the code confirms the model, not the code. Measure the built app.
 - **A generating row shows no `Generating` or `Cancelling` word.** The filling amber bar already says

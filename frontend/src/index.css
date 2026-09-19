@@ -542,8 +542,9 @@ body {
    place and its shape whatever the page count does inside it -- including one
    page, where it is rendered inert rather than unmounted.
 
-   The 8px side padding mirrors .result-list's own, which is what puts the
-   label's left edge on the same pixel as the row content above it. */
+   The 12px side padding mirrors .result-list's own, which is what puts the
+   label's left edge on the same pixel as the row content above it -- the two
+   numbers move together or the footer stops lining up with the list. */
 .voiceover-pager {
   /* 5 page buttons (28) + 2 chevrons (28) + 6 gaps (4) = 220. */
   --pager-slot: 220px;
@@ -554,7 +555,7 @@ body {
   gap: 8px;
   height: 36px;
   margin-top: 4px;
-  padding: 0 8px;
+  padding: 0 12px;
 }
 
 .voiceover-pager > label {
@@ -701,7 +702,15 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   margin: 0;
-  padding: 6px 8px;
+  /* 12px of side padding, and it is applied HERE rather than on the rows.
+     Every row kind has to be inset by the same amount: a generating row's
+     progress track is aligned to a finished row's waveform on both edges, so
+     padding one kind and not the other is precisely the bug the PendingRow
+     comment in HistoryList.tsx records (dL +8.0 / dR -8.1, measured in the real
+     app while a harness reported zero). One declaration on the container cannot
+     drift that way. The footer's own `padding: 0 8px` was widened to match, or
+     the "Per page" label stops sitting on the same pixel as the row content. */
+  padding: 6px 12px;
   overflow-y: auto;
   list-style: none;
   /* Keeps the scrollbar off the row content rather than over it. */
