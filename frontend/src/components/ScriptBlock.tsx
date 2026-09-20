@@ -59,7 +59,7 @@ export default function ScriptBlock({
     // focus-within carries the audio accent: focusing the script is the most
     // common interaction in the app and it earns colour at rest, not only
     // during a render.
-    <div className="relative rounded-md border border-hairline bg-surface-card transition-[border-color] duration-(--base) ease-(--ease) focus-within:border-audio-line">
+    <div className="relative rounded-md border border-hairline bg-surface-card transition-[border-color] duration-(--base) ease-(--ease) focus-within:border-audio-line" data-tour="script-editor">
       {/* clamp(240px, 32svh, 340px) -- all three numbers measured, none picked.
           This was 40svh first (a slab: the box owned most of the column), then
           over-corrected to a flat 220px, which is about six lines and too

@@ -165,3 +165,13 @@ export function ThemeIcon({ size = 16 }: IconProps) {
     </svg>
   )
 }
+
+export function HelpIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.6 9a2.55 2.55 0 1 1 4.43 1.72c-.93.93-2.03 1.38-2.03 3.03" strokeLinecap="round" />
+      <path d="M12 17h.01" strokeLinecap="round" strokeWidth={3} />
+    </svg>
+  )
+}

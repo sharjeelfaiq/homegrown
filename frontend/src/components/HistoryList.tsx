@@ -1673,6 +1673,7 @@ export default function HistoryList({
           // nothing on screen. .result-list is flex: 1 1 auto and takes the
           // space instead.
           className="mb-2 flex shrink-0 gap-2"
+          data-tour="voiceover-search-filters"
         >
           <div className="relative min-w-0 flex-1">
           <input

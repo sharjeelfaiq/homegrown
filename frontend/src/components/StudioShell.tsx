@@ -9,7 +9,7 @@ import { restoreVoiceoverFilters, type VoiceoverFilterState } from './VoiceoverF
 import GenerateButton from './GenerateButton'
 import { MAX_SCRIPT_CHARS, UNDO_MS } from '../constants'
 import { presetNameFromFile } from '../format'
-import { AlertIcon, CheckIcon, PlusIcon, TrashIcon } from './Icons'
+import { AlertIcon, CheckIcon, HelpIcon, PlusIcon, TrashIcon } from './Icons'
 import { Toaster, toast } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useJobToasts } from '../hooks/useJobToasts'
@@ -27,6 +27,7 @@ import BootOverlay from './BootOverlay'
 import Modal from './Modal'
 import UndoCountdown from './UndoCountdown'
 import CursorGrid from './CursorGrid'
+import { useOnboardingTour } from '../hooks/useOnboardingTour'
 import {
   ApiError,
   createPreset,
@@ -50,6 +51,7 @@ const LANGUAGE_FALLBACK = 'English'
 
 export default function StudioShell() {
   const [modelStatus, setModelStatus] = useState<'checking' | 'ready' | 'down'>('checking')
+  const { startTour } = useOnboardingTour(modelStatus)
   const [wakeMessage, setWakeMessage] = useState<string | null>(null)
   const [wakeNonce, setWakeNonce] = useState(0)
   const [warmingUp, setWarmingUp] = useState(false)
@@ -667,8 +669,17 @@ export default function StudioShell() {
             gatherDuration={320}
           />
         </h1>
-        <div className="absolute inset-y-0 right-(--gutter) z-150 flex items-center gap-1">
+        <div className="absolute inset-y-0 right-(--gutter) z-150 flex items-center gap-1" data-tour="header-controls">
           <ThemeSwitch />
+          <button
+            type="button"
+            className="icon-btn focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-audio"
+            aria-label="Replay studio tour"
+            title="Replay tour"
+            onClick={() => startTour({ force: true })}
+          >
+            <HelpIcon />
+          </button>
         </div>
       </div>
 
@@ -748,19 +759,22 @@ export default function StudioShell() {
               label, its ::after hairline and the "/" key cap at order-3, and a
               32px dropdown would regrow a ~17px heading -- the mistake the bulk
               bar made. */}
-          <div className="-mb-3 flex min-w-0 items-center justify-end gap-2">
-            <VoicePicker
-              presets={presets}
-              selectedPresetId={voiceId}
-              onSelect={setVoiceId}
-              loading={modelStatus === 'checking'}
-            />
+          <div className="-mb-3 flex min-w-0 items-center justify-end gap-2" data-tour="voice-controls">
+            <div data-tour="voice-picker">
+              <VoicePicker
+                presets={presets}
+                selectedPresetId={voiceId}
+                onSelect={setVoiceId}
+                loading={modelStatus === 'checking'}
+              />
+            </div>
 
             <button
               type="button"
               className="icon-btn size-8 flex-none border border-control bg-control-fill text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
               aria-label="Add a voice"
               title="Add a voice"
+              data-tour="add-voice"
               onClick={() => setVoicesOpen(true)}
             >
               <PlusIcon size={15} />
@@ -792,7 +806,7 @@ export default function StudioShell() {
               time plus chunk progress are more honest. /api/estimate remains
               on the 400ms debounce solely for exact chunking and the
               long-reference-clip warning rendered above. */}
-          <section className="compose-bar flex flex-wrap items-center gap-2">
+          <section className="compose-bar flex flex-wrap items-center gap-2" data-tour="generate-control">
             <GenerateButton
               disabled={!canGenerate}
               blockedReason={blockedReason}
@@ -806,7 +820,7 @@ export default function StudioShell() {
 
         </div>
 
-        <aside className="min-w-0 wide:h-full wide:min-h-0">
+        <aside className="min-w-0 wide:h-full wide:min-h-0" data-tour="voiceovers">
           <HistoryList
             history={history}
             presets={presets}

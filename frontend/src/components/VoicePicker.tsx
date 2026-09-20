@@ -140,13 +140,12 @@ export default function VoicePicker({
   // enough for a typical voice name; longer ones truncate with an ellipsis,
   // which they always did.
   //
-  // Below the breakpoint it gives way instead, down to a 124px floor. At
-  // 320px the row is now [+] 32 + gap 8 + 168, which leaves real slack rather
-  // than the 12px the old 220px left -- that margin vanished the moment a
-  // scrollbar appeared.
+  // It remains 168px at every viewport: a selection is data, not a layout
+  // instruction. Long names truncate inside the stable field rather than
+  // moving the Add Voice control or changing the composer alignment.
   return (
     <div
-      className="relative min-w-[124px] flex-[0_1_168px] wide:min-w-0 wide:flex-[0_0_168px]"
+      className="relative w-[168px] flex-none"
       ref={rootRef}
     >
       {/* aria-label OVERRIDES the button's text content when computing its
