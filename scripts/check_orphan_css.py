@@ -45,9 +45,24 @@ CLASSNAME_ATTR = re.compile(r"className=(?:\"([^\"]*)\"|\{`([^`]*)`\}|\{'([^']*)
 # a letter first made every one of them read as an unused CSS class.
 QUOTED = re.compile(r"['\"`](\s*[A-Za-z][\w\s-]*)['\"`]")
 
-# Selectors that are never written in a className: element/state hooks, and
-# the pseudo-class-only utilities.
-IGNORE = {"mono"}
+# Selectors that are never written in a className: element/state hooks,
+# pseudo-class-only utilities, and classes created by an imported library at
+# runtime. Driver.js appends its popover and SVG overlay directly to body, so
+# its classes cannot appear in a React component even though the scoped tour
+# overrides in index.css are required.
+IGNORE = {
+    "mono",
+    "driver-overlay",
+    "driver-popover",
+    "driver-popover-arrow",
+    "driver-popover-close-btn",
+    "driver-popover-description",
+    "driver-popover-footer",
+    "driver-popover-next-btn",
+    "driver-popover-progress-text",
+    "driver-popover-title",
+    "homegrown-tour",
+}
 
 
 def css_classes() -> dict[str, set[Path]]:
