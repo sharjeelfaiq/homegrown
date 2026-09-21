@@ -1,4 +1,9 @@
-# HANDOFF.md
+# Historical handoff (archived)
+
+> This is an archived handoff from before the current query-backed history
+> implementation. It is retained for historical context only and must not be
+> used as operational documentation. Current behaviour is documented in
+> `README.md`, `docs/workflow.md`, `docs/BUILD.md`, and source code.
 
 > **Historical snapshot.** This was generated from the repo state at a point in time and is kept for
 > its context and open questions. It is *not* maintained. Where it disagrees with `README.md` or

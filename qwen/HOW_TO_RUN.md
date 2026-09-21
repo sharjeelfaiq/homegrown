@@ -1,6 +1,9 @@
 # How to Run FasterQwen3TTS
 
-Verified working end-to-end on: Windows, Python 3.14, NVIDIA GTX 960 (4GB VRAM). These are the exact steps used in that verified run.
+This is a standalone wrapper example, not the Homegrown application installer. For the application,
+use the pinned dependencies in `../backend/requirements.txt` and the root `README.md`. The example has
+been exercised on Windows with a CUDA-capable NVIDIA GPU; available PyTorch wheels depend on the selected
+Python version and platform.
 
 ## 1. Install a CUDA-enabled PyTorch build
 
@@ -14,7 +17,7 @@ Verify:
 ```bash
 python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
-Expect something like `2.12.1+cu126 True <your GPU name>`. If `cuda.is_available()` is `False`, you got a CPU-only wheel — check `pip index versions torch` and the `--index-url` matches your CUDA version and Python version.
+Expect a version ending in `+cu126`, `True`, and your GPU name. If `cuda.is_available()` is `False`, you got a CPU-only wheel — check `pip index versions torch` and the `--index-url` matches your CUDA version and Python version.
 
 ## 2. Install the rest of the dependencies
 

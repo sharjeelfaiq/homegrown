@@ -1544,6 +1544,7 @@ def list_history(
     created_to: Optional[float] = None,
     duration_min: Optional[float] = None,
     duration_max: Optional[float] = None,
+    q: Optional[str] = None,
     user_id: str = Depends(get_current_user),
 ):
     """One page of this user's generations, newest first.
@@ -1557,14 +1558,9 @@ def list_history(
     render. HISTORY_PAGE_MAX caps how much a single request can pull, since
     every entry carries its full script text.
 
-    THERE IS NO `q` PARAMETER, and one was tried and removed rather than never
-    considered. Search is client-side, because two of the three things worth
-    searching are invisible here: a voiceover's display name is a localStorage
-    override per browser (CLAUDE.md is explicit the two name stores must not be
-    unified), and the default "Voiceover 27" is derived from the row's position
-    in the list rather than stored anywhere. A server filter could only ever
-    match the script and the voice name, which would look like a search that
-    randomly ignores what the user typed.
+    `q` searches the canonical voice/preset name stored with each entry. Local
+    display-name overrides remain browser-only and are intentionally not part
+    of this global server search.
     """
     limit = max(1, min(limit, HISTORY_PAGE_MAX))
     offset = max(0, offset)
@@ -1575,6 +1571,7 @@ def list_history(
         raise HTTPException(422, "created_from must not be later than created_to")
     if duration_min is not None and duration_max is not None and duration_min > duration_max:
         raise HTTPException(422, "duration_min must not exceed duration_max")
+    q = (q or "").strip().casefold()
 
     # Authorise before filtering. Retaining the index lets a filtered page
     # carry its stable global Voiceover N number without a client-side full
@@ -1592,9 +1589,11 @@ def list_history(
             continue
         if duration_max is not None and entry.get("duration_s", 0) > duration_max:
             continue
+        if q and q not in str(entry.get("preset_name", "")).casefold():
+            continue
         filtered.append((index, entry))
     page = filtered[offset : offset + limit]
-    is_filtered = preset_id is not None or any(value is not None for value in numeric)
+    is_filtered = preset_id is not None or any(value is not None for value in numeric) or bool(q)
     history = [
         ({**entry, "history_number": len(mine) - index} if is_filtered else entry)
         for index, entry in page

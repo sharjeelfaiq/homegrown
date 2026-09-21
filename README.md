@@ -457,28 +457,21 @@ like an error message, or a card that does not separate from the page.
 
 ### Voiceovers
 
-A **search box** sits under the heading, focused by `Ctrl/Cmd+F` (the shortcut is printed inside the
-field). It filters as you type, with no delay, keeps its query across a reload, limits queries to 100
-characters, and matches a
-voiceover's **name** and the **voice** that
-spoke it — not the script, since a 60,000-character script makes any common word match nearly everything.
-It runs entirely in the browser, because two of the things it searches are not on the server at all: a
-custom name is a `localStorage` override, and the default `Voiceover 27` is derived from the row's
-position. The whole history is always loaded — the app fetches it in batches before the first page
-renders — so a search sees every voiceover, not just the page in front of you. Live rows are filtered by
-voice name just like completed rows.
+A **search box** sits at the top of the Voiceovers column, focused by `Ctrl/Cmd+F`. It keeps its query across a reload,
+limits queries to 100 characters, and does not search scripts. Completed-history searches are sent to the
+server and match the canonical voice name stored with each entry across the complete history. A custom
+voiceover display name is browser-local, so it can additionally narrow only history pages already cached
+in that browser; it cannot be a global server search. Live rows are filtered by voice name locally.
 
 The adjacent **Filters** button opens a compact popover for voice, browser-local
 date range (today, last 7/30 days, or custom), duration, and generation status.
 The button carries the count of applied filters, and its **Clear filters** control
 is disabled until at least one of them is. Voice/date/duration filters are applied
 by the history API before pagination.
-Completed voiceovers are always paginated. The app fetches the complete
-filtered history in batches of at most 100 entries, so the browser-local name
-search and every page are complete and accurate. Live queue rows remain above
-every completed-history page.
-The name/voice search remains browser-local so it can include custom display
-names. Generating, queued, and failed rows are live client-side queue data:
+Completed voiceovers are server-paginated; only the active page is requested and the next page is
+prefetched after a successful online response. Pages are cached in memory and persisted in local storage
+for up to 24 hours, then revalidated in the background. The list keeps cached rows visible while it
+refreshes. Generating, queued, and failed rows are live client-side queue data:
 **All** shows live work above matching completed rows, while active and failed
 views show only their respective live rows.
 
@@ -487,8 +480,9 @@ fixed row cap, so a taller viewport shows more rows before it has to scroll (mea
 6 rows at a 900px viewport, 8 at 1100px, 11 at 1400px). A **Per page** dropdown at the bottom-left of
 the column chooses **10** (the default), **25**, **50** or **100** completed rows per page, and the
 choice is remembered per browser. The page controls sit beside it in a fixed slot and stay there at
-every page size — when everything fits on one page they are shown disabled rather than removed, so
-changing the page size never shifts the layout. Active queue rows remain above the completed rows. On a desktop-width
+every page size — at five or more pages they show a sliding window of five numbered buttons, keeping the
+current page visible as the chevrons move through the history. When everything fits on one page they are shown disabled
+rather than removed, so changing the page size never shifts the layout. Active queue rows remain above the completed rows. On a desktop-width
 viewport the page itself does not scroll at all; the list is the only scrolling region.
 Below 1025px the layout is one column — composer first, Voiceovers under it — and the page
 scrolls normally instead of the list. The script textarea is a
@@ -518,11 +512,14 @@ so a voiceover does not visibly gain characters at the moment it finishes.
 seconds; the request is only sent when that expires, then the history refresh removes the row. Leaving
 the page during that window commits the delete with a keepalive request.
 
-**Select rows** with the checkbox that appears on hover, **shift-click** for a range, or use the
-checkbox in the `VOICEOVERS` heading to take everything on screen — that means the current page only,
-at whatever page size is selected; with a search running it means
-the matches, and rows you selected before searching stay selected. A floating bar then offers
-**Download** (all of them as one `.zip`) and **Delete** (one toast, one Undo, for the whole batch).
+The row below search and filters is a permanently reserved context toolbar: it shows **All voiceovers**
+and the visible total by default, or a result count and **Clear** while filtering. **Select rows** with
+the checkbox that appears on hover, **shift-click** for a range, or use the toolbar checkbox to take
+everything on screen — that means the current page only, at whatever page size is selected; with a
+search running it means the matches, and rows selected before searching stay selected. Selection takes
+precedence in that toolbar, offering **Download**, **Delete**, and **Clear selection**. One selected
+voiceover downloads its MP3 directly; several download as one `.zip`. Delete remains one toast and one
+Undo for the whole batch.
 
 A voiceover finishing while you are scrolled down does not move you; it is counted, and an **N new
 voiceovers — show** button appears above the list.
@@ -579,7 +576,7 @@ All routes are under `/api`, and every request is the same single local user.
 | POST | `/api/queue/{id}/retry` | Resubmit a failed job's own script → same shape as `/api/generate` |
 | DELETE | `/api/queue/{id}` | Dismiss a **canceled or failed** job. Finished ones are deleted through `/api/history` |
 | POST | `/api/queue/reorder` | Reorder queued jobs |
-| GET | `/api/history` | Completed voiceovers. Optional `preset_id`, `created_from`, `created_to`, `duration_min`, and `duration_max` filter before pagination. No `q` — search is client-side |
+| GET | `/api/history` | Completed voiceovers, newest first. Optional `preset_id`, `created_from`, `created_to`, `duration_min`, `duration_max`, and canonical voice-name `q` filter before `limit`/`offset` pagination |
 | POST | `/api/history/zip` | Several voiceovers as one `.zip` (`{ids, names}`). `names` carries the display names, which the server has never seen |
 | DELETE | `/api/history/{id}` | Delete an entry and its audio |
 | GET | `/api/download/{filename}?name=` | Download with a chosen filename |
@@ -652,8 +649,9 @@ nine themes update immediately.
 - **No partial audio delivery.** Streaming is used internally so cancel lands quickly, not to stream to the
   client.
 - **Not reproducible.** Sampling is unseeded — see the note at the top.
-- **No test suite.** There is no pytest, no vitest, no test files. Verification is `npm run lint`,
-  `npm run build` (which is also the typecheck), and running the app. Do not trust any claim that tests pass.
+- **Automated coverage is focused, not exhaustive.** Frontend unit tests run with `npm run test` (Vitest)
+  and cover history-query normalization/cache-key isolation plus the sliding history-pager window. `npm run lint` and
+  `npm run build` remain required; browser interaction and real model generation still need manual QA.
 - **Search covers names and voices, not scripts.** The voiceovers column has a search box
   (`Ctrl/Cmd+F`) matching a voiceover's name and the voice that spoke it. Script text is deliberately
   excluded: a script runs to 60,000 characters, so a common word matches nearly everything. The voice list

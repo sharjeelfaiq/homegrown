@@ -221,7 +221,7 @@ CHUNK_ATTEMPTS times, and a median deliberately discards exactly those runs --
 measured p90 32.4 s/chunk against p50 19.3.
 
 If this is attempted again, score candidates on OVERRUN RATE (fraction of jobs
-where generation_s > estimated_s) with mean error reported alongside, and sweep
+where generation_s exceeds a future estimate) with mean error reported alongside, and sweep
 the percentile as well as the overhead term. generation_s and total_chunks are
 still recorded on every history entry for exactly that purpose.
 
@@ -229,8 +229,10 @@ Question: the estimate beside Generate was wrong by a mean of 50%, and
 the ROUNDED STRING the user reads was wrong on 65% of jobs. What model
 should replace chars/second?
 
-Method: 24 completed jobs from this machine's history.json, which
-stores estimated_s beside generation_s. Chunk counts recomputed with
+Method: 24 completed jobs from this machine's history.json. The historical
+`estimated_s` values used for this experiment are not written by the current
+application; current entries retain measured `generation_s` and `total_chunks`.
+Chunk counts were recomputed with
 the real chunk_text()/_seq_budget() for each entry's preset. Scored by
 leave-one-out: predict each job from the other 23 only.
 
@@ -289,9 +291,9 @@ than a fitted constant.
 
 Limits: 24 jobs, one machine, two voices carrying 21 of them. The two
 single-job voices contribute one leave-one-out point each and should
-not be read as per-voice measurements. history.json keeps estimated_s
-beside generation_s precisely so the next change can be scored the
-same way.
+not be read as per-voice measurements. Current history entries keep measured
+`generation_s` and `total_chunks`; a future estimate experiment must persist
+its prediction explicitly if it needs comparable scoring.
 
 
 REFERENCE-CLIP LENGTH vs CHUNK BUDGET (2026-09-12, GTX 970 sm_52)

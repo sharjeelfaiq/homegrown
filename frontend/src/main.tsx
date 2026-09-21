@@ -13,6 +13,8 @@ import App from './App.tsx'
 import { AudioActivityProvider } from './AudioActivityContext.tsx'
 import { GenerationActivityProvider } from './GenerationActivityContext.tsx'
 import { ThemeProvider } from './ThemeContext.tsx'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { historyQueryClient } from './historyQuery.ts'
 
 // ThemeProvider is outermost, and outside BrowserRouter: the theme is
 // route-independent, and it is consumed from the header (ThemeSwitch), from
@@ -21,6 +23,7 @@ import { ThemeProvider } from './ThemeContext.tsx'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
+      <QueryClientProvider client={historyQueryClient}>
       <BrowserRouter>
         <AudioActivityProvider>
           <GenerationActivityProvider>
@@ -28,6 +31,7 @@ createRoot(document.getElementById('root')!).render(
           </GenerationActivityProvider>
         </AudioActivityProvider>
       </BrowserRouter>
+      </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,
 )

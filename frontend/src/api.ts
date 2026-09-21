@@ -59,6 +59,8 @@ export interface HistoryFilters {
   createdTo?: number
   durationMin?: number
   durationMax?: number
+  /** Canonical server-owned voice name search. */
+  query?: string
 }
 
 export interface GenerateJobStart {
@@ -241,22 +243,9 @@ export interface HistoryPage {
   total: number
 }
 
-// The default page size for a bare listHistory() call, and nothing more.
-//
-// There WAS a second constant here, HISTORY_LOAD_MORE_COUNT, and it went with
-// infinite scroll: the column pages on the client now, so nothing appends a
-// slice at a time. StudioShell asks for 100 per batch explicitly and keeps
-// going until it holds the whole server-filtered history -- client-side paging
-// and the name search both need all of it.
 export const HISTORY_INITIAL_COUNT = 20
 
-/** One page of history, newest first.
- *
- * No server-side search parameter. Filtering is client-side (HistoryList),
- * because two of the three things worth searching do not exist on the server:
- * a voiceover's display name is a localStorage override, and the default
- * "Voiceover 27" is derived from the row's position rather than stored at all.
- */
+/** One newest-first, server-filtered history page. */
 export function listHistory(
   limit: number = HISTORY_INITIAL_COUNT,
   offset = 0,
@@ -268,6 +257,7 @@ export function listHistory(
   if (filters.createdTo !== undefined) query.set('created_to', String(filters.createdTo))
   if (filters.durationMin !== undefined) query.set('duration_min', String(filters.durationMin))
   if (filters.durationMax !== undefined) query.set('duration_max', String(filters.durationMax))
+  if (filters.query?.trim()) query.set('q', filters.query.trim())
   return authFetch(apiUrl(`/api/history?${query}`)).then(
     parseOrThrow<HistoryPage>,
   )

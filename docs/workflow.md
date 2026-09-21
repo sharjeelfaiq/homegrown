@@ -26,10 +26,10 @@ Two things worth knowing about that:
 
 For the built single-port LAN setup instead, see `README.md`.
 
-There is no status badge to wait for. uvicorn runs the model load *before* it binds the socket, so until
-the model is ready the port simply refuses connections and every API call fails — that is expected, not a
-fault. `dev.sh` prints `model ready on <device>` when it is safe to generate. Until then the Generate
-button reads **"Waiting for the voice model"**.
+The application shows a full-screen startup overlay while it waits. uvicorn loads the model *before* it
+binds the socket, so a refused connection during startup is expected rather than a fault. In `vite dev`,
+the overlay reads the backend's `boot_status.json` phases through the dev server; in other builds it shows
+the elapsed wait. `dev.sh` prints `model ready on <device>` when generation is available.
 
 ## 2. Add a voice
 
@@ -205,33 +205,28 @@ they describe a condition rather than an event: the model-down row above (which 
 CPU-fallback notice, and the long-reference-clip warning — which names the clip's length and the chunk
 size it forces, since the clip is the thing you can actually change.
 
-**While the backend is still starting**, a status row sits above the script showing the phase
-(*Tuning*, *Almost there*), a ticking elapsed counter and a progress bar, and both columns say they are
-loading rather than that they are empty. In `vite dev` the phase comes from the backend's own
-`boot_status.json`; elsewhere it falls back to the elapsed counter alone. A model that fails to load
-reports its actual error here rather than timing out after ten minutes.
+**While the backend is still starting**, a full-screen overlay blocks the Studio and shows the phase
+(*Tuning*, *Almost there*) plus backend detail when it is available. In `vite dev`, the phase comes from
+the backend's `boot_status.json`; elsewhere it falls back to the elapsed wait. If model loading fails,
+the overlay closes and the Studio shows the actionable model-down state instead of leaving the app stuck.
 
 ## 5. Review past voiceovers
 
 Finished jobs land in **Voiceovers** in the right-hand column, newest first.
 
-A **search box** sits under the heading, focused by **Ctrl/Cmd+F** — the shortcut is printed inside the
-field so you find it before pressing it. It filters as you type with no delay, keeps its query across
-a reload, is limited to 100 characters, and matches a voiceover's
-**name** and the **voice** that spoke it. It deliberately does **not** search the script: a script runs to
-60,000 characters, so a common word matches nearly everything and the list is not narrowed. The whole
-search runs in the browser, because two of the things it matches are not on the server at all — a custom
-name is a `localStorage` override, and the default `Voiceover 27` comes from the row's position rather
-than being stored. The full history is always loaded — it is fetched in batches before the first page
-renders — so a search sees every voiceover rather than only the current page. Live rows are filtered by
-their voice name as well.
+A **search box** sits at the top of the Voiceovers column, focused by **Ctrl/Cmd+F**. It is persisted, limited to 100
+characters, and does not search scripts. The canonical voice name is searched by the history API across
+all completed history. Custom voiceover display names remain browser-local, so they can narrow only pages
+already loaded in this browser. Live rows are filtered locally by voice name.
 
 Completed voiceovers are **paginated**, and a **Per page** dropdown at the bottom-left of the column
 chooses how many a page shows — **10** (the default), **25**, **50** or **100** — remembered per
-browser. The page controls sit beside it and stay in place at every size — once everything fits on one
-page they are greyed out and inactive rather than disappearing, so the column never shifts. The app
-fetches the complete already-server-filtered history in cancellable batches of at most 100 entries
-before the first page renders, then applies the browser-local name search over all of it. The column
+browser. The page controls sit beside it and stay in place at every size — at five or more pages they
+show a sliding window of five numbered buttons, always including the current page. Once
+everything fits on one page they are greyed out and inactive rather than disappearing, so the column never shifts. The app
+requests one server page at a time, prefetches the next page after a successful online response, and
+persists cached history pages locally for 24 hours. Cached rows remain visible while fresh data is fetched.
+The column
 itself **fills the height of the window** (about six rows on a 900px-tall screen, eleven on a 1400px
 one) and scrolls internally when a page is longer than that. Live, queued, canceling, and failed rows
 remain above every completed-history page. On a desktop-width window there is no page scroll at all —
@@ -265,10 +260,12 @@ one-second refresh.
 delete is sent only when it expires, then the history refresh removes it. Leaving the page in that
 window commits the delete with a keepalive request.
 
-**Select several** — the checkbox appears on hover, shift-click takes a range, and the checkbox in the
-heading takes everything currently on screen (the current page, at whatever page size is selected). A
-floating bar offers **Download** (one `.zip`) and
-**Delete** (one Undo for the batch).
+The permanently reserved context toolbar below search and filters shows **All voiceovers** and the total
+by default, or a result count and **Clear** while filtering. **Select several** — the checkbox appears
+on hover, shift-click takes a range, and the toolbar checkbox takes everything currently on screen (the
+current page, at whatever page size is selected). Selection takes precedence in the toolbar, which
+offers **Download**, **Delete**, and **Clear selection**. One selection downloads its MP3 directly;
+multiple selections download one `.zip`. Delete still provides one Undo for the batch.
 
 A voiceover finishing while you are scrolled down the list does not move you. It is counted instead, and an
 **N new voiceovers — show** button appears above the list.

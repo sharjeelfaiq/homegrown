@@ -95,7 +95,7 @@ python scripts/check_contrast.py
 python scripts/check_palette.py
 python scripts/check_orphan_css.py
 python scripts/check_desktop_port.py
-( cd frontend && npm install --no-fund --no-audit --loglevel=error && npm run lint )
+( cd frontend && npm install --no-fund --no-audit --loglevel=error && npm run test && npm run lint )
 # After npm install, because it needs the Tailwind CLI from frontend/node_modules.
 python scripts/build_splash.py --check
 

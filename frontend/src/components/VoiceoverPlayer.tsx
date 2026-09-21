@@ -21,7 +21,7 @@ interface Props {
  * and live meter keep reacting.
  *
  * Deliberately carries no text readout: TransportTime renders the position and
- * total on the row's third line, off the same audio element. The sample rate
+ * total on the row's transport line, off the same audio element. The sample rate
  * used to sit here and is gone -- it told the user nothing they could act on
  * (it is always the model's 24kHz). */
 export default function VoiceoverPlayer({

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion, useIsPresent } from 'framer-motion'
 import {
   ApiError,
@@ -28,39 +29,14 @@ import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrossIcon, DownloadIcon, MoreIco
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
 import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
-import Dock, { type DockItemData } from './Dock'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from '../historyPageSize'
-
-/** How many numbered buttons the pager shows, whatever page you are on.
- *
- * This is the whole reason the pager is hand-rolled rather than react-paginate.
- * That component sizes its own output from `pageRangeDisplayed` and
- * `marginPagesDisplayed`, and the number of buttons it emits CHANGES WITH THE
- * SELECTED PAGE: with six pages it rendered `< 1 2 3 … 6 >` on page 1 and
- * `< 1 2 3 4 5 6 >` on page 2, so clicking a page number reshaped the control
- * that was just clicked. No combination of its two props fixes that -- the
- * break only appears when there is a gap to collapse, so the count is a
- * function of the selection by construction.
- *
- * A sliding window of a fixed size has no such state: the count is
- * `min(PAGE_WINDOW, pageCount)` at every selection, so the row is the same
- * shape on every page. It also drops the ellipsis, which was only ever a
- * symptom of the variable window. */
-const PAGE_WINDOW = 5
-
-/** The window's page indices, clamped so it never runs past either end. */
-function pageWindow(page: number, pageCount: number): number[] {
-  const size = Math.min(PAGE_WINDOW, Math.max(1, pageCount))
-  const start = Math.max(0, Math.min(page - Math.floor(size / 2), pageCount - size))
-  return Array.from({ length: size }, (_, i) => start + i)
-}
+import { fetchHistoryPage, historyQueryKey, normalizeHistoryRequest } from '../historyQuery'
+import { pageControls } from '../historyPager'
 
 interface Props {
-  history: HistoryEntry[]
   presets: import('../api').Preset[]
   filters: VoiceoverFilterState
   onFiltersChange: (filters: VoiceoverFilterState) => void
-  total: number
   /** Focused (and selected) by the Ctrl/Cmd+F shortcut, which is bound in
    *  StudioShell -- the same arrangement as the script box and "/". */
   searchRef?: RefObject<HTMLInputElement | null>
@@ -73,8 +49,6 @@ interface Props {
   onAtTopChange: (atTop: boolean) => void
   onDelete: (id: string, opts?: { unloading?: boolean }) => void
   onRequeue: (entry: HistoryEntry) => void
-  /** Fetches and restores a pending job's full script on demand. */
-  onReusePendingScript: (jobId: string) => void
   /** Surfaces a failed Retry. Without it an ApiError from the retry endpoint
    * is swallowed and the click looks like it did nothing -- the exact failure
    * mode this whole row state exists to remove. */
@@ -85,7 +59,6 @@ interface Props {
   /** True before the first fetch has returned. Without it an empty column
    * tells a starting-up user to "pick a voice and press Generate", which is
    * advice they cannot act on yet. */
-  loading?: boolean
 }
 
 /** Past this many chunks the boundary ticks fall below ~4px apart and read as
@@ -98,6 +71,71 @@ const MAX_TICKS = 60
  * client-side filter that is persisted and restored with the workspace. */
 const MAX_SEARCH_CHARS = 100
 
+const PREVIEW_CHARS = 80
+
+function truncate(text: string, max = PREVIEW_CHARS): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+/** A single selected row should behave exactly like its row-level Download
+ * action. ZIP creation is reserved for an actual batch. */
+export function selectedDownloadKind(selectedCount: number): 'mp3' | 'zip' {
+  return selectedCount === 1 ? 'mp3' : 'zip'
+}
+
+export interface RowSelectionModifiers {
+  additive: boolean
+  range: boolean
+}
+
+/** Standard desktop-list selection: plain click replaces, Ctrl/Cmd toggles,
+ * and Shift adds the visible range from its anchor. */
+export function selectionAfterRowClick(
+  selected: ReadonlySet<string>,
+  rowIds: readonly string[],
+  index: number,
+  anchor: number | null,
+  { additive, range }: RowSelectionModifiers,
+): Set<string> {
+  const id = rowIds[index]
+  if (!id) return new Set(selected)
+  const resolvedAnchor = anchor ?? rowIds.findIndex((rowId) => selected.has(rowId))
+  if (range && resolvedAnchor >= 0 && rowIds[resolvedAnchor]) {
+    const next = new Set(selected)
+    const [from, to] = resolvedAnchor < index ? [resolvedAnchor, index] : [index, resolvedAnchor]
+    for (let i = from; i <= to; i++) next.add(rowIds[i])
+    return next
+  }
+  if (additive) {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  }
+  return new Set([id])
+}
+
+/** Apply a contiguous drag range against the selection that existed before the
+ * gesture. Recomputing from that base makes Ctrl/Cmd-drag stable while the
+ * pointer crosses rows instead of toggling the same row repeatedly. */
+export function selectionAfterRowDrag(
+  selected: ReadonlySet<string>,
+  rowIds: readonly string[],
+  start: number,
+  end: number,
+  mode: 'replace' | 'add' | 'toggle',
+): Set<string> {
+  const next = mode === 'replace' ? new Set<string>() : new Set(selected)
+  const [from, to] = start < end ? [start, end] : [end, start]
+  for (let i = from; i <= to; i++) {
+    const id = rowIds[i]
+    if (!id) continue
+    if (mode === 'toggle' && selected.has(id)) next.delete(id)
+    else next.add(id)
+  }
+  return next
+}
+
 /* The two-column layout, and with it the fixed-height scrolling Voiceovers
  * block. Mirrors the `@media (min-width: 1025px)` / `(max-width: 1024px)` pair
  * in index.css -- above it the list scrolls, below it the page does, and the two
@@ -105,37 +143,6 @@ const MAX_SEARCH_CHARS = 100
  * together; nothing enforces it. */
 
 const TWO_COLUMN_QUERY = '(min-width: 1025px)'
-
-/** 80, matching the backend's own `text_preview` cut (main.py: `text[:80]`).
- *
- * It used to be 96, which meant the SAME voiceover showed two different
- * previews either side of finishing: while running the row rendered the
- * backend's already-shortened 80 chars ending in three ASCII dots -- a 96-char
- * cut can never fire on an 83-char string -- and the moment it landed the row
- * re-rendered from the full text at 96 chars ending in a real ellipsis. The
- * preview visibly grew and changed punctuation at the completion boundary.
- *
- * Reconciled on the CLIENT rather than by raising the backend's cut: that 80
- * exists to keep /api/queue small at a 1s poll cadence, and every entry
- * carries one. */
-const PREVIEW_CHARS = 80
-
-
-function truncate(text: string, max = PREVIEW_CHARS): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text
-}
-
-/** The backend ends its cut with "...", this file with "…". Normalise to one.
- *
- *  The trailing "..." is also the only signal that anything was cut, so it is
- *  swapped rather than stripped: strip it and the remainder is exactly
- *  PREVIEW_CHARS, `truncate` does not re-fire (it needs `>`, not `>=`), and a
- *  shortened preview would render with no terminator at all while the finished
- *  row showed one. */
-function previewOf(backendPreview: string): string {
-  if (backendPreview.endsWith('...')) return `${backendPreview.slice(0, -3)}…`
-  return truncate(backendPreview)
-}
 
 /** The rename field plus the voice name -- line one of every row, finished or
  * in progress. Shared rather than duplicated: the whole point of the
@@ -157,8 +164,10 @@ function RowHead({
   placeholder,
   onCommitRename,
   voiceName,
+  timestamp,
+  timestampTitle,
   nameTitle,
-}: NameControl & { voiceName: string; nameTitle: string }) {
+}: NameControl & { voiceName: string; nameTitle: string; timestamp?: number; timestampTitle?: string }) {
   return (
     // Name left, voice right.
     <div className="flex min-h-[26px] min-w-0 items-center justify-between gap-2">
@@ -171,9 +180,20 @@ function RowHead({
         className="result-name voiceover-name"
       />
 
-      <span className="mono ml-auto max-w-[55%] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-faint" title={`Voice: ${voiceName}`}>
-        {voiceName}
-      </span>
+      <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-3">
+        <span className="mono min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-right text-[11px] text-faint" title={`Voice: ${voiceName}`}>
+          {voiceName}
+        </span>
+        {timestamp !== undefined && (
+          <time
+            className="result-stamp mono"
+            dateTime={new Date(timestamp * 1000).toISOString()}
+            title={timestampTitle}
+          >
+            {formatTimeOfDay(timestamp)}
+          </time>
+        )}
+      </div>
     </div>
   )
 }
@@ -264,11 +284,8 @@ function TransportTime({
  * hold that lock and stall every other queued job. Cancel is the honest
  * control, and it lands at the next chunk boundary (~1s).
  *
- * Download is absent because there is nothing to download yet, and Reuse is
- * present but DISABLED for the same reason -- the script preview's control only
- * becomes live once the row is a voiceover. The fetch behind it (the complete
- * text, pulled on demand rather than on every one-second queue poll) is
- * therefore currently unreachable; see onReuseScript below. */
+ * Download is absent because there is nothing to download yet. Pending rows
+ * keep their generation controls, but no longer expose a script preview. */
 function PendingRow({
   job,
   nameControl,
@@ -280,7 +297,6 @@ function PendingRow({
   onMoveDown,
   reordering = false,
   onRetry,
-  onReuseScript,
 }: {
   job: QueueEntry
   nameControl: NameControl
@@ -294,8 +310,6 @@ function PendingRow({
   reordering?: boolean
   /** Only meaningful on a failed row; undefined elsewhere. */
   onRetry?: () => void
-  /** Present for running, canceling, and queued jobs; failed jobs omit it. */
-  onReuseScript?: () => void
 }) {
   const running = job.status === 'running'
   const canceling = job.status === 'canceling'
@@ -469,7 +483,13 @@ function PendingRow({
         animate={{ x: sliding ? '100%' : 0 }}
         transition={{ duration: reduced || !sliding ? 0 : 0.22, ease: [0.2, 0, 0, 1] }}
       >
-      <RowHead {...nameControl} voiceName={job.preset_name} nameTitle="Click to rename" />
+      <RowHead
+        {...nameControl}
+        voiceName={job.preset_name}
+        nameTitle="Click to rename"
+        timestamp={job.submitted_at}
+        timestampTitle={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}
+      />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
           so the two row kinds line up down the column. */}
@@ -652,48 +672,6 @@ function PendingRow({
         </div>
       </div>
 
-      {/* Script left, submitted-at right -- the same one-left-fact,
-          one-right-fact pairing lines 1 and 2 already use, which is what keeps
-          this narrow column readable. The preview gives up exactly the
-          timestamp's width; it does NOT get a line of its own -- every row in
-          this list is one height, and a second line here would break that. */}
-      <div className="flex min-w-0 items-center gap-2.5">
-        {failed || !onReuseScript ? (
-          <p className="result-text m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-faint" title={failed ? reason : job.text_preview}>
-            {failed ? truncate(reason) : previewOf(job.text_preview)}
-          </p>
-        ) : (
-          // Disabled until the job lands. The affordance stays visible --
-          // removing it would make the control appear only once, at the moment
-          // the row is replaced -- but it does nothing while the voiceover is
-          // still being made. Consequence worth stating: `onReusePendingScript`
-          // and the `GET /api/queue/{id}/script` endpoint behind it are now
-          // unreachable from the UI. Both are left wired, because re-enabling
-          // this is deleting one word.
-          <button
-            type="button"
-            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint enabled:hover:text-ink disabled:opacity-55"
-            title={job.text_preview}
-            aria-label={`Reuse the script of ${nameControl.name || nameControl.placeholder || 'this pending voiceover'}`}
-            disabled
-            onClick={onReuseScript}
-          >
-            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-              {previewOf(job.text_preview)}
-            </span>
-            <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
-          </button>
-        )}
-        {/* When it was SENT, not when it will finish -- a queued row has no
-            other indication of how long it has been waiting. */}
-        <time
-          className="result-stamp mono"
-          dateTime={new Date(job.submitted_at * 1000).toISOString()}
-          title={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}
-        >
-          {formatTimeOfDay(job.submitted_at)}
-        </time>
-      </div>
       </motion.div>
     </motion.li>
   )
@@ -709,10 +687,11 @@ function VoiceoverRow({
   nameControl,
   name,
   downloadHref,
-  onRequeue,
   onDelete,
+  onRequeue,
   selected,
-  onToggleSelect,
+  onSelect,
+  rowIndex,
   animateExit,
   menuPlacement = 'up',
 }: {
@@ -720,10 +699,11 @@ function VoiceoverRow({
   nameControl: NameControl
   name: string
   downloadHref: string
-  onRequeue: () => void
   onDelete: () => void
+  onRequeue: () => void
   selected: boolean
-  onToggleSelect: (shiftKey: boolean) => void
+  onSelect: (modifiers: RowSelectionModifiers) => void
+  rowIndex: number
   animateExit: boolean
   menuPlacement?: 'up' | 'down'
 }) {
@@ -749,6 +729,20 @@ function VoiceoverRow({
     }
   }, [menuOpen])
 
+  function isInteractiveTarget(event: ReactMouseEvent | ReactKeyboardEvent) {
+    const target = event.target as HTMLElement
+    return target.closest('a, button, input, [role="menu"], [role="slider"]') !== null
+  }
+
+  function selectFromRow(event: ReactMouseEvent | ReactKeyboardEvent) {
+    if (isInteractiveTarget(event)) return
+    const nativeEvent = event.nativeEvent
+    onSelect({
+      additive: 'ctrlKey' in nativeEvent && (nativeEvent.ctrlKey || nativeEvent.metaKey),
+      range: 'shiftKey' in nativeEvent && nativeEvent.shiftKey,
+    })
+  }
+
   return (
     // EXIT ONLY -- no initial/animate. The three ways a row appears here are a
     // job completing (which is a handoff from a PendingRow in the same slot, so
@@ -768,7 +762,18 @@ function VoiceoverRow({
         ? { opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }
         : undefined}
       transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
-      className={`group/row ${selected ? 'is-selected' : ''} flex ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline py-[7px] last:border-b-0`}>
+      className={`group/row ${selected ? 'is-selected' : ''} -mx-2 flex cursor-default ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline px-2 py-[7px] last:border-b-0`}
+      tabIndex={0}
+      aria-label={`Select ${name}`}
+      aria-selected={selected}
+      data-voiceover-row-index={rowIndex}
+      onClick={selectFromRow}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        if (isInteractiveTarget(event)) return
+        event.preventDefault()
+        selectFromRow(event)
+      }}>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <RowHead
         {...nameControl}
@@ -792,22 +797,6 @@ function VoiceoverRow({
         <TransportTime audioRef={audioRef} fallbackDurationS={entry.duration_s} />
 
         <div className="result-actions flex flex-none items-center gap-0.5" ref={menuRef}>
-          {/* Selection lives in the action strip, rather than reserving a left
-              gutter on every row. It is subtly visible at rest, then brightens
-              on hover, focus, or selection without moving row content. */}
-          <input
-            type="checkbox"
-            className={`size-3.5 flex-none accent-audio transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100 ${
-              selected ? 'opacity-100' : 'opacity-45'
-            }`}
-            checked={selected}
-            // onChange, not onClick, so keyboard selection works too. A native
-            // click carries shiftKey; a keyboard change correctly does not.
-            onChange={(e) =>
-              onToggleSelect('shiftKey' in e.nativeEvent && (e.nativeEvent as MouseEvent).shiftKey)
-            }
-            aria-label={`Select ${name}`}
-          />
           <div className="row-overflow-action relative flex flex-none opacity-70 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
             <button type="button" className="icon-btn" aria-label={`More actions for ${name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="More actions" onClick={() => setMenuOpen((open) => !open)}>
               <MoreIcon size={15} />
@@ -822,10 +811,7 @@ function VoiceoverRow({
         </div>
       </div>
 
-      {/* The script preview is also the direct route to reusing it. This keeps
-          the common follow-up action beside the text it acts on instead of
-          burying it under the row's overflow menu. */}
-      <div className="flex min-h-7 min-w-0 items-center gap-2.5">
+      <div className="flex min-h-7 min-w-0 items-center gap-3">
         <button
           type="button"
           className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
@@ -838,7 +824,6 @@ function VoiceoverRow({
           </span>
           <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
         </button>
-        {/* Outside the reuse button so the timestamp remains a separate fact. */}
         <time
           className="result-stamp mono"
           dateTime={new Date(entry.created_at * 1000).toISOString()}
@@ -847,6 +832,7 @@ function VoiceoverRow({
           {formatTimeOfDay(entry.created_at)}
         </time>
       </div>
+
       </div>
     </motion.li>
   )
@@ -855,11 +841,9 @@ function VoiceoverRow({
 /** Generated voiceovers, newest first, one page at a time -- plus whatever is
  * currently being generated, as the first rows.
  *
- * Each row is three lines: name and voice, then the transport and actions, then
- * the position/total clock and the script preview. The column is only --aside
- * wide, so pairing one left-aligned fact with one right-aligned fact per line
- * is what keeps every value readable instead of competing for the same run of
- * pixels.
+ * Finished rows use a header, transport/actions line, and reusable transcript
+ * preview line. The header constrains and truncates its reference facts so the
+ * layout stays readable at narrow widths.
  *
  * The in-progress rows come from the shared queue poller, not from a poll of
  * their own, and they use the same row layout so a job does not visibly jump
@@ -887,24 +871,19 @@ function VoiceoverRow({
  *   .result-actions  two media-query behaviours: (hover: none) pins the strip
  *                    at full opacity, because a touch screen has no hover to
  *                    reveal it with, and (pointer: coarse) widens its gap.
- *   .result-text     is-failed colours it --danger-text by descendant selector.
  * Delete any of them and the thing it hooks stops happening, silently. */
 export default function HistoryList({
-  history,
   presets,
   filters,
   onFiltersChange,
-  total,
   searchRef,
   pendingNew,
   onShowNew,
   onAtTopChange,
   onDelete,
   onRequeue,
-  onReusePendingScript,
   onError,
   gpuFault = false,
-  loading = false,
 }: Props) {
   const { queue, refresh } = useGenerationActivity()
   // Read by held-cancel timers, which fire from a closure captured several
@@ -981,6 +960,30 @@ export default function HistoryList({
   }, [])
 
   const listRef = useRef<HTMLUListElement>(null)
+  const selectionScopeRef = useRef<HTMLElement>(null)
+  const dragRef = useRef<{
+    start: number
+    pointerId: number
+    startX: number
+    startY: number
+    mode: 'replace' | 'add' | 'toggle'
+    base: Set<string>
+    active: boolean
+  } | null>(null)
+  const suppressNextClick = useRef(false)
+
+  // Row selection belongs to this panel. A click in the composer, elsewhere on
+  // the page, or another panel is the conventional desktop-list deselect.
+  useEffect(() => {
+    if (selected.size === 0) return
+    const clearWhenLeavingPanel = (event: PointerEvent) => {
+      if (selectionScopeRef.current?.contains(event.target as Node)) return
+      setSelected(new Set())
+      lastClickedIndex.current = null
+    }
+    document.addEventListener('pointerdown', clearWhenLeavingPanel)
+    return () => document.removeEventListener('pointerdown', clearWhenLeavingPanel)
+  }, [selected])
 
   useEffect(() => {
     setSelected(new Set())
@@ -1024,9 +1027,35 @@ export default function HistoryList({
   }, [draft, persistedDraft, setPersistedDraft])
 
   const setDraft = (next: string) => setPersistedDraft(next.slice(0, MAX_SEARCH_CHARS))
-  const reducedMotion = usePrefersReducedMotion()
   const searching = draft.trim() !== ''
-  const filtering = searching || filters.status !== 'all' || filters.presetId !== undefined || filters.createdFrom !== undefined || filters.createdTo !== undefined || filters.durationMin !== undefined || filters.durationMax !== undefined
+  const filtersApplied = filters.status !== 'all' || filters.presetId !== undefined || filters.createdFrom !== undefined || filters.createdTo !== undefined || filters.durationMin !== undefined || filters.durationMax !== undefined
+  const showingHistory = filters.status === 'all' || filters.status === 'completed'
+
+  // Completed rows are a single bounded server page. Canonical voice-name
+  // search happens on the backend; browser-only display names can only narrow
+  // pages that this browser has already loaded.
+  const request = useMemo(() => normalizeHistoryRequest({
+    presetId: filters.presetId, createdFrom: filters.createdFrom, createdTo: filters.createdTo,
+    durationMin: filters.durationMin, durationMax: filters.durationMax,
+    query: draft, limit: pageSize, offset: page * pageSize,
+  }), [filters, draft, page, pageSize])
+  const queryClient = useQueryClient()
+  const historyQuery = useQuery({
+    queryKey: historyQueryKey(request), queryFn: () => fetchHistoryPage(request),
+    // Automated history work is disabled while offline; cached data remains
+    // visible until the next online query succeeds.
+    enabled: showingHistory && navigator.onLine,
+    networkMode: 'always',
+    placeholderData: (previous) => previous,
+  })
+  const history = showingHistory ? historyQuery.data?.history ?? [] : []
+  const total = showingHistory ? historyQuery.data?.total ?? 0 : 0
+  const loading = historyQuery.isLoading && !historyQuery.data
+  useEffect(() => {
+    if (!historyQuery.data || history.length >= total || !navigator.onLine) return
+    const next = normalizeHistoryRequest({ ...request, offset: request.offset + request.limit })
+    void queryClient.prefetchQuery({ queryKey: historyQueryKey(next), queryFn: () => fetchHistoryPage(next) })
+  }, [historyQuery.data, history.length, queryClient, request, total])
 
   // Failures are included, and sorted to the bottom. That ordering does not
   // come for free: /api/queue sorts by `queue_position if not None else -1`,
@@ -1072,7 +1101,11 @@ export default function HistoryList({
   // search narrowed it -- "Voiceover 26" would become "Voiceover 3" while you
   // typed, and the name you were searching for would stop matching itself.
   const numbered = history.map((entry, i) => {
-    const number = entry.history_number ?? total - i
+    // Unfiltered API pages omit history_number to keep their payload stable;
+    // their display position still has to include this server page's offset.
+    // Without it every page was labelled like page one even when its entries
+    // were different.
+    const number = entry.history_number ?? total - request.offset - i
     return {
       entry,
       number,
@@ -1106,9 +1139,11 @@ export default function HistoryList({
       )
     : visible
 
-  const pageCount = Math.ceil(shown.length / pageSize)
-  const pageRows = shown.slice(page * pageSize, page * pageSize + pageSize)
-  // Clamped rather than trusted: the window hands back real indices, but a
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  // `shown` is already the active server page. A local display-name match can
+  // narrow it, but must never trigger an unbounded client scan.
+  const pageRows = shown
+  // Clamped rather than trusted: the pager hands back real indices, but a
   // chevron can be pressed on the last render before a delete shortens the
   // list. Scrolling the list to its top is part of the move -- a page change
   // that left the reader halfway down the previous page reads as nothing
@@ -1121,14 +1156,13 @@ export default function HistoryList({
     listRef.current?.scrollTo({ top: 0 })
     listRef.current?.scrollIntoView({ block: 'start' })
   }
-  const shownSignature = useMemo(() => shown.map(({ entry }) => entry.id).join(','), [shown])
-
-  // A changed query/filter/match set must never leave the reader on a now
-  // invalid page. Selection itself deliberately survives page changes.
+  // Filters, the server search, and page size reset pagination. Do not depend
+  // on the returned row ids here: a server-page transition necessarily changes
+  // those ids, and that would immediately snap every navigation back to page 1.
   useEffect(() => {
     setPage(0)
     lastClickedIndex.current = null
-  }, [pageSize, draft, filters, shownSignature])
+  }, [pageSize, draft, filters])
 
   // Whether the reader is at the top decides if a finished voiceover may be
   // inserted above them or has to be announced. Reported up rather than decided
@@ -1287,53 +1321,107 @@ export default function HistoryList({
     return () => window.removeEventListener('beforeunload', warn)
   }, [pendingDeletes.size])
 
-  /** Toggle one row, or shift-click to fill the range from the last one.
+  /** Select one row, Ctrl/Cmd-toggle it, or Shift-click to add the range.
    *
    * `index` is the row's position in `pageRows` -- what is on screen after the
    * search filter -- so a range drawn across a filtered list selects the span
    * the user actually drew, not whatever sits between those two rows in the
    * unfiltered history. */
-  function toggleSelected(id: string, index: number, shiftKey: boolean) {
-    const anchor = lastClickedIndex.current
+  function selectRow(index: number, modifiers: RowSelectionModifiers) {
+    if (suppressNextClick.current) {
+      suppressNextClick.current = false
+      return
+    }
+    const ids = pageRows.map(({ entry }) => entry.id)
     setSelected((prev) => {
-      const next = new Set(prev)
-      if (shiftKey && anchor !== null && anchor !== index) {
-        // A shift-range ADDS; it never deselects. Range-clearing needs its own
-        // gesture or a stray shift-click wipes a carefully built selection.
-        const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
-        for (let i = from; i <= to; i++) {
-          const row = pageRows[i]
-          if (row) next.add(row.entry.id)
-        }
-        return next
-      }
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    lastClickedIndex.current = index
-  }
-
-  /** The header checkbox. Acts on what is ON SCREEN, so the box can never
-   *  claim to have selected rows a search is hiding. Rows already selected but
-   *  filtered out stay selected -- clearing them would silently undo work the
-   *  user did before they typed a query. */
-  const shownIds = pageRows.map(({ entry }) => entry.id)
-  const shownSelectedCount = shownIds.filter((id) => selected.has(id)).length
-  const allShownSelected = shownIds.length > 0 && shownSelectedCount === shownIds.length
-
-  function toggleSelectAllShown() {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (allShownSelected) for (const id of shownIds) next.delete(id)
-      else for (const id of shownIds) next.add(id)
-      return next
+      const fallbackAnchor = lastClickedIndex.current ?? ids.findIndex((id) => prev.has(id))
+      return selectionAfterRowClick(prev, ids, index, fallbackAnchor < 0 ? null : fallbackAnchor, modifiers)
     })
     lastClickedIndex.current = null
+    if (!modifiers.range) lastClickedIndex.current = index
   }
 
-  async function handleZipSelected() {
+  function beginRowDrag(event: ReactPointerEvent<HTMLUListElement>) {
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    if (target.closest('a, button, input, [role="menu"], [role="slider"]')) return
+    const row = target.closest<HTMLElement>('[data-voiceover-row-index]')
+    if (!row || !listRef.current?.contains(row)) return
+    const start = Number(row.dataset.voiceoverRowIndex)
+    if (!Number.isInteger(start)) return
+    dragRef.current = {
+      start,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      mode: event.shiftKey ? 'add' : event.ctrlKey || event.metaKey ? 'toggle' : 'replace',
+      base: new Set(selected),
+      active: false,
+    }
+  }
+
+  useEffect(() => {
+    const rowAtPoint = (x: number, y: number) => {
+      const target = document.elementFromPoint(x, y)
+      const row = target?.closest<HTMLElement>('[data-voiceover-row-index]')
+      if (!row || !listRef.current?.contains(row)) return null
+      const index = Number(row.dataset.voiceoverRowIndex)
+      return Number.isInteger(index) ? index : null
+    }
+    const onMove = (event: PointerEvent) => {
+      const drag = dragRef.current
+      if (!drag || event.pointerId !== drag.pointerId) return
+      const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY)
+      if (!drag.active && distance < 5) return
+      const index = rowAtPoint(event.clientX, event.clientY)
+      if (index === null) return
+      // Let a normal click (including a slightly shaky Shift-click) reach the
+      // row's click handler. Drag selection only starts once the pointer has
+      // crossed into another voiceover row.
+      if (!drag.active && index === drag.start) return
+      drag.active = true
+      event.preventDefault()
+      document.body.style.userSelect = 'none'
+      const ids = pageRows.map(({ entry }) => entry.id)
+      setSelected(selectionAfterRowDrag(drag.base, ids, drag.start, index, drag.mode))
+    }
+    const finish = (event: PointerEvent) => {
+      const drag = dragRef.current
+      if (!drag || event.pointerId !== drag.pointerId) return
+      if (drag.active) {
+        const index = rowAtPoint(event.clientX, event.clientY)
+        lastClickedIndex.current = index ?? drag.start
+        // A click is only synthesized when the pointer ends over the list;
+        // avoid leaving a stale suppression flag when a drag ends elsewhere.
+        suppressNextClick.current = index !== null
+        document.body.style.userSelect = ''
+      }
+      dragRef.current = null
+    }
+    document.addEventListener('pointermove', onMove, { passive: false })
+    document.addEventListener('pointerup', finish)
+    document.addEventListener('pointercancel', finish)
+    return () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', finish)
+      document.removeEventListener('pointercancel', finish)
+      document.body.style.userSelect = ''
+    }
+  }, [pageRows])
+
+  async function handleDownloadSelected() {
     if (selectedCount === 0 || zipping) return
+    if (selectedDownloadKind(selectedCount) === 'mp3') {
+      const selectedId = selectedIds[0]
+      const item = visible.find(({ entry }) => entry.id === selectedId)
+      if (!item) return
+      const a = document.createElement('a')
+      a.href = downloadUrl(item.entry.audio_url, downloadName(item.name, item.entry.created_at))
+      a.setAttribute('download', '')
+      a.click()
+      toast('Download started')
+      return
+    }
     setZipping(true)
     try {
       // The display names go with the request: they are a localStorage
@@ -1623,33 +1711,10 @@ export default function HistoryList({
   // 700 / 768 / 900 / 1100 / 1400, root overflow 0 at all five.
   return (
     <div className="mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
-      <h2 className="section-rule">
-        <span>Voiceovers</span>
-        {/* Select-all, in the heading rather than as a new row -- the heading
-            already occupies this space, so nothing shifts. It acts on what is
-            ON SCREEN: with a search running it selects the matches, and rows
-            selected earlier but now filtered out stay selected rather than
-            being silently dropped. `indeterminate` is a DOM property with no
-            HTML attribute, so it can only be set through a ref. */}
-        {pageRows.length > 0 && (
-          <input
-            type="checkbox"
-            className="order-2 size-3.5 flex-none accent-audio"
-            checked={allShownSelected}
-            ref={(el) => {
-              if (el) el.indeterminate = shownSelectedCount > 0 && !allShownSelected
-            }}
-            onChange={toggleSelectAllShown}
-            aria-label={allShownSelected ? 'Deselect all shown voiceovers' : 'Select all shown voiceovers'}
-            title={allShownSelected ? 'Deselect all' : 'Select all'}
-          />
-        )}
-        {/* Keep the count aligned with the rows while a delete is held behind
-            its Undo toast. Once the timer commits and the server refreshes,
-            both update together without renumbering the remaining entries. */}
-        {visibleTotal > 0 && <span className="mono order-3 text-[11px]">{visibleTotal}</span>}
-      </h2>
       <p className="sr-only" role="status">{filters.status === 'active' || filters.status === 'failed' ? `Showing ${filters.status === 'active' ? 'generating and queued' : 'failed'} live voiceovers.` : `Showing ${total} completed voiceover${total === 1 ? '' : 's'}${filters.status === 'completed' ? '.' : ' with live jobs above.'}`}</p>
+      {historyQuery.isError && historyQuery.data && (
+        <p className="m-0 text-[11px] text-muted" role="status">Showing saved voiceovers; the latest refresh failed.</p>
+      )}
 
       {/* Keep the controls mounted even for an empty history. This is important
           when a persisted filter or search hides every row: the user must
@@ -1662,8 +1727,15 @@ export default function HistoryList({
           typing a search would fire shortcuts. isTyping() already covers
           INPUT, but Escape is NOT gated by it and would clear the composer's
           error banner behind the column. */}
-      {(
-        <div
+      <section ref={selectionScopeRef} className="results flex min-h-0 flex-1 flex-col">
+        <div className="voiceovers-card-header shrink-0">
+          {/* Keep the controls mounted even for an empty history. This is important
+              when a persisted filter or search hides every row: the user must
+              still have a visible way to clear it and recover the list.
+
+              type=\"search\", not \"text\": it gets the native clear affordance and
+              the right on-screen keyboard, and Escape clears it for free. */}
+          <div
           // shrink-0 is the whole reason the height works. .results is a flex
           // column with a CONSTRAINED height above 1025px (wide:h-full), and a
           // flex item's default flex-shrink: 1 treats `height` as a starting
@@ -1672,7 +1744,7 @@ export default function HistoryList({
           // separate increases to the h-* utility changed the emitted CSS and
           // nothing on screen. .result-list is flex: 1 1 auto and takes the
           // space instead.
-          className="mb-2 flex shrink-0 gap-2"
+          className="mt-2 flex gap-2"
           data-tour="voiceover-search-filters"
         >
           <div className="relative min-w-0 flex-1">
@@ -1714,21 +1786,31 @@ export default function HistoryList({
           )}
           </div>
           <VoiceoverFilters presets={presets} history={history} value={filters} onChange={onFiltersChange} />
+          </div>
         </div>
-      )}
-      {filtering && (
-        <div className="-mt-1 mb-2 flex shrink-0 items-center gap-2 text-[11px] text-muted" role="status">
-          <span>{shown.length + active.length} result{shown.length + active.length === 1 ? '' : 's'}</span>
-          <button type="button" className="ghost-btn h-6 px-2 text-[11px]" onClick={() => { setDraft(''); onFiltersChange({ status: 'all' }) }}>
-            Clear
+      {/* Always reserve this neutral action band so selection never moves rows. */}
+      <div className="history-context-toolbar flex shrink-0 items-center gap-2 overflow-x-auto text-[11px] text-muted" role={selectedCount > 0 ? 'toolbar' : undefined} aria-label={selectedCount > 0 ? 'Actions for selected voiceovers' : undefined}>
+        {selectedCount > 0 && (
+          <>
+            <span className="shrink-0" role="status">{selectedCount} selected</span>
+            <button type="button" className="icon-btn shrink-0" disabled={zipping} onClick={handleDownloadSelected} aria-label={zipping ? 'Preparing download' : 'Download selected voiceovers'} title={zipping ? 'Preparing download' : 'Download selected voiceovers'}><DownloadIcon size={15} /></button>
+            <button type="button" className="icon-btn icon-btn-danger shrink-0" onClick={handleDeleteSelected} aria-label="Delete selected voiceovers" title="Delete selected voiceovers"><TrashIcon size={15} /></button>
+          </>
+        )}
+        {selectedCount === 0 && (
+          <span className="shrink-0" role="status" aria-label={`${visibleTotal} voiceovers`}>All voiceovers · {visibleTotal}</span>
+        )}
+        {filtersApplied && (
+          <button
+            type="button"
+            className="ghost-btn ml-auto h-7 shrink-0 px-2 text-[11px]"
+            onClick={() => onFiltersChange({ status: 'all' })}
+            aria-label="Clear voiceover filters"
+          >
+            Clear filters
           </button>
-        </div>
-      )}
-
-      {/* The controls intentionally live outside this panel. The list remains
-          in the same flex slot, but the glass starts with voiceover content
-          rather than tinting the heading, select-all checkbox, or search. */}
-      <section className="results flex min-h-0 flex-1 flex-col gap-1">
+        )}
+      </div>
       {/* Surfaced instead of scrolling the list out from under a reader. */}
       {pendingNew > 0 && (
         <button
@@ -1742,68 +1824,6 @@ export default function HistoryList({
           {pendingNew} new voiceover{pendingNew === 1 ? '' : 's'} — show
         </button>
       )}
-
-      {/* OUT OF FLOW, and that is the whole point. This started as a normal
-          block above the list, which meant ticking one checkbox inserted a
-          ~40px row and pushed every voiceover down -- the exact layout shift
-          the rest of this column was rebuilt to remove.
-
-          Reserving the row permanently was the alternative and costs 40px of
-          a column that was deliberately pared back, to advertise an action
-          that is irrelevant most of the time. Putting the buttons in the
-          VOICEOVERS heading does not work either: that line is ~17px and
-          ghost-btn is 32px, so the heading grows and the shift comes back
-          smaller.
-
-          `fixed`, not `absolute` inside .results: above 1025px the page is
-          pinned to one viewport, but BELOW it the page scrolls and an
-          absolutely-positioned bar would sit at the bottom of a long list,
-          off-screen exactly when a phone user needs it.
-
-          z-100 puts it under the modal backdrop (200) and well under sonner
-          (999999999), so a dialog or a toast is never obscured by it. */}
-      {/* x: '-50%' rather than the -translate-x-1/2 utility this used to carry.
-          framer writes `transform` inline, which wins over the class outright --
-          keeping the utility means the bar animates its way off centre by half
-          its own width. The centering has to travel with the animation, so it
-          is repeated on initial/animate/exit. */}
-      <AnimatePresence>
-        {selectedCount > 0 && (
-          <motion.div
-            initial={reducedMotion ? false : { opacity: 0, y: 8, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={reducedMotion ? undefined : { opacity: 0, y: 8, x: '-50%' }}
-            transition={{ duration: reducedMotion ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
-            style={{ x: '-50%' }}
-            className="fixed bottom-4 left-1/2 z-100"
-          >
-            <Dock
-              aria-label="Actions for selected voiceovers"
-              items={[
-                {
-                  icon: <DownloadIcon size={19} />,
-                  label: zipping ? 'Zipping…' : 'Download',
-                  disabled: zipping,
-                  onClick: handleZipSelected,
-                },
-                {
-                  icon: <TrashIcon size={19} />,
-                  label: 'Delete',
-                  className: 'dock-item-danger',
-                  onClick: handleDeleteSelected,
-                },
-                {
-                  icon: <CheckIcon size={19} />,
-                  label: 'Clear selection',
-                  onClick: () => setSelected(new Set()),
-                },
-              ] satisfies DockItemData[]}
-            >
-              {selectedCount} selected
-            </Dock>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {shown.length === 0 && active.length === 0 ? (
         <p className="m-0 max-w-full break-all py-5 text-[13px] text-faint wide:min-h-0 wide:flex-1 wide:overflow-y-auto">
@@ -1827,7 +1847,7 @@ export default function HistoryList({
         </p>
       ) : (
         <>
-          <ul className="result-list" ref={listRef}>
+          <ul className="result-list" ref={listRef} onPointerDown={beginRowDrag}>
             {/* initial={false} is load-bearing on both of these: without it
                 every row already on screen animates on mount, so a reload with
                 jobs running replays an entrance for work that started minutes
@@ -1872,7 +1892,6 @@ export default function HistoryList({
                     onMoveDown={() => void moveQueuedJob(job.job_id, 1)}
                     reordering={reordering}
                     onRetry={failed && !gpuFault ? () => handleRetry(job.job_id) : undefined}
-                    onReuseScript={!failed ? () => onReusePendingScript(job.job_id) : undefined}
                   />
                 )
               })}
@@ -1890,10 +1909,11 @@ export default function HistoryList({
                       entry.audio_url,
                       entryFileNames[entry.id]?.trim() || downloadName(name, entry.created_at),
                     )}
-                    onRequeue={() => onRequeue(entry)}
                     onDelete={() => handleDelete(entry.id, name)}
+                    onRequeue={() => onRequeue(entry)}
                     selected={selected.has(entry.id)}
-                    onToggleSelect={(shiftKey) => toggleSelected(entry.id, i, shiftKey)}
+                    onSelect={(modifiers) => selectRow(i, modifiers)}
+                    rowIndex={i}
                     // Not while searching. A keystroke can filter out a dozen
                     // rows at once, and a dozen simultaneous height collapses is
                     // the one place in this column that would feel slow -- the
@@ -1925,7 +1945,7 @@ export default function HistoryList({
               12px side padding mirrors .result-list's -- the two numbers move
               together -- which is what puts the label's left edge on the same
               pixel as the rows above it. */}
-          {shown.length > 0 && (
+          {(history.length > 0 || total > 0) && (
           <div className="voiceover-pager">
             {/* A native <select>, not the @utility select used by VoicePicker:
                 that one draws its caret with ::after, which a form control does
@@ -1971,8 +1991,8 @@ export default function HistoryList({
             >
               {/* Buttons, not links: these go nowhere, and a <button disabled>
                   is removed from the tab order by the platform rather than by
-                  a class. The window is a fixed size (see PAGE_WINDOW), so the
-                  row holds its shape as the selection moves. */}
+                  a class. The five-button window keeps the row's shape as it
+                  slides with the selected page. */}
               <ul className="voiceover-pager-list">
                 <li className="voiceover-pager-prev">
                   <button
@@ -1984,17 +2004,17 @@ export default function HistoryList({
                     ‹
                   </button>
                 </li>
-                {pageWindow(page, pageCount).map((index) => (
-                  <li key={index} className={['voiceover-pager-page', index === page ? 'is-active' : ''].filter(Boolean).join(' ')}>
-                    <button
-                      type="button"
-                      aria-label={`Page ${index + 1}`}
-                      aria-current={index === page ? 'page' : undefined}
-                      onClick={() => goToPage(index)}
-                    >
-                      {index + 1}
-                    </button>
-                  </li>
+                {pageControls(page, pageCount).map((control) => (
+                    <li key={control} className={['voiceover-pager-page', control === page ? 'is-active' : ''].filter(Boolean).join(' ')}>
+                      <button
+                        type="button"
+                        aria-label={`Page ${control + 1}`}
+                        aria-current={control === page ? 'page' : undefined}
+                        onClick={() => goToPage(control)}
+                      >
+                        {control + 1}
+                      </button>
+                    </li>
                 ))}
                 <li className="voiceover-pager-next">
                   <button

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import NewVoiceModal from './NewVoiceModal'
 import ThemeSwitch from './ThemeSwitch'
 import ParticleText from './ParticleText'
@@ -34,16 +34,15 @@ import {
   deleteHistoryEntry,
   deletePreset,
   getHealth,
-  getQueueScript,
-  listHistory,
   listPresets,
   renamePreset,
   startGenerate,
   type Estimate,
   type HistoryEntry,
-  type HistoryFilters,
+  type HistoryPage,
   type Preset,
 } from '../api'
+import { historyQueryClient, invalidateHistory } from '../historyQuery'
 
 /** Sent only so the backend has something if language detection comes back
  * empty or names a language this model cannot speak. */
@@ -91,23 +90,11 @@ export default function StudioShell() {
   // voice at creation. Generation reads the chosen voice's own language instead
   // (see handleGenerate), so the two can no longer disagree.
 
-  // One accumulating list, not a page. `historyNonce` reloads it from the top,
-  // keeping however many slices are already on screen.
-  const [history, setHistory] = useState<HistoryEntry[]>([])
-  const [historyTotal, setHistoryTotal] = useState(0)
-  const [historyNonce, setHistoryNonce] = useState(0)
   const [historyFilters, setHistoryFilters] = useState<VoiceoverFilterState>(restoreVoiceoverFilters)
-  const [historyLoading, setHistoryLoading] = useState(false)
   const [pendingNew, setPendingNew] = useState(0)
   // A ref, not state: read inside a callback that must not be rebuilt on every
   // scroll event.
   const atTopRef = useRef(true)
-  const serverFilters = useMemo<HistoryFilters>(() => ({
-    presetId: historyFilters.presetId, createdFrom: historyFilters.createdFrom,
-    createdTo: historyFilters.createdTo, durationMin: historyFilters.durationMin,
-    durationMax: historyFilters.durationMax,
-  }), [historyFilters])
-  const showingHistory = historyFilters.status === 'all' || historyFilters.status === 'completed'
 
   useEffect(() => {
     try { localStorage.setItem('voiceoverFilters.v1', JSON.stringify(historyFilters)) } catch { /* storage is optional */ }
@@ -140,7 +127,7 @@ export default function StudioShell() {
   // here, the same way scriptRef serves "/".
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const refreshHistory = useCallback(() => setHistoryNonce((n) => n + 1), [])
+  const refreshHistory = useCallback(() => { void invalidateHistory() }, [])
 
   function refreshPresets() {
     listPresets()
@@ -203,45 +190,6 @@ export default function StudioShell() {
     setWakeMessage(boot.detail || 'The voice model failed to load.')
   }, [boot?.phase, boot?.detail])
 
-  // PULL THE WHOLE SERVER-FILTERED HISTORY, always, in batches of at most 100.
-  // This is the only fetch path now that infinite scroll is gone, and the
-  // completeness is not incidental: HistoryList pages and searches on the
-  // CLIENT, over names the server has never seen, so anything unfetched could
-  // neither be searched nor paged to. A prefix fetch would make page 4 of a
-  // 200-row history render empty.
-  //
-  // Refetching from offset 0 (rather than patching the array) is what keeps
-  // deletion correct: removing an entry shifts every later one up by one, so an
-  // offset-based append would skip a voiceover. Entries are de-duplicated by id
-  // for the same reason -- a job finishing between two batches shifts the
-  // offsets under the loop.
-  useEffect(() => {
-    let cancelled = false
-    if (!showingHistory) {
-      setHistory([])
-      setHistoryTotal(0)
-      setHistoryLoading(false)
-      return
-    }
-    setHistoryLoading(true)
-    void (async () => {
-      const entries: HistoryEntry[] = []
-      let offset = 0
-      let total = 0
-      while (!cancelled) {
-        const page = await listHistory(100, offset, serverFilters)
-        total = page.total
-        const known = new Set(entries.map((entry) => entry.id))
-        entries.push(...page.history.filter((entry) => !known.has(entry.id)))
-        offset += page.history.length
-        if (page.history.length === 0 || entries.length >= total) break
-      }
-      if (cancelled) return
-      setHistory(entries)
-      setHistoryTotal(total)
-    })().catch(() => {}).finally(() => { if (!cancelled) setHistoryLoading(false) })
-    return () => { cancelled = true }
-  }, [historyNonce, serverFilters, showingHistory])
 
   // A finished job must not scroll the list out from under a reader. At the top
   // the new voiceover belongs there anyway, so refresh in place; scrolled down,
@@ -465,30 +413,28 @@ export default function StudioShell() {
       void deleteHistoryEntry(id, { keepalive: true }).catch(() => {})
       return
     }
+    const snapshots = historyQueryClient.getQueriesData<HistoryPage>({ queryKey: ['voiceover-history'] })
+    historyQueryClient.setQueriesData<HistoryPage>({ queryKey: ['voiceover-history'] }, (page) => {
+      if (!page || !page.history.some((entry) => entry.id === id)) return page
+      return { history: page.history.filter((entry) => entry.id !== id), total: Math.max(0, page.total - 1) }
+    })
     try {
       await deleteHistoryEntry(id)
-      refreshHistory() // the effect above re-clamps the page if this emptied it
+      refreshHistory()
     } catch (e) {
+      for (const [key, page] of snapshots) historyQueryClient.setQueryData(key, page)
       setError(e instanceof ApiError ? e.message : 'Failed to delete voiceover')
     }
   }
 
-  // No setLanguage here any more: selecting the voice already determines the
-  // language, so restoring the entry's own would just duplicate it -- and would
-  // be wrong if the voice has since been recreated in another language.
   function reuseScript(text: string, presetId: string) {
-    // The wand replaces the script box wholesale, which silently threw away
-    // anything typed there. Offered as an undo rather than a confirm: a
-    // confirm taxes every re-queue to protect the rare one, and window.confirm
-    // blocks the page and looks nothing like the rest of the app -- the same
-    // reasoning that made voice deletion an inline two-step.
     const previous = script
     const replacing = previous.trim() !== '' && previous !== text
     setScript(text)
     setVoiceId(presetId)
     scriptRef.current?.focus()
     if (!replacing) {
-      toast('Script ready to reuse')
+      toast('Transcript ready to reuse')
       return
     }
     toast('Script replaced', {
@@ -499,17 +445,6 @@ export default function StudioShell() {
 
   function handleRequeue(entry: HistoryEntry) {
     reuseScript(entry.text, entry.preset_id)
-  }
-
-  async function handlePendingScriptReuse(jobId: string) {
-    try {
-      // Do not touch the composer until the authenticated request succeeds:
-      // a job might have disappeared or belong to somebody else by click time.
-      const pendingScript = await getQueueScript(jobId)
-      reuseScript(pendingScript.text, pendingScript.preset_id)
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to load pending script')
-    }
   }
 
   // An id can outlive its voice when it was deleted elsewhere or between
@@ -822,21 +757,17 @@ export default function StudioShell() {
 
         <aside className="min-w-0 wide:h-full wide:min-h-0" data-tour="voiceovers">
           <HistoryList
-            history={history}
             presets={presets}
             filters={historyFilters}
             onFiltersChange={setHistoryFilters}
             searchRef={searchRef}
-            total={historyTotal}
             pendingNew={pendingNew}
             onShowNew={showNewVoiceovers}
             onAtTopChange={handleAtTopChange}
             onDelete={handleDeleteHistory}
             onRequeue={handleRequeue}
-            onReusePendingScript={handlePendingScriptReuse}
             onError={setError}
             gpuFault={gpuFault != null}
-            loading={modelStatus === 'checking' || historyLoading}
           />
         </aside>
       </main>

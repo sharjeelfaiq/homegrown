@@ -4,7 +4,9 @@ CUDA-graph-accelerated wrapper around [`qwen-tts`](https://github.com/QwenLM/Qwe
 
 ## Requirements
 
-- NVIDIA GPU + CUDA-enabled PyTorch build (CPU is not supported — `from_pretrained` raises if CUDA isn't available)
+- NVIDIA GPU + CUDA-enabled PyTorch build for CUDA-graph acceleration. The application can instead use
+  the wrapper's CPU fallback for the standard voice-clone/custom/design generation paths, but it is much
+  slower and skips CUDA graphs; graph-only APIs still require a usable GPU.
 - `torch`
 - `transformers` (a recent version providing `transformers.masking_utils.create_causal_mask` / `create_sliding_window_causal_mask`)
 - `qwen-tts` (`pip install -U qwen-tts`) — provides `Qwen3TTSModel` and the underlying model/tokenizer implementation

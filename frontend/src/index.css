@@ -589,16 +589,16 @@ body {
    both the label and the button slot are fixed widths, so nothing about it
    varies with the page or the page size.
 
-   The buttons live in a FIXED-width slot (--pager-slot) holding a fixed-size
-   window of pages (PAGE_WINDOW in HistoryList.tsx), so the block holds its
-   place and its shape whatever the page count does inside it -- including one
-   page, where it is rendered inert rather than unmounted.
+   The controls live in a FIXED-width slot (--pager-slot) holding five numbered
+   buttons. The page range shifts around the current page without changing the
+   number of targets, and the one-page control is rendered inert rather than
+   unmounted.
 
-   The 12px side padding mirrors .result-list's own, which is what puts the
+   The 8px side padding mirrors .result-list's own, which is what puts the
    label's left edge on the same pixel as the row content above it -- the two
    numbers move together or the footer stops lining up with the list. */
 .voiceover-pager {
-  /* 5 page buttons (28) + 2 chevrons (28) + 6 gaps (4) = 220. */
+  /* 5 page buttons + 2 chevrons + 6 gaps = 220. */
   --pager-slot: 220px;
   flex: none;
   display: grid;
@@ -607,7 +607,7 @@ body {
   gap: 8px;
   height: 36px;
   margin-top: 4px;
-  padding: 0 12px;
+  padding: 0 8px;
 }
 
 .voiceover-pager > label {
@@ -700,13 +700,8 @@ body {
    Painted on a PSEUDO-ELEMENT, and both of its properties are load-bearing.
    
    `backdrop-filter` makes an element the containing block for every
-   `position: fixed` descendant, and the bulk-action bar is a fixed child of
-   this section (HistoryList.tsx). Putting the blur on .results itself would
-   re-anchor that bar to the section's box instead of the viewport, breaking
-   its bottom-4 anchoring and the x: '-50%' centering that was measured at
-   0.0px -- the same failure ThemeSwitch's root already documents. A
-   pseudo-element has no descendants, so it cannot become anyone's containing
-   block.
+   `position: fixed` descendant. Keeping it on a pseudo-element means it
+   cannot unexpectedly re-anchor any future overlay.
    
    And being absolutely positioned it costs ZERO layout: the row height and the
    list heights at every viewport are untouched, which a wrapper div with
@@ -733,6 +728,25 @@ body {
   }
 }
 
+/* The search/filter controls share the glass surface with the rows. Keeping
+   their inset in one place makes the search edge, toolbar, list content, and
+   pager line up even when the card is narrow. */
+@utility voiceovers-card-header {
+  padding: 8px;
+}
+
+/* Reserved below the search controls in HistoryList. Its fixed size and
+   horizontal overflow keep the card's rows pinned when its context changes.
+   The neutral divider establishes it as a list header without competing with
+   the selected-row tint. */
+@utility history-context-toolbar {
+  height: 40px;
+  min-height: 40px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+
 @utility result-list {
   /* NO max-height, and its absence is the feature. Above the breakpoint the
      shell is pinned to one viewport (.studio is height: 100svh) and the
@@ -754,16 +768,15 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   margin: 0;
-  /* 12px of side padding, and it is applied HERE rather than on the rows.
+  /* 8px of side padding, and it is applied HERE rather than on the rows.
      Every row kind has to be inset by the same amount: a generating row's
      progress track is aligned to a finished row's waveform on both edges, so
      padding one kind and not the other is precisely the bug the PendingRow
      comment in HistoryList.tsx records (dL +8.0 / dR -8.1, measured in the real
      app while a harness reported zero). One declaration on the container cannot
-     drift that way. The footer's own side padding was widened from 8px to 12px
-     with it, or the "Per page" label stops sitting on the same pixel as the row
+     drift that way. The footer uses the same 8px side padding, or the "Per page" label stops sitting on the same pixel as the row
      content. */
-  padding: 6px 12px;
+  padding: 6px 8px;
   overflow-y: auto;
   list-style: none;
   /* Keeps the scrollbar off the row content rather than over it. */
@@ -936,8 +949,15 @@ body {
      is the conventional one and it is genuinely visible, but it is weaker
      than a ring: see the note in CLAUDE.md before adding another control to
      this utility. */
-  &:focus {
-    outline: none;
+  /* Both voiceover and voice names use InlineName/result-name. Keep the edit
+     caret, but never let either the browser focus ring or a focused control
+     border make the name look like a separate input box. */
+  &:focus,
+  &:focus-visible {
+    outline: none !important;
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
   }
 
   &::placeholder {
@@ -1037,8 +1057,8 @@ body {
   }
 }
 
-/* When the voiceover was made, or sent to generate. Right-aligned on line 3
-   opposite the script preview, which gives up exactly this width.
+/* When the voiceover was made, or sent to generate. It shares the header with
+   the voice name, and yields space to that name before it can force a wrap.
 
    flex: none and a character-based width for the same reason result-time has
    one: the preview beside it is flex: 1 1 auto, so a stamp that resized
@@ -1046,12 +1066,8 @@ body {
    edge and change where it ellipsises. The shorter form sits right-aligned
    inside the same slot.
 
-   17ch, and the number comes from the LONGEST LOCALE FORM, not the shortest.
-   It was 13ch first, sized against "Sep 11, 14:32" -- but the time is
-   toLocaleTimeString, and on an en-US machine that is "02:32 PM", making the
-   full string "Sep 11, 02:32 PM" = 16 characters. A 13ch slot ellipsised it to
-   "Sep 11, 02:32 P…", i.e. the stamp was cut off on the very machine this is
-   developed on. Do not re-derive this width from a 24-hour example.
+   17ch fits a localized date/time such as "Sep 19, 02:32 PM" without clipping.
+   The full timestamp remains available in its native tooltip.
 
    --text-faint, the same weight as a finished row's clock: this is reference
    information you look up, never something to notice. */
@@ -1220,20 +1236,9 @@ body {
    its state changes; the dimming itself is a group-hover utility at the call
    site. Only the two input-conditional rules live here. */
 @utility result-actions {
-  /* One width for both row kinds, and that is what makes a generating row's
-     progress bar span EXACTLY the same pixels as a finished row's waveform.
-     Both lines are [leading control][flexible track][.result-time][this], so
-     with the leading control mirrored in PendingRow (see the placeholder
-     carrying the play button's classes) the only thing left that could move
-     the track's right edge is this strip -- and it does not contain the same
-     buttons on the two rows: 14px checkbox + 28px overflow on a finished row
-     against a 58px Cancel, or two 28px confirm buttons, on a generating one.
-
-     min-width, not width, so a failed row's Retry + Dismiss can still grow
-     past it; that row's bar is an empty outline with no fill to align.
-     justify-content keeps the narrower (finished) strip on the right edge
-     rather than centring it in the reserved space. */
-  min-width: 58px;
+  /* The completed-row checkbox is gone, so its action strip only reserves the
+     overflow button. Pending controls grow naturally past this minimum. */
+  min-width: 28px;
   justify-content: flex-end;
 
   /* A touch screen has neither :hover nor :focus-within until you have

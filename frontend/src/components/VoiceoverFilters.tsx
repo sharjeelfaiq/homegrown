@@ -54,6 +54,13 @@ export default function VoiceoverFilters({ presets, history, value, onChange }: 
     return () => { document.removeEventListener('mousedown', outside); document.removeEventListener('keydown', escape) }
   }, [open])
 
+  // The reserved toolbar can clear filters while this popover is closed. Keep
+  // the next open in sync with the externally reset filter state.
+  useEffect(() => {
+    if (value.createdFrom === undefined && value.createdTo === undefined) setDateMode('all')
+    if (value.durationMin === undefined && value.durationMax === undefined) setDurationMode('all')
+  }, [value.createdFrom, value.createdTo, value.durationMin, value.durationMax])
+
   const dateChange = (mode: string) => {
     setDateMode(mode); setError('')
     const midnight = new Date(); midnight.setHours(0, 0, 0, 0)

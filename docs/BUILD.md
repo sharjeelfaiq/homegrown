@@ -103,8 +103,8 @@ python scripts/check_desktop_port.py
 # 6. launcher/_splash.py must be current with splash.html/splash.css.
 python scripts/build_splash.py --check
 
-# Frontend types + lint
-cd frontend && npm install && npm run lint && cd ..
+# Frontend types, unit tests, and lint
+cd frontend && npm install && npm run test && npm run lint && cd ..
 ```
 
 `npm run lint` may report `react(only-export-components)` Fast Refresh warnings
@@ -113,6 +113,8 @@ warnings from exporting hooks or helpers alongside components; treat any new
 lint error or warning outside that known class as a build issue.
 
 `npm run build` is the typecheck (`tsc -b && vite build`); step 4 runs it.
+`npm run test` runs the Vitest suite, including history-query normalization,
+cache-key isolation, and sliding history-pager-window checks.
 
 ---
 

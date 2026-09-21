@@ -1,8 +1,9 @@
-# DEPLOY_SPEC.md
+# Historical deployment proposal (archived)
 
-> **Historical.** This is the original written spec for the Vercel + RunPod split, kept for intent and
-> rationale. For what was actually built, see `docs/DEPLOYMENT.md`; that path is dormant and unused by the
-> LAN and installer deployments described in `README.md`.
+> **Historical and non-authoritative.** This is the original proposal for the dormant Vercel + RunPod
+> split. It includes superseded assumptions (including Clerk authentication and a 60-second upload limit).
+> For current supported deployments, use `README.md`; for the dormant path, use `docs/DEPLOYMENT.md` and
+> verify against source before acting.
 
 I'm restructuring deployment for Homegrown:
 - Frontend: deploy to Vercel (separate from the backend now)
