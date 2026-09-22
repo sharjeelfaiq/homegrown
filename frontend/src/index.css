@@ -253,6 +253,14 @@
   }
 }
 
+/* Boneyard generates its keyframes inline, so stop their motion here rather
+   than relying on the library's default animation policy. */
+@media (prefers-reduced-motion: reduce) {
+  [data-boneyard-bone] {
+    animation: none !important;
+  }
+}
+
 /* Driver.js is kept visually local to its popover class so the library can be
    upgraded without accidentally restyling other overlays. */
 .driver-overlay {

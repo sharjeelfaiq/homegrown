@@ -32,6 +32,8 @@ import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from '../historyPageSize'
 import { fetchHistoryPage, historyQueryKey, normalizeHistoryRequest } from '../historyQuery'
 import { pageControls } from '../historyPager'
+import { Skeleton } from 'boneyard-js/react'
+import { VoiceoverHistoryFixture } from './BoneyardFixtures'
 
 interface Props {
   presets: import('../api').Preset[]
@@ -1826,14 +1828,20 @@ export default function HistoryList({
       )}
 
       {shown.length === 0 && active.length === 0 ? (
-        <p className="m-0 max-w-full break-all py-5 text-[13px] text-faint wide:min-h-0 wide:flex-1 wide:overflow-y-auto">
-          {loading
-            ? // The whole server-filtered history is fetched in one batched
-              // pass, so `loading` alone is the honest condition here: while it
-              // is true there may well be voiceovers on the server, and telling
-              // someone to go and generate their first one would be false.
-              'Loading your voiceovers…'
-            : searching
+        loading ? (
+          <Skeleton
+            name="voiceover-history"
+            loading
+            fixture={<VoiceoverHistoryFixture />}
+            select="viewport"
+            className="wide:min-h-0 wide:flex-1"
+            snapshotConfig={{ excludeTags: ['svg', 'canvas'], excludeSelectors: ['[data-boneyard-decorative]'] }}
+          >
+            <VoiceoverHistoryFixture />
+          </Skeleton>
+        ) : (
+          <p className="m-0 max-w-full break-all py-5 text-[13px] text-faint wide:min-h-0 wide:flex-1 wide:overflow-y-auto">
+            {searching
               ? // Distinct from the never-generated-anything copy below. Telling
                 // someone with 40 voiceovers to "pick a voice and press
                 // Generate" because their search missed reads as the app having
@@ -1844,7 +1852,8 @@ export default function HistoryList({
                 : filters.status === 'failed'
                   ? 'No failed voiceovers.'
                   : 'No voiceovers yet. Pick a voice, write a script, and press Generate.'}
-        </p>
+          </p>
+        )
       ) : (
         <>
           <ul className="result-list" ref={listRef} onPointerDown={beginRowDrag}>

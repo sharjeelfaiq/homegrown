@@ -23,7 +23,6 @@ import { useFileDrop } from '../hooks/useFileDrop'
 import { useFlushOnHide } from '../hooks/useFlushOnHide'
 import { useHotkeys } from '../hooks/useHotkeys'
 import { wakeBackend } from '../wake'
-import BootOverlay from './BootOverlay'
 import Modal from './Modal'
 import UndoCountdown from './UndoCountdown'
 import CursorGrid from './CursorGrid'
@@ -43,6 +42,8 @@ import {
   type Preset,
 } from '../api'
 import { historyQueryClient, invalidateHistory } from '../historyQuery'
+import { Skeleton } from 'boneyard-js/react'
+import { StudioStartupFixture } from './BoneyardFixtures'
 
 /** Sent only so the backend has something if language detection comes back
  * empty or names a language this model cannot speak. */
@@ -548,7 +549,14 @@ export default function StudioShell() {
   })
 
   return (
-    <div className="flex min-h-svh flex-col wide:h-svh wide:overflow-hidden">
+    <Skeleton
+      name="studio-startup"
+      loading={modelStatus === 'checking'}
+      fixture={<StudioStartupFixture />}
+      select="viewport"
+      snapshotConfig={{ excludeTags: ['svg', 'canvas'], excludeSelectors: ['[data-boneyard-decorative]'] }}
+    >
+      <div className="flex min-h-svh flex-col wide:h-svh wide:overflow-hidden">
       {/* First child, and the shell root must stay transform-free: a transform
           here would become the containing block for this fixed element and
           create a stacking context around it -- the same pair of effects that
@@ -823,12 +831,6 @@ export default function StudioShell() {
         onDelete={handleDeletePreset}
       />
 
-      {/* Everything else on the page is inert until the model is up, so the
-          startup screen covers it rather than sitting above the script box.
-          Dropped the instant modelStatus leaves 'checking' -- including on
-          failure, so the error row below is never trapped behind it. */}
-      {modelStatus === 'checking' && <BootOverlay boot={boot} elapsed={wakeMessage} />}
-
       {/* Toasts. `theme` comes from OUR nine-theme id, not sonner's default
           "light": six of the nine are dark, and a light toast stack over Booth
           is the brightest thing on the screen. themeMode() is the same mapping
@@ -900,6 +902,7 @@ export default function StudioShell() {
           </p>
         </div>
       )}
-    </div>
+      </div>
+    </Skeleton>
   )
 }

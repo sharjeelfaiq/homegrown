@@ -1,0 +1,17 @@
+{
+  "breakpoints": [375, 768, 1025, 1280],
+  "out": "./src/bones",
+  "wait": 1200,
+  "skeletons": {
+    "studio-startup": { "route": "/" },
+    "voiceover-history": { "route": "/" }
+  },
+  "select": "viewport",
+  "color": "var(--bg-raised)",
+  "darkColor": "var(--bg-raised)",
+  "animate": "shimmer",
+  "shimmerColor": "var(--bg-hover)",
+  "darkShimmerColor": "var(--bg-hover)",
+  "speed": "1.2s",
+  "shimmerAngle": 110
+}

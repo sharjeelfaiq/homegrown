@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "bones:build": "boneyard-js build http://127.0.0.1:5173",
     "lint": "oxlint",
     "test": "vitest run",
     "preview": "vite preview"
@@ -18,6 +19,7 @@
     "@tanstack/query-sync-storage-persister": "5.103.1",
     "@tanstack/react-query": "5.103.1",
     "@tanstack/react-query-persist-client": "5.103.1",
+    "boneyard-js": "1.10.0",
     "driver.js": "^1.8.0",
     "framer-motion": "^12.42.2",
     "ogl": "^1.0.11",
