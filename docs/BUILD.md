@@ -116,6 +116,18 @@ lint error or warning outside that known class as a build issue.
 `npm run test` runs the Vitest suite, including history-query normalization,
 cache-key isolation, and sliding history-pager-window checks.
 
+When a loading fixture or its surrounding responsive layout changes, also
+regenerate the checked-in Boneyard assets before committing. In one terminal
+run `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`; in another:
+
+```bash
+cd frontend && npm run bones:build
+```
+
+The capture is local, root-route-only, and needs Playwright Chromium once
+(`npx playwright install chromium`). Commit `src/bones/*.bones.json` and
+`src/bones/registry.ts`; they are production build inputs, not disposable cache.
+
 ---
 
 ## 3. Remove the dev-only backend override

@@ -51,6 +51,9 @@ interface Props {
   onAtTopChange: (atTop: boolean) => void
   onDelete: (id: string, opts?: { unloading?: boolean }) => void
   onRequeue: (entry: HistoryEntry) => void
+  /** Reuses a pending job's full script. The queue poll only carries its
+   * preview, so the parent fetches the source on this explicit action. */
+  onReuseQueue: (job: QueueEntry) => void
   /** Surfaces a failed Retry. Without it an ApiError from the retry endpoint
    * is swallowed and the click looks like it did nothing -- the exact failure
    * mode this whole row state exists to remove. */
@@ -286,8 +289,8 @@ function TransportTime({
  * hold that lock and stall every other queued job. Cancel is the honest
  * control, and it lands at the next chunk boundary (~1s).
  *
- * Download is absent because there is nothing to download yet. Pending rows
- * keep their generation controls, but no longer expose a script preview. */
+ * Download is absent because there is nothing to download yet. The complete
+ * script remains reusable, though, through the queue's on-demand script route. */
 function PendingRow({
   job,
   nameControl,
@@ -299,6 +302,7 @@ function PendingRow({
   onMoveDown,
   reordering = false,
   onRetry,
+  onReuse,
 }: {
   job: QueueEntry
   nameControl: NameControl
@@ -312,6 +316,7 @@ function PendingRow({
   reordering?: boolean
   /** Only meaningful on a failed row; undefined elsewhere. */
   onRetry?: () => void
+  onReuse: () => void
 }) {
   const running = job.status === 'running'
   const canceling = job.status === 'canceling'
@@ -489,8 +494,6 @@ function PendingRow({
         {...nameControl}
         voiceName={job.preset_name}
         nameTitle="Click to rename"
-        timestamp={job.submitted_at}
-        timestampTitle={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}
       />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
@@ -577,26 +580,19 @@ function PendingRow({
         </div>
         </div>}
 
-        {/* No elapsed clock any more -- the ring in the leading box reports
-            progress instead, and nothing on a generating row reports time.
-            (`generation_s` is still written to every history entry; nothing
-            reads it, exactly as with the retired estimates.)
+        {/* This slot keeps the progress track aligned with a finished row's
+            waveform. It also gives a running voiceover its elapsed clock;
+            queued work deliberately has no elapsed time because it has not
+            begun generating yet. */}
+        <span className="mono result-time" aria-label={running ? `Generating for ${formatClock(job.elapsed_s)}` : undefined}>
+          {running ? formatClock(job.elapsed_s) : failed ? (attempt > 1 ? `Failed · try ${attempt}` : 'Failed') : ''}
+        </span>
 
-            The span STAYS, and rendering it empty is not an oversight. It is
+        {/* The span STAYS at the same reserved width when there is no clock.
+            It is
             14ch of reserved width, and it is the only reason the track beside
             it ends on the same pixel as a finished row's waveform -- the
-            alignment measured at dL/dR 0.0px across 340/420/560px columns.
-            Remove it and the bar grows 14ch past the waveform on every
-            generating row. It still carries the one thing here that is not a
-            time: a failed row's `Failed · try 3`. */}
-        <span className="mono result-time">
-          {/* The pulsing dot that used to live in this span's 1ch sign slot is
-              gone with the clock it was aligned against. It existed to separate
-              a running row from a queued one while the bar was still at zero;
-              the ring does that now, in a box of its own, and two "this is
-              working" signals on one line was one too many. */}
-          {failed ? (attempt > 1 ? `Failed · try ${attempt}` : 'Failed') : ''}
-        </span>
+            alignment remains stable across narrow and wide columns. */}
 
         {queued && (
           <div className="order-first flex flex-none items-center gap-0.5" aria-label="Reorder queued generation">
@@ -673,6 +669,30 @@ function PendingRow({
           )}
         </div>
       </div>
+
+      {!failed && (
+        <div className="flex min-h-7 min-w-0 items-center gap-3">
+          <button
+            type="button"
+            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
+            title={job.text_preview}
+            aria-label={`Reuse the script queued for ${nameControl.name || nameControl.placeholder || 'this voiceover'}`}
+            onClick={onReuse}
+          >
+            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+              {truncate(job.text_preview)}
+            </span>
+            <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
+          </button>
+          <time
+            className="result-stamp mono"
+            dateTime={new Date(job.submitted_at * 1000).toISOString()}
+            title={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}
+          >
+            {formatTimeOfDay(job.submitted_at)}
+          </time>
+        </div>
+      )}
 
       </motion.div>
     </motion.li>
@@ -884,6 +904,7 @@ export default function HistoryList({
   onAtTopChange,
   onDelete,
   onRequeue,
+  onReuseQueue,
   onError,
   gpuFault = false,
 }: Props) {
@@ -1901,6 +1922,7 @@ export default function HistoryList({
                     onMoveDown={() => void moveQueuedJob(job.job_id, 1)}
                     reordering={reordering}
                     onRetry={failed && !gpuFault ? () => handleRetry(job.job_id) : undefined}
+                    onReuse={() => onReuseQueue(job)}
                   />
                 )
               })}

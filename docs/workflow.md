@@ -26,10 +26,15 @@ Two things worth knowing about that:
 
 For the built single-port LAN setup instead, see `README.md`.
 
-The application shows a full-screen startup overlay while it waits. uvicorn loads the model *before* it
-binds the socket, so a refused connection during startup is expected rather than a fault. In `vite dev`,
-the overlay reads the backend's `boot_status.json` phases through the dev server; in other builds it shows
-the elapsed wait. `dev.sh` prints `model ready on <device>` when generation is available.
+The application shows a full-studio skeleton while the model initializes; its controls and content stay
+non-interactive until the model is ready. uvicorn loads the model *before* it binds the socket, so a refused
+connection during startup is expected rather than a fault. In `vite dev`, `boot_status.json` is still used
+to detect a failed load and show the backend's error after the skeleton clears. `dev.sh` prints `model ready
+on <device>` when generation is available.
+
+The Voiceovers column similarly uses a captured skeleton only for its first uncached history request.
+Cached history stays visible during a refresh; empty, filtered, error, and queue states retain their own
+copy and behavior.
 
 ## 2. Add a voice
 

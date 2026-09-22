@@ -652,6 +652,10 @@ nine themes update immediately.
 - **Automated coverage is focused, not exhaustive.** Frontend unit tests run with `npm run test` (Vitest)
   and cover history-query normalization/cache-key isolation plus the sliding history-pager window. `npm run lint` and
   `npm run build` remain required; browser interaction and real model generation still need manual QA.
+- **Loading layouts are generated assets.** Model initialization displays a full-studio skeleton and an
+  uncached first history request displays a compact history skeleton. Their responsive captures live in
+  `frontend/src/bones/` for 375, 768, 1025, and 1280px. If their fixtures or layout change, start the Vite
+  server on `127.0.0.1:5173` and run `cd frontend && npm run bones:build`; commit the regenerated files.
 - **Search covers names and voices, not scripts.** The voiceovers column has a search box
   (`Ctrl/Cmd+F`) matching a voiceover's name and the voice that spoke it. Script text is deliberately
   excluded: a script runs to 60,000 characters, so a common word matches nearly everything. The voice list
@@ -692,6 +696,8 @@ backend/
   backend.spec       PyInstaller spec (hard-fails without frontend/dist)
   storage/           presets.json, history.json, queue.json, generated/, references/  (gitignored)
 frontend/      React 19 + Vite + TypeScript dashboard (the app)
+  boneyard.config.json  Local root-route skeleton capture configuration
+  src/bones/            Checked-in responsive loading-skeleton assets
 landing-page/  Marketing page -- the only thing Vercel deploys; separate release cadence
 launcher/      Frozen-app launcher (PyInstaller)
 installer/     NSIS installer script (unusable at current payload size, see above)

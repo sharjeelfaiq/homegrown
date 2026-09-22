@@ -1244,9 +1244,12 @@ body {
    its state changes; the dimming itself is a group-hover utility at the call
    site. Only the two input-conditional rules live here. */
 @utility result-actions {
-  /* The completed-row checkbox is gone, so its action strip only reserves the
-     overflow button. Pending controls grow naturally past this minimum. */
-  min-width: 28px;
+  /* Both row states reserve this exact strip. A pending row sometimes needs
+     two confirmation buttons while a completed row currently has one overflow
+     button; letting either strip size itself makes the progress bar and
+     waveform different widths. Keep the spare space on the left and pin the
+     controls to the right, so their flexible tracks share both endpoints. */
+  min-width: 58px;
   justify-content: flex-end;
 
   /* A touch screen has neither :hover nor :focus-within until you have

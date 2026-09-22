@@ -12,6 +12,10 @@ bash dev.sh
 # Frontend verification
 cd frontend && npm run test && npm run lint && npm run build
 
+# Regenerate checked-in loading skeletons after changing their fixtures or layout
+# (start Vite on 127.0.0.1:5173 first)
+cd frontend && npm run bones:build
+
 # Backend syntax check
 python -m py_compile backend/main.py
 ```
@@ -27,6 +31,10 @@ development. The LAN production path is `npm run build` followed by
   static frontend host.
 - `frontend/src/components/StudioShell.tsx` composes voices, generation, and
   queue activity. `HistoryList.tsx` renders completed and live voiceovers.
+- `boneyard-js` supplies generated, source-controlled loading layouts in
+  `frontend/src/bones/`. `studio-startup` covers model initialization and
+  `voiceover-history` covers only an uncached initial history query; do not use
+  Boneyard's Suspense wrapper because history uses ordinary React Query.
 - `qwen/` is the vendored CUDA-graph TTS wrapper. CPU fallback exists but is
   slow.
 - There is one fixed local user (`local-user`), no accounts, and no workspaces.
@@ -53,6 +61,8 @@ development. The LAN production path is `npm run build` followed by
 - A completed job invalidates history. Delete waits for the existing Undo timer,
   then optimistically removes matching cached entries, rolls back on failure,
   and invalidates after success. Requeue/reuse does not mutate history.
+- The initial history skeleton is shown only when `isLoading` has no query
+  data. Placeholder/cached history remains visible during refetches.
 
 ## UI and queue contract
 
@@ -83,3 +93,6 @@ development. The LAN production path is `npm run build` followed by
 
 Keep `README.md`, `docs/workflow.md`, and this file in agreement with source.
 `docs/history/` is archived context, not current operational guidance.
+After a skeleton fixture or app-shell layout change, regenerate the bones at
+375, 768, 1025, and 1280px with `npm run bones:build`; do not hand-edit the
+generated JSON or registry.

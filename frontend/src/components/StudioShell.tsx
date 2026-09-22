@@ -33,6 +33,7 @@ import {
   deleteHistoryEntry,
   deletePreset,
   getHealth,
+  getQueueScript,
   listPresets,
   renamePreset,
   startGenerate,
@@ -448,6 +449,15 @@ export default function StudioShell() {
     reuseScript(entry.text, entry.preset_id)
   }
 
+  async function handleReuseQueued(job: import('../api').QueueEntry) {
+    try {
+      const script = await getQueueScript(job.job_id)
+      reuseScript(script.text, script.preset_id)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Failed to load queued script')
+    }
+  }
+
   // An id can outlive its voice when it was deleted elsewhere or between
   // refreshes. Only a currently available preset is valid for generation.
   const selectedVoice = voiceId == null ? null : presets.find((p) => p.id === voiceId) ?? null
@@ -774,6 +784,7 @@ export default function StudioShell() {
             onAtTopChange={handleAtTopChange}
             onDelete={handleDeleteHistory}
             onRequeue={handleRequeue}
+            onReuseQueue={(job) => void handleReuseQueued(job)}
             onError={setError}
             gpuFault={gpuFault != null}
           />
