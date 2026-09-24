@@ -21,6 +21,12 @@ bash build.sh
 Runs every step below in order and ends by printing the `.exe` path, its size
 and its SHA-256. Expect ~45 minutes and ~10 GB free.
 
+Before checking prerequisites, it removes previous generated outputs:
+`dist/`, `services/voice-api/dist/`, `services/voice-api/build/`,
+`apps/studio/dist/`, `desktop/launcher/dist/`, and
+`desktop/launcher/build/`. Do not keep files in those build-output folders
+that you need to retain; the build recreates them.
+
 It also **stashes `apps/studio/.env.local` and restores it afterwards**. The restore runs from an
 `EXIT` trap, so it happens whether the build succeeds, fails, or you Ctrl-C it.
 If no file was there to stash, it writes the default dev value, so the tree is
@@ -31,7 +37,8 @@ tree (it carries an absolute `MODEL_PATH` that exists on no other machine), and
 a non-empty `models/`.
 
 The steps below are the same pipeline by hand — for when a stage fails and you
-need to re-run just that part.
+need to re-run just that part. When running them manually from the beginning,
+first remove the same previous build outputs listed above.
 
 ---
 
@@ -42,7 +49,7 @@ need to re-run just that part.
 | Python 3 on PATH | `python --version` | python.org |
 | Node + npm | `npm --version` | nodejs.org |
 | 7-Zip, incl. `7z.sfx` | `ls "/c/Program Files/7-Zip/7z.sfx"` | `winget install 7zip.7zip` |
-| NVIDIA GPU + CUDA driver | `nvidia-smi` | GeForce driver |
+| NVIDIA GPU + CUDA driver (recommended for runtime) | `nvidia-smi` | GeForce driver |
 
 ---
 
@@ -100,10 +107,11 @@ python scripts/build_splash.py --check
 cd apps/studio && npm install && npm run test && npm run lint && cd ../..
 ```
 
-`npm run lint` may report `react(only-export-components)` Fast Refresh warnings
-for context/provider modules and `VoiceoverFilters.tsx`. They are existing
-warnings from exporting hooks or helpers alongside components; treat any new
-lint error or warning outside that known class as a build issue.
+`npm run lint` currently reports existing `react(only-export-components)`
+Fast Refresh warnings in context/provider modules, `VoiceoverFilters.tsx`,
+and `HistoryList.tsx`, plus a `react-hooks(exhaustive-deps)` warning in
+`HistoryList.tsx`. Treat new lint errors or warnings beyond those existing
+findings as a build issue.
 
 `npm run build` runs the TypeScript project build and Vite production build
 (`tsc -b && vite build`); section 3 runs it.
@@ -229,6 +237,11 @@ Expect, in order:
    the modal without deleting; the default password opens a seven-second Undo
    toast; selecting Undo preserves the item, while allowing the timer to expire
    deletes it. Queue cancellation is separate and has no Undo timer toast.
+8. If the backend is unavailable or startup fails, confirm the pulsing warning
+   button appears at the lower left. Open it and verify the reported message
+   and Retry action. With cached history present, make a background history
+   refresh fail and verify the rows remain visible without an inline warning
+   above the voiceovers list.
 
 This is manual UI QA: the build gates validate source and generated assets, not GPU generation or browser
 WebGL/compositing paths. Before release, generate a voiceover on the target GPU and confirm queueing,
@@ -296,8 +309,11 @@ a folder outside the repo, and run `Homegrown.exe` from there.
    anyway. The exe is unsigned; only an Authenticode certificate removes this.
 5. First launch downloads the ~2.5 GB model, with progress shown in the loader.
 
-**Requirements to state to them:** NVIDIA GPU with CUDA drivers (4 GB VRAM
-minimum), ~8 GB free disk, plus 2.5 GB for the model. No Python, no Node.
+**Requirements to state to them:** Windows and about 8 GB free disk, plus
+about 2.5 GB for the model download. NVIDIA GPU with CUDA drivers is
+recommended; CPU fallback is available but generation can be very slow. The
+4 GB VRAM figure is a historical tested profile, not a guaranteed minimum.
+No Python, no Node.
 
 There is no installer, no Start Menu entry and no uninstaller — uninstalling
 means deleting the folder.

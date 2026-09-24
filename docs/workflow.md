@@ -59,6 +59,11 @@ preset and its reference audio. An invalid password closes the modal and does
 not schedule a deletion. Preset deletion can make queued jobs using that voice
 fail.
 
+During an upload, the control replaces its icon with an animated lifecycle
+mark. It is amber while uploading, green after a successful upload, and red
+after a failed one. The green or red result stays visible for two seconds, then
+the control returns to its Upload icon.
+
 Voice names are stored by the API and appear on future voiceovers. Renaming a
 voice does not rewrite names already recorded in history. Reference downloads
 are the original uploaded audio.
@@ -77,7 +82,9 @@ estimate.
 Live rows appear above completed history. Queued jobs can be reordered. To
 cancel a queued or running job, click **Cancel**, then confirm with the tick.
 Cancellation is sent immediately after confirmation—there is no undo timer
-toast for canceled generations. A running job stops at a chunk boundary. The
+toast for canceled generations. A running job stops between streamed audio
+pieces (typically about one second), which can be partway through a script
+chunk. The
 cross button dismisses the confirmation without canceling.
 
 Failed jobs remain visible with the service error. Retry resubmits the same
@@ -116,8 +123,13 @@ search, and history-page cache are stored in localStorage. Queue records survive
 a backend restart; a running job restarts from the beginning of that job, not
 from its last chunk.
 
-During startup, a full-screen overlay reports model initialization. In Vite
-development, boot status comes from the backend status file; a model-load
-failure transitions to an actionable error state. The API serves
+During startup, a full-screen overlay reports model initialization after a
+short delay. In Vite development, boot status comes from the backend status
+file. If the backend is unavailable or model startup fails, the overlay exits
+and a pulsing warning button at the lower left opens a modal with the reported
+message and a Retry action when available. CPU fallback is supported, but can
+be much slower than GPU generation. A failed background history refresh leaves
+cached voiceovers visible and does not add an inline notice above the list.
+The API serves
 `apps/studio/dist` when that build exists; use Vite at `:5173` while developing
 the Studio to avoid mistaking a built UI for the live source.

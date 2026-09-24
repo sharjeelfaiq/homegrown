@@ -68,6 +68,16 @@ cd apps/studio && npm run dev
 
 Keep `apps/studio/.env.local` empty for supported local workflows.
 
+When a voice clip is uploaded from the Script editor, the Upload icon changes
+to an animated lifecycle mark: amber while work is running, green on success,
+and red on failure. The completed result remains visible for two seconds before
+the Upload icon returns.
+
+If the backend is unavailable, Studio shows a pulsing warning button at the
+lower left. Open it to read the backend message and retry startup. A failed
+background refresh keeps cached voiceovers visible without adding an inline
+warning above the list.
+
 ## Packaged Windows app
 
 ```bash

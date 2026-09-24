@@ -5,6 +5,9 @@
 > assumptions; it is retained only for project history. Do not follow it as
 > operational guidance. For the supported local/desktop workflow, use
 > `README.md` and `docs/BUILD.md`.
+>
+> The proposed Vercel/RunPod steps below were never implemented; this file is
+> preserved as a historical proposal, not a deployment plan.
 
 I'm restructuring deployment for Homegrown:
 - Frontend: deploy to Vercel (separate from the backend now)

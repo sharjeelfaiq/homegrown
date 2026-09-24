@@ -49,6 +49,13 @@ restore_env() {
 }
 trap restore_env EXIT
 
+# ---- clean previous build outputs -----------------------------------------
+# The script has changed to the repository root above, so these exact paths are
+# scoped to generated outputs from this project.
+step "Cleaning previous build artifacts"
+rm -rf -- dist services/voice-api/dist services/voice-api/build \
+  apps/studio/dist desktop/launcher/dist desktop/launcher/build
+
 # ---- 0. prerequisites ------------------------------------------------------
 step "Checking prerequisites"
 command -v python >/dev/null 2>&1 || die "python is not on PATH."

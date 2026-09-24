@@ -187,26 +187,6 @@
 .lattice-loader span:nth-child(5) { animation-delay: 320ms; }
 .lattice-loader-reduced span { animation: none; }
 
-.undo-toast { display: inline-flex; align-items: center; gap: 8px; }
-.fuse-button {
-  --fuse-duration: 7000ms;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 0 7px;
-  color: var(--text-primary);
-  background-color: var(--control-fill);
-  border: 1px solid var(--progress);
-  border-radius: var(--radius-sm);
-  animation: fuse-outline var(--fuse-duration) linear forwards;
-}
-@keyframes fuse-outline { 50% { border-color: var(--line-strong); } to { border-color: var(--line); } }
-.fuse-button:hover { color: var(--text-primary); background-color: var(--control-fill-hover); }
-.fuse-button:focus-visible { outline: 2px solid var(--line-focus); outline-offset: 2px; }
-.fuse-button-reduced { animation: none; border-color: var(--progress); }
-.fuse-button-time { min-width: 0.75em; font-size: 10px; color: var(--text-muted); }
-
 /* ==== Shared control primitives ========================================
    These four are used at roughly a dozen call sites between them. Written
    as @utility rather than pasted inline at each one: repeating eight
@@ -1490,4 +1470,34 @@ body {
   :root {
     --gutter: 14px;
   }
+}
+
+.backend-warning-button {
+  position: fixed;
+  z-index: 150;
+  left: max(20px, env(safe-area-inset-left));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  color: var(--progress);
+  background: var(--progress-soft);
+  border: 1px solid var(--progress-line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-menu);
+}
+
+.backend-warning-button:hover {
+  color: var(--text-primary);
+  background: var(--progress-line);
+}
+
+.backend-warning-button:focus-visible {
+  outline: 2px solid var(--line-focus);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backend-warning-button { animation: none; }
 }

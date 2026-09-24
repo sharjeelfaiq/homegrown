@@ -28,6 +28,11 @@ python scripts/check_desktop_port.py
 python scripts/build_splash.py --check
 ```
 
+Current UI details worth keeping accurate in the docs: the lower-left warning
+button opens backend failure details and Retry; background history refresh
+failures keep cached rows without an inline notice; running generation checks
+cancellation between streamed audio pieces, not only at script-chunk boundaries.
+
 Manual runtime QA of Vite proxy routes, the packaged executable, and the
 standalone marketing page is required before releasing application behavior or
 build changes. For documentation-only changes whose claims were checked

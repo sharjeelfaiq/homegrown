@@ -23,7 +23,7 @@ import { wakeBackend } from '../wake'
 import Modal from './Modal'
 import CursorGrid from './CursorGrid'
 import BootOverlay from './BootOverlay'
-import FuseButton from './FuseButton'
+import UndoCountdown from './UndoCountdown'
 import { useOnboardingTour } from '../hooks/useOnboardingTour'
 import {
   ApiError,
@@ -54,6 +54,7 @@ export default function StudioShell() {
   const { startTour } = useOnboardingTour(modelStatus)
   const [wakeMessage, setWakeMessage] = useState<string | null>(null)
   const [wakeNonce, setWakeNonce] = useState(0)
+  const [backendWarningOpen, setBackendWarningOpen] = useState(false)
   const [warmingUp, setWarmingUp] = useState(false)
   const [cpuNotice, setCpuNotice] = useState<string | null>(null)
   // A CUDA fault kills the process's context: the running voiceover dies and
@@ -333,28 +334,24 @@ export default function StudioShell() {
       if (wasSelected) setVoiceId(id)
     }
     const timer = window.setTimeout(() => {
-      const toastId = voiceDeleteTimers.current.get(timer)
       voiceDeleteTimers.current.delete(timer)
-      if (toastId !== undefined) toast.dismiss(toastId)
       void deletePreset(id, adminPassword).catch((e: unknown) => {
         restoreVoice()
         setError(e instanceof ApiError ? e.message : 'Failed to delete voice')
       })
     }, UNDO_MS)
-    let toastId: string | number
-    const undo = () => {
-      window.clearTimeout(timer)
-      voiceDeleteTimers.current.delete(timer)
-      toast.dismiss(toastId)
-      restoreVoice()
-    }
-    toastId = toast.custom(() => (
-      <div className="undo-toast" role="status">
-        <TrashIcon size={15} />
-        <span>{doomed.name} deleted</span>
-        <FuseButton ms={UNDO_MS} onUndo={undo} />
-      </div>
-    ), { duration: UNDO_MS })
+    const toastId = toast(`${doomed.name} deleted`, {
+      duration: UNDO_MS,
+      icon: <TrashIcon size={15} />,
+      action: {
+        label: <span className="inline-flex items-center gap-1.5">Undo<UndoCountdown ms={UNDO_MS} /></span>,
+        onClick: () => {
+          window.clearTimeout(timer)
+          voiceDeleteTimers.current.delete(timer)
+          restoreVoice()
+        },
+      },
+    })
     voiceDeleteTimers.current.set(timer, toastId)
   }
 
@@ -618,30 +615,6 @@ export default function StudioShell() {
             <Kbd className="order-3">/</Kbd>
           </h2>
 
-          {/* No "Ready" indicator: GenerateButton already says what is missing
-              ("Waiting for the voice model") whenever the model is not up.
-              The DOWN state is different -- it is the only state the user can
-              act on, and Retry is the app's only recovery control, so it moved
-              here rather than disappearing with the header. */}
-          {modelStatus === 'down' && (
-            <p className="m-0 rounded-sm border border-danger bg-danger-soft px-3 py-2.5 text-[13px] text-danger flex items-center justify-between gap-3" role="alert">
-              {/* The model-load failure arrives as the backend's own multi-line
-                  message rather than as one tidy sentence: wrap it and keep its
-                  line breaks, while Retry stays put at the top beside it. */}
-              <span className="min-w-0 whitespace-pre-wrap">
-                {wakeMessage ?? 'Backend unreachable'}
-              </span>
-              <button
-                type="button"
-                className="ghost-btn flex-none self-start"
-                onClick={() => setWakeNonce((n) => n + 1)}
-              >
-                Retry
-              </button>
-            </p>
-          )}
-
-
           {cpuNotice && (
             <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">Running on CPU — generation will be very slow. {cpuNotice}</p>
           )}
@@ -705,6 +678,35 @@ export default function StudioShell() {
           />
         </aside>
       </main>
+
+      {modelStatus === 'down' && (
+        <button
+          type="button"
+          className="backend-warning-button animate-pulse-soft"
+          aria-label="Backend warning. Open details and retry."
+          title="Backend warning"
+          onClick={() => setBackendWarningOpen(true)}
+        >
+          <AlertIcon size={23} />
+        </button>
+      )}
+
+      <Modal
+        open={backendWarningOpen && modelStatus === 'down'}
+        title="Backend unavailable"
+        onClose={() => setBackendWarningOpen(false)}
+      >
+        <p className="m-0 whitespace-pre-wrap text-[13px]/[1.55] text-muted" role="alert">
+          {wakeMessage ?? 'Backend unreachable'}
+        </p>
+        <div className="flex justify-end gap-2.5">
+          <button type="button" className="ghost-btn" onClick={() => setBackendWarningOpen(false)}>Close</button>
+          <button type="button" className="ghost-btn" onClick={() => {
+            setBackendWarningOpen(false)
+            setWakeNonce((n) => n + 1)
+          }}>Retry</button>
+        </div>
+      </Modal>
 
       {/* A modal rather than a line above the script box. This is not a
           message about the script -- it is the whole app being unusable until

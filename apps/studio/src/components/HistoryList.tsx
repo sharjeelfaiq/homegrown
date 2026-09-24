@@ -24,7 +24,7 @@ import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { UNDO_MS } from '../constants'
 import InlineName from './InlineName'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import FuseButton from './FuseButton'
+import UndoCountdown from './UndoCountdown'
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrossIcon, DownloadIcon, MoreIcon, PlayIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
@@ -1425,9 +1425,7 @@ export default function HistoryList({
 
     const { ids, label } = deleteRequest
     const timer = window.setTimeout(() => {
-      const toastId = deleteTimers.current.get(timer)
       deleteTimers.current.delete(timer)
-      if (toastId !== undefined) toast.dismiss(toastId)
       void (async () => {
         for (const id of ids) {
           try {
@@ -1444,19 +1442,17 @@ export default function HistoryList({
         }
       })()
     }, UNDO_MS)
-    let toastId: string | number
-    const undo = () => {
-      window.clearTimeout(timer)
-      deleteTimers.current.delete(timer)
-      toast.dismiss(toastId)
-    }
-    toastId = toast.custom(() => (
-      <div className="undo-toast" role="status">
-        <TrashIcon size={15} />
-        <span>{label} deleted</span>
-        <FuseButton ms={UNDO_MS} onUndo={undo} />
-      </div>
-    ), { duration: UNDO_MS })
+    const toastId = toast(`${label} deleted`, {
+      duration: UNDO_MS,
+      icon: <TrashIcon size={15} />,
+      action: {
+        label: <span className="inline-flex items-center gap-1.5">Undo<UndoCountdown ms={UNDO_MS} /></span>,
+        onClick: () => {
+          window.clearTimeout(timer)
+          deleteTimers.current.delete(timer)
+        },
+      },
+    })
     deleteTimers.current.set(timer, toastId)
   }
 
@@ -1561,10 +1557,6 @@ export default function HistoryList({
   return (
     <div className="mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
       <p className="sr-only" role="status">{filters.status === 'active' || filters.status === 'failed' ? `Showing ${filters.status === 'active' ? 'generating and queued' : 'failed'} live voiceovers.` : `Showing ${total} completed voiceover${total === 1 ? '' : 's'}${filters.status === 'completed' ? '.' : ' with live jobs above.'}`}</p>
-      {historyQuery.isError && historyQuery.data && (
-        <p className="m-0 text-[11px] text-muted" role="status">Showing saved voiceovers; the latest refresh failed.</p>
-      )}
-
       {/* Keep the controls mounted even for an empty history. This is important
           when a persisted filter or search hides every row: the user must
           still have a visible way to clear it and recover the list.

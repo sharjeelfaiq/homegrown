@@ -71,6 +71,20 @@ generated `Homegrown-<version>.exe`.
 
 ## UI and queue contract
 
+- The Script editor keeps an overflow-visible, rounded card frame so the voice
+  picker can escape the card. Its visible border is a final non-interactive
+  overlay child, painted above the opaque footer; keep that element after the
+  textarea and footer so every corner remains continuous when focused.
+- Inline voice upload uses the ReactBits-style `StatusMark`: amber while
+  running, green after success, and red after failure. The final success or
+  failure mark is intentionally retained for two seconds before restoring the
+  Upload icon. Keep the status attributes (`data-status`) and that timing in
+  sync with `ScriptBlock.test.tsx`.
+- Backend startup failures are reported through a fixed, pulsing warning button
+  at the lower-left of Studio; its modal shows the relevant message and Retry
+  action when available. Do not put a failure banner above the Script editor.
+  Failed background history refreshes keep cached rows and do not add an
+  inline warning above the voiceovers list.
 - Completed rows are paginated with persisted page-size choices: 10, 25, 50,
   or 100. The fixed pager shows all pages through four; thereafter it shows a
   sliding window of five numbered buttons, always including the current page.
@@ -81,6 +95,8 @@ generated `Homegrown-<version>.exe`.
   Undo toast; unmount cancels a pending delete. Queue cancellation is different:
   after the user confirms it, send it immediately and do not show an Undo timer
   toast. Keep this distinction in sync across the UI and API.
+  A running job checks for cancellation between streamed audio pieces (about
+  one second), so it may stop partway through a script chunk.
 - The context toolbar below voiceover search/filters is permanently reserved:
   selection actions live there, never in a floating dock. One selected row
   downloads directly; multiple selected rows use the history ZIP endpoint.

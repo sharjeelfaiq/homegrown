@@ -1,14 +1,15 @@
 # Historical handoff (archived)
 
-> This is an archived handoff from before the current query-backed history
-> implementation. It is retained for historical context only and must not be
-> used as operational documentation. Current behaviour is documented in
-> `README.md`, `docs/workflow.md`, `docs/BUILD.md`, and source code.
+> **Historical, non-authoritative snapshot.** This handoff is not maintained and
+> is not operational guidance. Its relative terms such as “current” refer only
+> to the repository snapshot it describes. Where it disagrees with current
+> documentation or source, those are authoritative. Current behaviour is
+> documented in `README.md`, `docs/workflow.md`, `docs/BUILD.md`, and source
+> code.
 
-> **Historical snapshot.** This was generated from the repo state at a point in time and is kept for
-> its context and open questions. It is *not* maintained. Where it disagrees with `README.md` or
-> `CLAUDE.md`, those are correct — notably the generation pipeline, which has changed substantially
-> since (per-preset chunk budgets, balanced chunking, degenerate-chunk resampling, CPU fallback).
+> This snapshot predates the query-backed history implementation and describes
+> superseded deployment and generation details. It is preserved for context
+> and its open questions only.
 
 Generated from actual repo state (`git log`, source files, config) — not from memory. Items I couldn't
 verify directly are marked **TODO: verify**.
