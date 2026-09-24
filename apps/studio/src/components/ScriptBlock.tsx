@@ -1,6 +1,8 @@
-import { useEffect, type RefObject } from 'react'
-import { getEstimate, type Estimate } from '../api'
+import { useEffect, useRef, type RefObject } from 'react'
+import { getEstimate, type Estimate, type Preset } from '../api'
 import { MAX_SCRIPT_CHARS } from '../constants'
+import VoicePicker from './VoicePicker'
+import { UploadIcon } from './Icons'
 
 interface Props {
   text: string
@@ -11,6 +13,13 @@ interface Props {
    * it changes -- not only when the text does. */
   presetId: string | null
   onEstimate?: (estimate: Estimate | null) => void
+  presets: Preset[]
+  onSelectVoice: (presetId: string | null) => void
+  onRenameVoice: (id: string, name: string, opts?: { unloading?: boolean }) => Promise<void>
+  onDeleteVoice: (id: string, adminPassword: string) => Promise<void>
+  voicesLoading: boolean
+  creatingVoice: boolean
+  onAddVoice: (file: File) => void
 }
 
 export default function ScriptBlock({
@@ -19,8 +28,16 @@ export default function ScriptBlock({
   textareaRef,
   presetId,
   onEstimate,
+  presets,
+  onSelectVoice,
+  onRenameVoice,
+  onDeleteVoice,
+  voicesLoading,
+  creatingVoice,
+  onAddVoice,
 }: Props) {
   const overLimit = text.length > MAX_SCRIPT_CHARS
+  const voiceUploadRef = useRef<HTMLInputElement>(null)
 
   // The estimate is not displayed. onEstimate feeds StudioShell's
   // long-reference-clip warning; the backend calculation also keeps the
@@ -56,35 +73,14 @@ export default function ScriptBlock({
   const words = trimmed ? trimmed.split(/\s+/).length : 0
 
   return (
-    // focus-within carries the audio accent: focusing the script is the most
-    // common interaction in the app and it earns colour at rest, not only
-    // during a render.
-    <div className="relative rounded-md border border-hairline bg-surface-card transition-[border-color] duration-(--base) ease-(--ease) focus-within:border-audio-line" data-tour="script-editor">
-      {/* clamp(240px, 32svh, 340px) -- all three numbers measured, none picked.
-          This was 40svh first (a slab: the box owned most of the column), then
-          over-corrected to a flat 220px, which is about six lines and too
-          short to hold a paragraph. The clamp is not just "relative again":
-          the BOUNDS are what make it safe in both directions. The 340px
-          ceiling stops a tall monitor reproducing the slab; the 240px floor
-          stops a short laptop shrinking the box below the flat value that was
-          already too small.
-          Measured at 1424px wide, against the real built app (viewport heights
-          are Chrome's, not the window's):
-            viewport 1005 -> 321.6px, 10 visible lines
-            viewport  805 -> 257.6px,  8 lines
-            viewport  673 -> 240.0px,  7 lines   (floor)
-            viewport  605 -> 240.0px,  7 lines   (floor)
-            viewport  545 -> 240.0px,  7 lines   (floor)
-          Root overflow was 0 at every one of those, and Generate stayed fully
-          on screen -- which is the constraint that matters, because above
-          1025px `.studio` is height:100svh;overflow:hidden and the page cannot
-          scroll to reveal anything this box pushes off.
-          Still not auto-growing and not user-resizable, and the h/min-h/max-h
-          triple stays identical so content cannot move it: a stable writing
-          surface keeps long scripts from reflowing the page. */}
+    // The card owns the focus treatment so the textarea and its footer read as
+    // one editor; the theme-aware hairline is defined in index.css.
+    <div className="script-editor grid h-[clamp(272px,36svh,372px)] min-h-[clamp(272px,36svh,372px)] max-h-[clamp(272px,36svh,372px)] grid-rows-[minmax(0,1fr)_auto] overflow-visible rounded-md border border-hairline bg-surface-card transition-[border-color] duration-(--base) ease-(--ease)" data-tour="script-editor">
+      {/* The stable 272–372px editor range leaves a predictable writing area
+          while the grid reserves a separate footer row for its controls. */}
       <textarea
         ref={textareaRef}
-        className="block h-[clamp(240px,32svh,340px)] min-h-[clamp(240px,32svh,340px)] max-h-[clamp(240px,32svh,340px)] w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-9 text-[15px]/[1.7] outline-none placeholder:text-faint"
+        className="block h-full min-h-0 w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-3 text-[15px]/[1.7] outline-none placeholder:text-faint"
         placeholder="Write what the voice should say…"
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
@@ -95,30 +91,52 @@ export default function ScriptBlock({
       />
 
 
-      {/* Word count only. Chunking is still calculated by the request above so
-          StudioShell can render its long-reference-clip warning, but no time
-          estimate or chunk count is shown here.
-
-          Overlaid on the textarea rather than given a row of its own: a
-          30px bordered strip for six characters was the widest thing in the
-          compose column doing the least. Three things make an overlay work
-          where a row did not:
-            - `pointer-events-none`, so the corner of the textarea it sits
-              over still takes clicks and drags through to the field;
-            - an opaque `bg-surface-card` (the textarea is bg-transparent
-              over this same colour, so it matches exactly), because pb-9
-              only reserves space at the END of the content -- a script
-              scrolled to its middle runs lines straight under this;
-            - `right-6`, not `right-0`: once a script overflows
-              `overflow-y-auto`, Windows gives its scrollbar 17px, so 16px
-              is not enough to keep the count clear of it. */}
-      <span
-        className={`mono pointer-events-none absolute right-6 bottom-2 rounded-sm bg-surface-card px-1.5 py-0.5 text-[11px] whitespace-nowrap ${
-          overLimit ? 'text-danger' : 'text-faint'
-        }`}
-      >
-        {words.toLocaleString()} word{words === 1 ? '' : 's'}
-      </span>
+      <footer className="script-editor-footer">
+        <span className={`mono text-[11px] whitespace-nowrap ${overLimit ? 'text-danger' : 'text-faint'}`}>
+          {words.toLocaleString()} word{words === 1 ? '' : 's'}
+        </span>
+        <div className="script-voice-setting" data-tour="voice-controls">
+          <span className="script-voice-label">Voice</span>
+          <div data-tour="voice-picker">
+            <VoicePicker
+              presets={presets}
+              selectedPresetId={presetId}
+              onSelect={onSelectVoice}
+              onRename={onRenameVoice}
+              loading={voicesLoading}
+              onDelete={onDeleteVoice}
+            />
+          </div>
+          <input
+            ref={voiceUploadRef}
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            disabled={creatingVoice}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file) onAddVoice(file)
+            }}
+          />
+          <button
+            type="button"
+            className="icon-btn size-8 flex-none border border-control bg-control-fill text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
+            aria-label={creatingVoice ? 'Uploading voice' : 'Upload a voice'}
+            aria-busy={creatingVoice}
+            disabled={creatingVoice}
+            data-tour="add-voice"
+            title={creatingVoice ? 'Uploading voice' : 'Upload a voice'}
+            onClick={() => voiceUploadRef.current?.click()}
+          >
+            {creatingVoice ? (
+              <span className="size-3.5 rounded-full border-2 border-progress-line border-t-progress animate-boot-spin" aria-hidden="true" />
+            ) : (
+              <UploadIcon size={15} />
+            )}
+          </button>
+        </div>
+      </footer>
     </div>
   )
 }

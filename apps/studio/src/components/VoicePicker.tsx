@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { mediaUrl, type Preset } from '../api'
+import { mediaUrl, presetDownloadUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
-import { PauseIcon, PlayIcon, TrashIcon } from './Icons'
+import { CheckIcon, DownloadIcon, PauseIcon, PlayIcon, TrashIcon } from './Icons'
 import AdminPasswordModal from './AdminPasswordModal'
+import InlineName from './InlineName'
 
 interface Props {
   presets: Preset[]
   selectedPresetId: string | null
   onSelect: (id: string) => void
+  onRename: (id: string, name: string, opts?: { unloading?: boolean }) => void
   /** True before the first fetch has returned. An empty list means two
    * completely different things -- "you have no voices" and "we have not asked
    * yet" -- and only one of them is the user's problem to fix. */
@@ -20,7 +22,7 @@ interface Props {
 }
 
 /** Voice picker: a trigger button plus a popover list, each row carrying its
- * own audition and delete buttons on the right.
+ * editable name plus audition, download, and delete controls on the right.
  *
  * Deliberately NOT a native <select>, and that is the whole reason this control
  * is hand-rolled: an <option> cannot contain a button. Browsers ignore markup
@@ -28,8 +30,8 @@ interface Props {
  * actions off a row. Anyone tempted to simplify this back to a <select> loses
  * the play and delete buttons with it.
  *
- * Delete keeps the two-step inline confirm used in NewVoiceModal (the row flips
- * to Delete/Keep) rather than window.confirm, which blocks the page. Deleting
+ * Delete uses the password confirmation rather than window.confirm, which
+ * blocks the page. Deleting
  * the selected voice needs no special handling here -- StudioShell's
  * handleDeletePreset already clears the selection.
  *
@@ -39,6 +41,7 @@ export default function VoicePicker({
   presets,
   selectedPresetId,
   onSelect,
+  onRename,
   loading = false,
   onDelete,
 }: Props) {
@@ -116,12 +119,18 @@ export default function VoicePicker({
     setPreviewingId(preset.id)
   }
 
-  // Arrow keys walk the rows. Every row is a real button, so Tab already works;
-  // this only adds the movement people expect from a dropdown.
+  function selectPreset(id: string) {
+    onSelect(id)
+    close()
+    triggerRef.current?.focus()
+  }
+
+  // Arrow keys walk the selectable rows. Inline names and action controls keep
+  // their usual Tab behavior and stop their clicks from selecting a row.
   function onMenuKeyDown(e: ReactKeyboardEvent<HTMLUListElement>) {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     const picks = Array.from(
-      rootRef.current?.querySelectorAll<HTMLButtonElement>('.voice-menu-pick') ?? [],
+      rootRef.current?.querySelectorAll<HTMLElement>('.voice-menu-pick') ?? [],
     )
     if (picks.length === 0) return
     e.preventDefault()
@@ -146,7 +155,7 @@ export default function VoicePicker({
   //
   // It remains 168px at every viewport: a selection is data, not a layout
   // instruction. Long names truncate inside the stable field rather than
-  // moving the Add Voice control or changing the composer alignment.
+  // changing the composer alignment.
   return (
     <div
       className="relative w-[168px] flex-none"
@@ -171,7 +180,6 @@ export default function VoicePicker({
             and a long name is genuinely cut -- measured at 126px visible of
             258px, i.e. under half. Widening it is not the fix; that was tried
             and read as a search bar. Hover reveals the rest instead. */}
-        <span className="mono flex-none text-[10px] text-muted" aria-hidden="true">Voice</span>
         <span
           className="overflow-hidden text-ellipsis whitespace-nowrap"
           title={selected ? selected.name : undefined}
@@ -196,25 +204,50 @@ export default function VoicePicker({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={reduced ? undefined : { opacity: 0, scale: 0.98, y: -4 }}
             transition={{ duration: reduced ? 0 : 0.14, ease: [0.2, 0, 0, 1] }}
-            className="absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-[280px] list-none origin-top overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu)"
+            className="script-voice-menu absolute top-[calc(100%+6px)] right-[-42px] z-50 m-0 w-[min(302px,calc(100vw-48px))] max-h-[280px] list-none origin-top overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu)"
+            role="listbox"
             onKeyDown={onMenuKeyDown}
           >
             {presets.map((p) => (
               <li
                 key={p.id}
-                className="flex min-h-9 items-center gap-1 border-b border-hairline last:border-b-0"
+                className={`voice-menu-pick flex min-h-9 cursor-pointer items-center gap-1 rounded-sm border-b border-hairline px-1.5 last:border-b-0 hover:bg-surface-hover focus:bg-surface-hover focus:outline-none ${p.id === selectedPresetId ? 'voice-menu-pick-selected' : ''}`}
+                role="option"
+                tabIndex={0}
+                aria-selected={p.id === selectedPresetId}
+                aria-current={p.id === selectedPresetId ? 'true' : undefined}
+                onClick={() => {
+                  selectPreset(p.id)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.preventDefault()
+                  selectPreset(p.id)
+                }}
               >
-                <button
-                  type="button"
-                  className="voice-menu-pick flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm bg-transparent py-0 pr-1 pl-1.5 text-left text-[13px] text-muted transition-[color,background] duration-(--fast) ease-(--ease) hover:bg-surface-hover hover:text-ink aria-[current=true]:text-ink"
-                  aria-current={p.id === selectedPresetId}
-                  onClick={() => {
-                    onSelect(p.id)
-                    close()
-                    triggerRef.current?.focus()
-                  }}
-                >
-                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</span>
+                <span className="flex min-w-0 flex-1 items-center">
+                  <span
+                    className={`voice-menu-selection ${p.id === selectedPresetId ? 'is-selected' : ''}`}
+                    aria-hidden="true"
+                    title={p.id === selectedPresetId ? 'Selected voice' : 'Select this voice'}
+                  >
+                    {p.id === selectedPresetId && <CheckIcon size={10} />}
+                  </span>
+                  <span
+                    className="min-w-0 flex-1"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <InlineName
+                      value={p.name}
+                      placeholder="Name this voice"
+                      ariaLabel={`Name of voice ${p.name}`}
+                      title="Click to rename"
+                      onCommit={(next, opts) => onRename(p.id, next, opts)}
+                      minChars={1}
+                      className="result-name voice-picker-name"
+                    />
+                  </span>
                   {runningPresetIds.has(p.id) && (
                     <span
                       className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`}
@@ -222,9 +255,13 @@ export default function VoicePicker({
                       aria-hidden="true"
                     />
                   )}
-                </button>
+                </span>
 
-                <span className="ml-auto flex flex-none items-center gap-0.5">
+                <span
+                  className="ml-auto flex flex-none items-center gap-0.5"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
                   <button
                     type="button"
                     className="icon-btn"
@@ -235,6 +272,15 @@ export default function VoicePicker({
                   >
                     {previewingId === p.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
                   </button>
+                  <a
+                    href={presetDownloadUrl(p.id)}
+                    download
+                    className="icon-btn"
+                    aria-label={`Download ${p.name} reference clip`}
+                    title="Download reference clip"
+                  >
+                    <DownloadIcon size={13} />
+                  </a>
                   <button type="button" className="icon-btn icon-btn-danger" aria-label={`Delete ${p.name}`} title={`Delete ${p.name}`} onClick={() => { stopPreview(); setDeletePreset(p) }}>
                     <TrashIcon size={13} />
                   </button>

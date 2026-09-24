@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import NewVoiceModal from './NewVoiceModal'
 import ThemeSwitch from './ThemeSwitch'
 import ParticleText from './ParticleText'
-import VoicePicker from './VoicePicker'
 import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
 import { restoreVoiceoverFilters, type VoiceoverFilterState } from './VoiceoverFilters'
 import GenerateButton from './GenerateButton'
 import { MAX_SCRIPT_CHARS, UNDO_MS } from '../constants'
 import { presetNameFromFile } from '../format'
-import { AlertIcon, CheckIcon, HelpIcon, PlusIcon, TrashIcon } from './Icons'
+import { AlertIcon, CheckIcon, HelpIcon, TrashIcon } from './Icons'
 import { Toaster, toast } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useJobToasts } from '../hooks/useJobToasts'
@@ -77,13 +75,9 @@ export default function StudioShell() {
   }, [])
   const [voiceId, setVoiceId] = useState<string | null>(null)
 
-  // Reference clips that the backend shortened, by preset id. Session-only:
-  // it is a report on what just happened, not a property of the voice.
-  const [voicesOpen, setVoicesOpen] = useState(false)
   const [creatingPreset, setCreatingPreset] = useState(false)
-  // Separate from the composer's `error`, which renders inside .composer and
-  // is therefore UNDERNEATH the open dialog -- a voice that failed to save
-  // reported itself on a page the user could not see.
+  // Separate from the composer's `error` so upload failures can keep their
+  // specific toast title.
   const [voiceError, setVoiceError] = useState<string | null>(null)
 
   // One script, not a list: the "+ Add block" control is gone, so there is no
@@ -116,11 +110,7 @@ export default function StudioShell() {
 
   const { queue, refresh: refreshQueue, reachable } = useGenerationActivity()
   useJobToasts(queue)
-  // Both error STATES are mirrored to toasts rather than rendered inline.
-  // voiceError used to draw a banner inside the voices dialog, which grew
-  // the panel and undid the fixed-height window; sonner sits at z-index
-  // 999999999, well above the modal's z-200, so it is visible over the
-  // dialog without being laid out inside it.
+  // Both error states are mirrored to toasts rather than rendered inline.
   useErrorToast(error, 'Something went wrong')
   useErrorToast(voiceError, 'Could not add that voice')
   const { theme } = useTheme()
@@ -254,10 +244,8 @@ export default function StudioShell() {
     refreshHistory()
   }
 
-  // Both routes to a reference clip go through here -- the window-wide drop and
-  // the modal's own dropzone -- so the name gets pre-filled either way. It used
-  // to be derived only on the window-drop path, which meant picking a file
-  // inside the modal left the field blank.
+  // Both routes to a reference clip go through here -- the inline upload
+  // button and the window-wide drop -- so the name gets pre-filled either way.
   //
   // A dropped clip IS the decision -- there is no Save step and no name to
   // fill in. The name comes off the filename and is editable in place on the
@@ -277,9 +265,6 @@ export default function StudioShell() {
       )
       setPresets((prev) => [preset, ...prev])
       setVoiceId(preset.id) // a voice you just made is the one you want to use
-      // Deliberately NOT closing. The dialog used to close here, back when
-      // saving was the last step; now the row it just created -- with its
-      // editable name -- is the thing the user came to see.
     } catch (e) {
       setVoiceError(e instanceof ApiError ? e.message : 'Failed to add the voice')
     } finally {
@@ -287,10 +272,9 @@ export default function StudioShell() {
     }
   }
 
-  // Dropping an audio file anywhere opens the voices dialog. The voice is
-  // already saved by the time it appears.
+  // Dropping an audio file anywhere uploads it immediately, just as choosing
+  // one from the inline Upload control does.
   const dragging = useFileDrop((file) => {
-    setVoicesOpen(true)
     void handleAddVoice(file)
   })
 
@@ -612,11 +596,6 @@ export default function StudioShell() {
               "Script" rather than "Compose" or "New voiceover" because it is
               the word the terminology table fixes for the text the user
               writes. */}
-          {/* -mb-3 cancels the gap difference between the columns: the
-              results column is gap-1 (4px + the rule's own 6px = 10px)
-              and this one is gap-[22px]. Both headings must sit the same
-              distance above their content, and shrinking .composer's gap
-              instead would tighten the script card and the notices too. */}
           <h2 className="section-rule -mb-3">
             <span>Script</span>
             {/* order-3 puts it past the ::after hairline, i.e. hard right --
@@ -659,43 +638,19 @@ export default function StudioShell() {
           {cpuNotice && (
             <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">Running on CPU — generation will be very slow. {cpuNotice}</p>
           )}
-
-
-
-          {/* Above the script box, right-aligned, rather than beside Generate.
-              Not folded into the Script heading: that line already carries the
-              label, its ::after hairline and the "/" key cap at order-3, and a
-              32px dropdown would regrow a ~17px heading -- the mistake the bulk
-              bar made. */}
-          <div className="-mb-3 flex min-w-0 items-center justify-end gap-2" data-tour="voice-controls">
-            <div data-tour="voice-picker">
-              <VoicePicker
-                presets={presets}
-                selectedPresetId={voiceId}
-                onSelect={setVoiceId}
-                loading={modelStatus === 'checking'}
-                onDelete={handleDeletePreset}
-              />
-            </div>
-
-            <button
-              type="button"
-              className="icon-btn size-8 flex-none border border-control bg-control-fill text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
-              aria-label="Add a voice"
-              title="Add a voice"
-              data-tour="add-voice"
-              onClick={() => setVoicesOpen(true)}
-            >
-              <PlusIcon size={15} />
-            </button>
-          </div>
-
           <ScriptBlock
             text={script}
             onTextChange={setScript}
             textareaRef={scriptRef}
             presetId={voiceId}
             onEstimate={setEstimate}
+            presets={presets}
+            onSelectVoice={setVoiceId}
+            onRenameVoice={handleRenamePreset}
+            onDeleteVoice={handleDeletePreset}
+            voicesLoading={modelStatus === 'checking'}
+            creatingVoice={creatingPreset}
+            onAddVoice={(file) => void handleAddVoice(file)}
           />
 
           {/* The voice's own reference clip decides chunk size, so a long
@@ -704,10 +659,7 @@ export default function StudioShell() {
               act on it. */}
           {estimate?.warning && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">{estimate.warning}</p>}
 
-          {/* One action row under the script: add-voice, voice, generate.
-              The voice picker sits here rather than inside the card, so the
-              script box stays the script box.
-              GenerateButton stays a button throughout -- progress now lives in
+          {/* GenerateButton stays a button throughout -- progress now lives in
               the Voiceovers column, as the first row, where the finished
               voiceover will land. */}
           {/* No duration estimate beside Generate or in a running row. A number
@@ -784,19 +736,6 @@ export default function StudioShell() {
           </button>
         </div>
       </Modal>
-
-      <NewVoiceModal
-        open={voicesOpen}
-        onClose={() => {
-          setVoicesOpen(false)
-          setVoiceError(null)
-        }}
-        presets={presets}
-        onFileSelected={handleAddVoice}
-        uploading={creatingPreset}
-        onRename={handleRenamePreset}
-        onDelete={handleDeletePreset}
-      />
 
       {/* Toasts. `theme` comes from OUR nine-theme id, not sonner's default
           "light": six of the nine are dark, and a light toast stack over Booth

@@ -28,8 +28,8 @@ interface Props {
 /** A name that is also its own rename field.
  *
  * One <input>, always present, dressed as plain text until focused. Used for
- * voiceover names in the Voiceovers column and for voice names in the voices
- * dialog. The two persist to completely different places -- localStorage and
+ * voiceover names in the Voiceovers column and for voice names in the voice
+ * picker. The two persist to completely different places -- localStorage and
  * the backend respectively -- which is exactly why the commit is a prop and
  * this component knows nothing about storage.
  *

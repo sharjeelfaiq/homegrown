@@ -33,7 +33,7 @@ export default function Modal({ open, title, onClose, children }: Props) {
 
   // onClose is held in a ref so the effect below can depend on `open` ALONE.
   //
-  // Callers pass an inline arrow (`onClose={() => setVoicesOpen(false)}`), so
+  // Callers can pass an inline arrow (`onClose={() => setOpen(false)}`), so
   // its identity changes on every render of the parent -- and the parent
   // re-renders on every keystroke, because the form's text lives in its state.
   // With onClose in the dependency array, that made the effect tear down and

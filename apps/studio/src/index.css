@@ -703,6 +703,82 @@ body {
   cursor: default;
 }
 
+/* The editor footer is its own grid row, never an overlay. Its controls are
+   therefore the final composition setting without covering typed lines or a
+   native scrollbar. */
+.script-editor-footer {
+  display: flex;
+  height: 48px;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-nav) 72%, var(--bg-card));
+  padding: 7px 12px 7px 18px;
+}
+
+/* Editing is identified by the caret first; the card adds only a theme-aware
+   hairline so focus stays clear without competing with selected audio controls. */
+.script-editor:focus-within {
+  border-color: var(--line-focus);
+}
+
+/* The global keyboard-focus rule uses the audio accent. Inside this composite
+   editor it outlines only the textarea, cutting across the footer; the card's
+   focus-within hairline above is the single, quieter focus indicator instead. */
+.script-editor textarea:focus-visible {
+  outline: none;
+}
+
+/* Voice is a setting of the script, so it belongs beside the count in the
+   editor footer rather than competing with the Script rule or shortcut. */
+.script-voice-setting {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border-left: 1px solid var(--line);
+  padding-left: 12px;
+}
+
+.script-voice-label {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The menu opens below the editor, not below the trigger: extending it across
+   the Upload slot leaves a deliberate 12px inset from the editor's right
+   edge. At phone widths the normal trigger alignment keeps it in bounds. */
+@media (min-width: 501px) {
+  .script-editor-footer .script-voice-menu {
+    right: -42px;
+  }
+}
+
+/* The picker keeps its readable fixed width; only the setting row wraps when
+   a phone is too narrow for its label, picker, and upload control together. */
+@media (max-width: 500px) {
+  .script-editor-footer {
+    height: auto;
+    flex-wrap: wrap;
+  }
+
+  .script-voice-setting {
+    flex-wrap: wrap;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .script-editor-footer .script-voice-menu {
+    right: 0;
+  }
+}
+
 /* The Voiceovers column's glass surface.
    
    Painted on a PSEUDO-ELEMENT, and both of its properties are load-bearing.
@@ -801,41 +877,6 @@ body {
   }
 }
 
-/* The voices dialog's list. Sits next to result-list because the two look
-   alike and are the OPPOSITE of each other in the one property that matters.
-
-   `height`, not `max-height`. result-list caps a list that is allowed to be
-   shorter; this one RESERVES six rows whether there are six voices or one.
-   That difference is the entire feature: the modal panel sizes to its content
-   and the backdrop centres it (Modal.tsx), so a list that grows by a row
-   grows the dialog by a row in both directions -- and the dialog deliberately
-   stays open after a voice is cloned, so the user is looking straight at the
-   jump at the moment their voice appears. A max-height cap does not fix that;
-   it only stops it after the sixth voice.
-
-   `flex: none` for the same reason, and this is the other inversion:
-   result-list is `flex: 1 1 auto; min-height: 0` so the Voiceovers column can
-   shrink BELOW eight rows on a short laptop rather than push the layout past
-   the fold. Here the reserve is the point, so the default flex-shrink: 1 of a
-   flex child would quietly undo it. The two are inconsistent on purpose --
-   different containers, opposite requirements. Do not unify them.
-
-   scrollbar-gutter keeps the scrollbar arriving at row seven from shifting
-   the row content sideways.
-
-   No `@media (width < 1025px)` release, unlike result-list: this is inside a
-   modal that is already a fixed-size box on every viewport, not a column of
-   the page, so there is no page-scroller to hand back to. */
-@utility voice-list {
-  flex: none;
-  height: calc(6 * var(--voice-row-h));
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
-  scrollbar-gutter: stable;
-}
-
 /* The row title IS the rename field -- one <input>, always present, dressed
    as plain text until focused. Every box-affecting property (height,
    padding, border width, font) is identical focused and unfocused, so
@@ -880,6 +921,59 @@ body {
 
 .inline-name-shell:has(.voiceover-name) {
   max-width: 76%;
+}
+
+/* The picker keeps its compact trigger, but its menu needs enough room for a
+   readable editable name alongside three per-voice actions. These overrides
+   intentionally apply only inside that wider menu, not to history rows. */
+.voice-menu-pick .inline-name-shell {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+}
+
+.voice-menu-pick .voice-picker-name {
+  width: 100%;
+  max-width: none;
+  /* result-name reserves 24px for InlineName's pencil. Picker rows hide
+     that affordance, so reclaim it before narrowing the menu by the same
+     amount; voice names retain their readable content width. */
+  padding-left: 6px;
+}
+
+/* The name remains editable on click. Picker rows have a dedicated Select
+   action, so the pencil would be redundant visual noise here. */
+.voice-menu-pick .inline-name-pencil {
+  display: none;
+}
+
+.voice-menu-selection {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-right: 5px;
+  border: 1px solid var(--control-edge);
+  border-radius: 999px;
+  color: var(--bg-card);
+  vertical-align: -1px;
+}
+
+.voice-menu-selection.is-selected {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+}
+
+/* Selection stays visible while the menu is open, rather than relying on the
+   closed trigger to communicate which voice Generate will use. */
+.voice-menu-pick.voice-menu-pick-selected,
+.voice-menu-pick.voice-menu-pick-selected:hover,
+.voice-menu-pick.voice-menu-pick-selected:focus {
+  background: var(--accent-2-soft);
+  color: var(--text-primary);
+  box-shadow: inset 2px 0 0 var(--accent-2);
 }
 
 .voiceover-name {

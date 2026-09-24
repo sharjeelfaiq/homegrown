@@ -7,12 +7,6 @@ export const MAX_SCRIPT_CHARS = 60_000 // must match the service's MAX_TOTAL_CHA
 // ceiling made the UI report "1 chunk" for a script that rendered as 3.
 // Ask the server instead -- see getEstimate() in api.ts.
 
-/** What a reference clip is trimmed to. Must match REF_TRIM_SECS in
- * services/voice-api/main.py -- the service enforces it; this is only so the modal can
- * warn before a long file is uploaded rather than reporting it afterwards.
- * Nothing keeps the two in step. */
-export const REF_TRIM_SECS = 40
-
 /** Chunk size below which this model starts padding output with murmur and
  * trailing silence. Must match PADDING_SAFE_MIN_CHARS in services/voice-api/main.py, where
  * the number was measured; nothing keeps the two in step.

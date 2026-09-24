@@ -43,19 +43,21 @@ delete endpoints check it again when a deferred delete is committed.
 
 ## Create and manage voices
 
-Choose **Add a voice** or drop an audio file into the Studio. Uploads up to 30
-minutes are accepted; clips longer than 40 seconds are shortened to the first
-40 seconds of speech. A 10–20-second, dry, close-mic recording is a useful
-starting point. The voice name starts from the filename, language is detected,
-and faster-whisper transcribes the reference. There is no language selector.
+Choose **Upload a voice** in the Script editor footer or drop an audio file
+anywhere into the Studio. Uploads up to 30 minutes are accepted; clips longer
+than 40 seconds are shortened to the first 40 seconds of speech. A
+10–20-second, dry, close-mic recording is a useful starting point. The voice
+name starts from the filename, language is detected, and faster-whisper
+transcribes the reference. There is no language selector.
 
-The voice list in the picker has **Play** and **Delete** buttons. The Voices
-dialog also lets you audition, download, rename, and delete a reference clip.
-Clicking delete in either place opens the admin-password modal. After a valid
-password, a seven-second **Undo** toast appears; Undo cancels the pending
-delete. If it expires, the server deletes the preset and its reference audio.
-An invalid password closes the modal and does not schedule a deletion. Preset
-deletion can make queued jobs using that voice fail.
+The Script editor footer holds the word count, current voice picker, and
+Upload control. Open the picker to select a voice, click its name to rename it,
+or use its **Play**, download, and **Delete** actions. Clicking delete opens
+the admin-password modal. After a valid password, a seven-second **Undo** toast
+appears; Undo cancels the pending delete. If it expires, the server deletes the
+preset and its reference audio. An invalid password closes the modal and does
+not schedule a deletion. Preset deletion can make queued jobs using that voice
+fail.
 
 Voice names are stored by the API and appear on future voiceovers. Renaming a
 voice does not rewrite names already recorded in history. Reference downloads
@@ -63,7 +65,9 @@ are the original uploaded audio.
 
 ## Generate and cancel voiceovers
 
-Write up to 60,000 characters, choose a voice, then select **Generate**.
+Write up to 60,000 characters in the Script editor, choose a voice in its
+footer, then select **Generate**. Press `/` to focus the editor or
+Ctrl/Cmd+Enter to generate when the form is ready.
 Generation is serial: one job runs at a time under the model's generation lock;
 additional jobs queue. Reference audio and script text share the model context
 window, so the available chunk size depends on the selected voice. Long scripts
