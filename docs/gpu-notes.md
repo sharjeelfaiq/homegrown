@@ -1,5 +1,11 @@
-GPU / CLOUD RECOMMENDATION — Homegrown (Qwen3-TTS-12Hz-0.6B)
+LOCAL GPU NOTES — Homegrown (Qwen3-TTS-12Hz-0.6B)
 ======================================================================
+
+These are dated measurements and tuning notes from specific local GPUs, not a
+live inventory or guarantees about another machine. Runtime constants can
+change; check `services/voice-api/main.py` for the values currently in source.
+The capacity notes below are observations, not a tested compatibility or
+performance guarantee.
 
 UI NOTE (current)
 ----------------------------------------
@@ -13,106 +19,69 @@ the browser console are the meaningful integration checks.
 CURRENT SETUP (baseline for comparison)
 ----------------------------------------
 - GTX 960, 4GB VRAM, bfloat16, sdpa attention (no flash-attn installed)
-  NB: these measurements were taken on a GTX 960. The machine running
-  the app now reports a GTX 970 (sm_52) via /api/health. Both are 4GB
-  sm_52 Maxwell, so the constants below hold, but the numbers are 960 numbers.
+  These measurements were taken on a GTX 960. A later session recorded a
+  GTX 970 (sm_52) through `/api/health`; do not assume that is the machine's
+  current GPU. Both cards have 4GB and sm_52, but results remain specific to
+  the recorded runs.
 - Model itself is small: 0.6B params, ~1.2GB weights in bf16
 - But VRAM sits at ~3989-3991MB used out of 4096MB during generation --
   basically maxed out just from CUDA-graph static buffers + KV cache
-- That razor-thin margin is the direct cause of two real bugs hit this
-  session: Windows TDR killing kernels mid-generation (driver watchdog
-  assumes a hung GPU when a kernel runs too long under memory pressure),
-  and CHUNK_MAX_CHARS having to be capped at 800 chars / max_seq_len=1024
-  to avoid rope-position quality collapse on long generations.
+- The small VRAM margin constrains the tested context and chunk settings.
+  Windows TDR timeouts were also observed, but their cause was not established
+  (see the dated TDR record below); do not attribute those timeouts directly
+  to memory pressure.
 - Generation is single-stream, autoregressive, one codec token at a time
   (via CUDA graph replay) -- this is a LATENCY-bound workload, not a
   throughput/FLOPs-bound one. A bigger GPU mainly buys headroom and
   speed, not "more model capacity."
 
-TL;DR RECOMMENDATION
+CAPACITY NOTES (NOT A PURCHASE RECOMMENDATION)
 ----------------------------------------
-Don't over-buy. This is a 0.6B model, not a 70B LLM -- it does not need
-A100/H100-class hardware. The single biggest win is just getting off a
-4GB card onto something with real headroom.
-
-  Best value pick:      NVIDIA L4 (24GB)   or   RTX 4090 (24GB)
-  Budget-acceptable:     NVIDIA T4 (16GB)
-  If serving many users: NVIDIA L40S (48GB) or A100 (40GB)
-
-24GB VRAM removes the memory-pressure problem entirely: model weights
-(~1.2GB) + a much larger CUDA-graph KV cache (max_seq_len could go to
-4096-8192 instead of 1024) + comfortable slack, with zero risk of
-hitting the TDR-style instability seen on the 4GB card.
+This 0.6B model used nearly all available VRAM on the measured 4GB setup.
+More VRAM offers headroom for the model and CUDA-graph KV cache, but no
+cross-GPU purchasing or performance comparison was conducted for these notes.
+The 4096–8192 context sizes mentioned here are untested possibilities, not
+validated settings. Additional VRAM also does not guarantee freedom from
+driver timeouts or other GPU faults.
 
 VRAM TIER BREAKDOWN
 ----------------------------------------
-8-12GB  (RTX 3060 12GB, RTX 4070, T4 16GB-ish tier)
-  - Fixes the crash/instability problem outright.
-  - Can safely raise max_seq_len to ~2048-3072 without the current
-    "shrink chunk size per preset's reference-clip length" workaround
-    being nearly as critical.
-  - Good minimum bar if cost is the main constraint.
+8-12GB
+  - Provides more headroom than the measured 4GB setup; it does not guarantee
+    that every driver timeout or instability is fixed.
+  - Could support testing larger context settings; remeasure VRAM and quality
+    on the target card rather than assuming a safe limit.
 
-16-24GB (T4 16GB, A10G 24GB, L4 24GB, RTX 4090 24GB)
-  - Comfortable headroom: max_seq_len 4096+, longer reference clips
-    tolerated safely, room to eventually add batching (multiple
-    concurrent generations) without re-architecting immediately.
-  - RTX 4090 specifically has excellent memory bandwidth and the best
-    raw price/performance of this group for single-stream latency --
-    but it's a consumer card (no official cloud SLA/ECC), fine for
-    this project's scale.
-  - L4 / A10G are the datacenter equivalents if you want a "real" cloud
-    instance type (AWS/GCP) rather than a GPU-rental marketplace.
+16-24GB
+  - Offers additional capacity for experiments with larger contexts. Longer
+    reference clips still need quality testing and remain subject to the app's
+    trim and per-preset context budget.
 
 40GB+ (A100 40GB/80GB, L40S 48GB)
-  - Only worth it if you actually plan to serve many concurrent users
-    with real request batching. The current code holds a global lock
+  - Only worth it for local experimentation with larger context budgets. The
+    current code holds a global lock
     serializing all generation (CUDA graphs aren't reentrant), so
     right now a bigger GPU alone does NOT give you parallel throughput
     -- that requires code changes (multiple model instances / a queue
     + worker pool) before this tier pays for itself.
 
-INSTANCE TYPES BY PROVIDER — HOURLY PRICING TABLE
-(prices verified via web search, July 2026 -- marketplace prices like
-Vast.ai are dynamic/live-market and will drift; check current rate
-before committing)
-----------------------------------------------------------------------------------------
-GPU              VRAM   Provider        Instance/Tier            $/hr        Notes
-----------------------------------------------------------------------------------------
-RTX 4090         24GB   RunPod          Community Cloud          $0.34       cheapest tier
-RTX 4090         24GB   RunPod          Secure Cloud             $0.69       vetted DCs
-RTX 4090         24GB   Vast.ai         marketplace (low end)    $0.31       varies live
-NVIDIA L4        24GB   RunPod          --                       $0.39+      "from" price
-NVIDIA L4        24GB   AWS             g6.xlarge                $0.805      on-demand
-NVIDIA T4        16GB   AWS             g4dn.xlarge              $0.526      on-demand
-NVIDIA A10G      24GB   AWS             g5.xlarge                $1.006      on-demand
-NVIDIA A100      80GB   RunPod          Community Cloud          $1.39       --
-NVIDIA A100      80GB   Vast.ai         marketplace (low end)    $0.67       high-reliability
-                                                                              hosts, varies
-NVIDIA A100      40GB   Lambda Labs     fixed on-demand          $1.99       fixed, predictable
-----------------------------------------------------------------------------------------
-GCP (g2-standard-4/L4, N1+T4) and Azure (NC-series T4/A10) sit in a
-similar band to their AWS equivalents above -- check each provider'sa
-calculator for current region-specific rates, not included in the
-table since exact figures weren't confirmed.
-
-RunPod also has free egress (hyperscalers charge $0.09-0.12/GB out) and
-a serverless "pay only while generating" option -- a good fit since
-this app isn't a 24/7 always-on service.
+This project supports locally attached GPUs only. Use the model and chunking
+measurements below when evaluating local hardware.
 
 WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
 ----------------------------------------
-- Raise max_seq_len in backend/main.py (currently 1024) --
-  8-12GB+ cards can go to 2048-4096 safely, 16GB+ to 4096-8192.
+- Raise max_seq_len in services/voice-api/main.py (currently 1024) only after
+  measuring peak VRAM and generation quality on the target hardware. Larger
+  context values listed above are experimental targets, not guarantees.
 - Raise CHUNK_MAX_CHARS accordingly (currently 800, tuned specifically
   for the 4GB/1024 config) -- fewer, larger chunks means fewer seams
   and faster overall jobs.
-- Install flash-attn (not installed currently -- the app is running the
-  slower "manual PyTorch version" fallback per its own startup warning).
-  This alone is a meaningful speedup on any modern datacenter GPU
-  (T4/L4/A10G/A100 all support it; RTX 4090 does too).
+- Flash Attention was not installed in the measured environment. Treat it as
+  an optional, platform-dependent experiment rather than a supported app
+  prerequisite; check compatibility and benchmark before making performance
+  claims. The application defaults to PyTorch SDPA.
 - MAX_REF_AUDIO_SECS is not the binding limit and never was a quality
-  number. It is 1800.0 (thirty minutes) in backend/main.py today, and
+  number. It is 1800.0 (thirty minutes) in services/voice-api/main.py today, and
   it guards create_preset buffering the upload in memory. What bounds
   the clip is REF_TRIM_SECS = 40.0: anything longer is trimmed to the
   first 40 seconds of speech rather than rejected, so raising the
@@ -120,7 +89,7 @@ WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
   _seq_budget() derives the real per-preset budget from what the
   trimmed clip leaves of max_seq_len, so on a bigger card raise
   max_seq_len first, then REF_TRIM_SECS, re-solving the table in the
-  REF_TRIM_SECS comment in backend/main.py as you go. Note also that
+  REF_TRIM_SECS comment in services/voice-api/main.py as you go. Note also that
   the practical ceiling is quality, not capacity: clips over ~23s have
   produced garbled output on this card regardless of budget, and 10-20s
   remains the recommended range. See also the 2026-09-12 sweep below.
@@ -133,12 +102,9 @@ WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
 
 BOTTOM LINE
 ----------------------------------------
-Rent an RTX 4090 24GB or L4 24GB on a per-second marketplace (RunPod is
-the easiest starting point) rather than committing to a reserved
-instance or jumping straight to A100/H100. Re-run the same empirical
-calibration approach used this session (test real chunk sizes/durations
-against the new max_seq_len before trusting a bigger number) once
-you're on the new hardware.
+Use the same empirical calibration approach used here when moving to a larger
+local GPU: test real chunk sizes and durations against the new max_seq_len
+before trusting a configuration.
 
 
 STABILITY SWEEP (2026-09-09, GTX 970 sm_52)
@@ -396,13 +362,3 @@ independent confirmation that script length is not the variable. The
 backend set _gpu_fault and every subsequent job failed until the process
 was restarted, which is the designed behaviour -- see the gpu_fault note
 in CLAUDE.md. DECODE_CHUNK_FRAMES was still 100.
-
-SOURCES (pricing, verified July 2026)
-----------------------------------------
-- https://www.runpod.io/pricing
-- https://vast.ai/pricing
-- https://vast.ai/pricing/gpu/RTX-4090
-- https://lambda.ai/pricing
-- https://instances.vantage.sh/aws/ec2/g5.xlarge
-- https://instances.vantage.sh/aws/ec2/g6.xlarge
-- https://instances.vantage.sh/aws/ec2/g4dn.xlarge

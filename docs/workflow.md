@@ -1,294 +1,119 @@
-# Workflow — Homegrown
+# Homegrown workflow
 
-How this app is actually used day-to-day, end to end. For architecture and limitations, see `README.md`;
-for cloud GPU options, see `docs/gpu-notes.md`.
+This guide describes the current local Studio workflow. For first-time setup
+and safety boundaries, see [README.md](../README.md); for the frozen Windows
+build, see [BUILD.md](BUILD.md). GPU measurements are historical and collected
+on the hardware identified in [gpu-notes.md](gpu-notes.md).
 
-## 1. Start the app
+## Start and safety
 
-`bash dev.sh` from the repo root starts both processes, tails both logs, and prints when the model has
-finished loading. Ctrl-C stops both.
+From the repository root, run:
 
-Or the same thing in two terminals by hand (see `README.md` "Running it" for exact commands):
-- Backend: `../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000` from `backend/`
-- Frontend: `npm run dev` from `frontend/` (`frontend/.env.local` should set nothing —
-  `vite.config.ts` proxies `/api`, `/audio` and `/refs` to the backend)
+```bash
+bash dev.sh
+```
 
-Open `http://localhost:5173`. **Other devices on the same wifi can open it too**, at
-`http://<this-PC's-IP>:5173` — `dev.sh` prints that address when it starts. Nothing to configure on the
-visiting device: the proxy means its API calls go to whatever address it typed, so they come back here.
+Open `http://localhost:5173`. The script starts FastAPI on `127.0.0.1:8000`
+and Vite on `:5173`; Vite proxies `/api`, `/audio`, and `/refs` to the API.
+`dev.sh` prints a LAN address because Vite listens on the network interfaces.
+Use a trusted network only: the admin password protects voice and completed
+voiceover deletion, but it is not sign-in and does not protect other app actions.
 
-Two things worth knowing about that:
+For manual startup, create and activate the Python environment as described in
+the README, then run these commands in separate terminals:
 
-- **There is no sign-in.** Anyone who can reach the address can create voices, generate voiceovers and
-  delete other people's. Keep it to a network you trust.
-- **Do not set `VITE_BACKEND_URL` in `frontend/.env.local`.** It hardcodes one address into the page, so
-  every visiting device would call its own machine and find nothing. `dev.sh` warns if you have.
+```bash
+cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
 
-For the built single-port LAN setup instead, see `README.md`.
+```bash
+cd apps/studio && npm run dev
+```
 
-The application shows a full-studio skeleton while the model initializes; its controls and content stay
-non-interactive until the model is ready. uvicorn loads the model *before* it binds the socket, so a refused
-connection during startup is expected rather than a fault. In `vite dev`, `boot_status.json` is still used
-to detect a failed load and show the backend's error after the skeleton clears. `dev.sh` prints `model ready
-on <device>` when generation is available.
+Set `MODEL_PATH` in `services/voice-api/.env` to the downloaded local model.
+The default admin password is `Homegrown-Admin-8731!`; override it by setting
+`ADMIN_PASSWORD` in that same `.env`. The packaged app reads an override from
+`<install>/backend/.env`. The compiled default applies when no non-empty
+override is set. Do not treat this shared default as protection against other
+users on an untrusted network.
 
-The Voiceovers column similarly uses a captured skeleton only for its first uncached history request.
-Cached history stays visible during a refresh; empty, filtered, error, and queue states retain their own
-copy and behavior.
+The app has no accounts or multi-user authorization: API requests use the
+single local user. The password is checked by the API for deletes, and the
+delete endpoints check it again when a deferred delete is committed.
 
-## 2. Add a voice
+## Create and manage voices
 
-The **✚** button beside the voice dropdown opens the **Voices** dialog. You can also drop an audio file
-anywhere in the window — that opens the same dialog with the file already loaded.
+Choose **Add a voice** or drop an audio file into the Studio. Uploads up to 30
+minutes are accepted; clips longer than 40 seconds are shortened to the first
+40 seconds of speech. A 10–20-second, dry, close-mic recording is a useful
+starting point. The voice name starts from the filename, language is detected,
+and faster-whisper transcribes the reference. There is no language selector.
 
-1. Drop or pick a reference clip. **10–20 seconds is the sweet spot**; 2s–30min is accepted. Longer is not
-   better: the clip and your script share one 1024-position context window, so a long clip crowds out the
-   script and the output starts murmuring and dropping words. Past ~23s it has been observed to garble
-   regardless. Record dry and close-mic — room reverb gets cloned along with the voice. Measurements are in
-   `README.md`, "Making a voice that actually works".
-2. That is it. **There is no Save button** — the voice is cloned and saved as the clip lands, and appears
-   as a row in the dialog. A spinner runs on the dropzone while that happens. A clip longer than 40s is
-   shortened to the first 40 seconds *of speech* (long internal pauses are packed out first), and that
-   limit is stated under the dropzone up front rather than reported per clip afterwards.
+The voice list in the picker has **Play** and **Delete** buttons. The Voices
+dialog also lets you audition, download, rename, and delete a reference clip.
+Clicking delete in either place opens the admin-password modal. After a valid
+password, a seven-second **Undo** toast appears; Undo cancels the pending
+delete. If it expires, the server deletes the preset and its reference audio.
+An invalid password closes the modal and does not schedule a deletion. Preset
+deletion can make queued jobs using that voice fail.
 
-   The dialog **does not change height** as voices come and go: the list is a fixed six-row window that
-   scrolls past six.
+Voice names are stored by the API and appear on future voiceovers. Renaming a
+voice does not rewrite names already recorded in history. Reference downloads
+are the original uploaded audio.
 
-   A voice whose reference clip is long enough to hurt quality is **marked with that clip's length**
-   (`55s`), explained in full in the tooltip. That is mostly how you find a voice made by an older
-   build, before clips were trimmed on upload — upgrading does not shorten a clip that is already
-   stored, so the fix is to delete the voice and re-create it. A voice mid-generation shows `busy`
-   instead; only one badge appears at a time.
+## Generate and cancel voiceovers
 
-Everything else about the voice is decided for you, because it can be: the **name** comes from the
-filename with separators turned into spaces, the **language** is detected from the recording itself, and
-the **transcript** is produced with faster-whisper. There is no language control anywhere — asking was
-inviting a wrong answer about your own audio.
+Write up to 60,000 characters, choose a voice, then select **Generate**.
+Generation is serial: one job runs at a time under the model's generation lock;
+additional jobs queue. Reference audio and script text share the model context
+window, so the available chunk size depends on the selected voice. Long scripts
+are split into chunks. The UI reports chunk progress rather than a time
+estimate.
 
-**To rename a voice**, click its name and type, exactly as you would rename a voiceover. Enter or clicking
-away saves it; Escape cancels. One difference worth knowing: a voiceover's name is remembered by your
-browser, while a voice's name is stored on the server — so renaming a voice sticks across machines, and
-renaming a voiceover does not. Renaming a voice leaves the name shown on voiceovers you already made
-alone; that is a record of what the voice was called at the time.
+Live rows appear above completed history. Queued jobs can be reordered. To
+cancel a queued or running job, click **Cancel**, then confirm with the tick.
+Cancellation is sent immediately after confirmation—there is no undo timer
+toast for canceled generations. A running job stops at a chunk boundary. The
+cross button dismisses the confirmation without canceling.
 
-Each row also has **▶** to hear its reference clip, **⭳** to download it, and a two-step delete (the row
-flips to Delete/Keep). The download is the original file, not a re-encode, named after the voice — so it
-is a way of getting a clip back out if the copy you uploaded from is gone. Deleting the voice you had
-selected clears the selection.
+Failed jobs remain visible with the service error. Retry resubmits the same
+script and voice; Dismiss removes the failed queue item. A GPU context fault
+can fail the running job and queued jobs; restart the backend to recover.
 
-Every row of the voice **dropdown** carries the same ▶, so you can audition without opening the dialog.
-Delete is only in the dialog — it is destructive, and it does not belong on a menu you open to pick a
-voice.
+## Review, search, and delete history
 
-> ▶ plays the stored reference clip, never a live generation — a real generation takes ~85s+ per chunk on
-> this hardware.
+Completed voiceovers are newest-first and paginated. Search matches canonical
+voice names across the full history; browser-local display-name overrides only
+match loaded pages. Filters narrow by voice, date, duration, and search text.
+The search query, page size, and display-name overrides are stored in this
+browser; they are not server-side account data.
 
-## 3. Write a script and generate
+Each completed row has a direct download button beside its three-dot menu. The
+menu contains **Delete**. Selecting one or more rows exposes batch Download,
+Delete, and Clear actions in the context toolbar. Single downloads produce an
+MP3; multi-selection downloads a ZIP.
 
-One script box, up to 60,000 characters, sized **`clamp(240px, 32svh, 340px)`** — ten lines on a
-1080p window, seven at its floor. A **word count**
-sits in the bottom-right corner inside the box, not in a row of its own.
+Delete opens the admin-password modal. After a valid password, a seven-second
+Undo toast is shown; the server delete starts only when that window expires. An
+invalid password closes the modal without scheduling a delete. The API checks
+the password again at commit time. Leaving the page before the timer expires
+cancels the pending client-side delete; the history entry remains on the
+server. Undo for a batch cancels the whole pending batch.
 
-The **voice picker** and **✚** sit above the box, at the right. **Generate** sits alone beneath it.
+Reusing a finished voiceover's script fills the composer with that script and
+voice. If this replaces text already in the composer, the app offers a separate
+Undo for the text replacement.
 
-Style and Stability still exist in the backend and default to `natural`/`balanced`, but nothing in the UI
-sends them.
+## Persistence and startup
 
-**The script is saved as you type** (`localStorage`), so a reload or a closed tab does not lose it.
-The script-preview reuse control offers an **Undo** when it replaces something you had written.
+Presets, completed history, and the generation queue are persisted under
+`services/voice-api/storage/` in a source checkout. Browser-local names,
+search, and history-page cache are stored in localStorage. Queue records survive
+a backend restart; a running job restarts from the beginning of that job, not
+from its last chunk.
 
-The same is true of everything else you type: the voiceovers **search box** keeps its query, and a
-**name** — a voiceover's or a voice's — is kept even if you reload while still typing it, without
-having pressed Enter or clicked away. A name given to a voiceover that is **still generating**
-survives the reload too, and still transfers to the finished voiceover when it lands. Escape still
-discards an edit; only edits you have not abandoned are kept.
-
-Shortcuts: **Ctrl/Cmd+Enter** generates, **/** focuses the script, **Ctrl/Cmd+F** focuses the voiceovers
-search, **Escape** dismisses an error. `/` and `Ctrl+F` appear as key caps on the controls they drive;
-Generate shows its shortcut on hover. **There is no Space shortcut** — it used to play the newest
-voiceover and was removed, since binding a bare Space globally means taking over page scrolling
-everywhere outside a text field.
-
-Generate is still a real 40px button, including when the label changes to **Starting the voice model…**
-or **Submitting…**. `Ctrl/Cmd+Enter` activates it whenever it is ready. Its enabled state has a
-pointer-local specular highlight that follows the pointer in every theme; disabled and reduced-motion
-states omit it. The normal CSS highlight remains if transparent WebGL compositing is unavailable.
-
-## 4. Watch it run
-
-Jobs process **one at a time** — single GPU, one worker thread, one lock.
-
-The voiceover being generated appears **immediately as the first row of the Voiceovers column**, laid out
-exactly like the finished row it will become — same editable name, same voice — with three swaps: the
-waveform is a progress bar **spanning exactly the same pixels the waveform will**, the transport is a
-labelled **Cancel**, and the play button is there in its usual place but **greyed out** — there is
-nothing to play yet. A generating row reports no time at all: no elapsed counter, no estimate. Its
-script preview's **Reuse** is greyed out for the same reason, and becomes available when the voiceover
-lands. The row carries no `Generating` or `Cancelling`
-word: the filling amber bar already says the GPU is working, and a cancellation turns the row red and
-greys out **Cancel**. `Queued` is still spelled out, because a queued row has no bar at all.
-
-**Cancelling a voiceover turns the row red, then stops it where it is.** The two happen at different
-moments and that is deliberate. The row goes red the instant you confirm, so the click visibly lands,
-but the job is genuinely still generating during the undo window and the bar goes on filling — in red.
-Once the window closes and the cancellation is actually sent, the bar **freezes** at the chunk it had
-finished: it does not reset, and it does not keep creeping. When the backend drops the row it
-**slides out to the right** rather than fading in place, because a cancelled voiceover is not replaced
-by anything and a quiet fade there reads as the row having been lost. A *completing* row still fades,
-since that one is being replaced by its own finished self.
-Download is absent until there is something to download, and the script preview's **Reuse** is greyed
-out for the same reason — both become available when the voiceover lands.
-
-**You can queue more while one runs.** The Generate button stays live — type another script, change
-the voice if you want, press it again, and the new voiceover joins the queue rather than being refused.
-Queued voiceovers appear as further rows above the finished ones, in the order they will be processed,
-and they are **purple** where the one being generated is amber: reorder controls and the word `Queued`
-instead of a progress bar. When the running one finishes, the next promotes in place
-and turns amber. Cancel works on either — cancelling a queued voiceover leaves the running one alone.
-
-Elapsed, never a countdown. There was briefly a `~2:30` guess beside the clock and a server-side
-`eta_s` behind it; the guess overran on every job measured and `eta_s` drifted in both directions as
-chunks landed, so both are gone. The **Generate** button just says Generate, throughout — the
-Voiceovers column reports the work, so the button does not need to.
-
-**Cancel** stops a running job after the current chunk, within about a second. Clicking Cancel on either
-a **running** or **queued** row reveals compact tick/cross confirmation buttons, and confirming either
-one opens a seven-second **Undo** toast rather than acting at once.
-
-Nothing is paused during those seven seconds — the voiceover carries on generating exactly as it was,
-the bar keeps filling. The row does turn **red** immediately, so you can see the tick registered, and
-Cancel greys out. Undo puts it straight back to amber; there is nothing to restore. When the timer runs
-out the cancellation is sent, and only then does the bar freeze where it got to. If the voiceover happens to *finish* inside the window, the hold is
-released on its own and nothing is sent.
-
-The trade-off, so it is not a surprise: confirming no longer frees the GPU immediately, so if you are
-cancelling in order to start something else, you wait the seven seconds first. There is still no pause —
-generation is serialised behind one GPU lock, so a paused job would stall everything queued behind it.
-
-**A voiceover that fails stays on the list.** It turns red, reads `Failed`, and shows the backend's own
-reason in place of the script preview — hover it for the full message. It sorts below anything still
-running or queued, and takes no voiceover number (it never becomes one). Two buttons replace Cancel:
-**Retry** resubmits the same script and voice, and **Dismiss** throws the row away.
-
-Retry matters because most failures are not the script's fault. A GPU fault kills the whole process's CUDA
-context, so it fails the running voiceover *and* everything queued behind it — three dead voiceovers you
-did nothing wrong to. The backend still holds each script and resubmits it itself, so nothing has to be
-retyped. If the voice has been deleted since, Retry says so rather than failing a second time.
-
-From the second attempt on the row reads **`Failed · try 2`**, counting up. That number is there because
-a retry creates a *new* voiceover and replaces the row with it: when something fails instantly every time,
-the row before and after a retry look identical, and without the count you cannot tell whether the button
-did anything.
-
-**If the graphics driver resets**, everything changes at once. A driver reset kills the GPU context the
-voice model is using, which fails the running voiceover *and* every one queued behind it. A dialog explains
-this in plain terms — your finished voiceovers are safe, close Homegrown and open it again — with the
-driver's own error tucked behind a **Technical details** toggle. Retry disappears from every failed row
-while this is true, rather than being greyed out: there is genuinely nothing you can do from inside the
-app, so a button would be a lie. The dialog can be dismissed, so your scripts and finished voiceovers stay
-reachable, and it returns if more voiceovers fail.
-
-This is per session: the backend keeps failed jobs in memory only, so restarting it clears them, Retry
-included. A job you cancel yourself does not linger — you already know it stopped.
-
-The voice dropdown stays usable while a job runs, so you can line up the next one.
-
-Queued rows have up/down icon buttons between their status and cancel controls. They change queue order
-through `POST /api/queue/reorder`, with unavailable directions disabled. If the backend becomes unreachable
-— it crashed, the machine slept, the wifi dropped — an error
-row with a **Retry** button appears above the script, and any in-flight row **stops its clock** rather
-than counting up against a process that may be gone.
-
-**Nothing tells you how long it will take, on purpose.** Two estimators were tried and both were
-retired: the better one was accurate to a 22% mean error and still overran on 12 of 12 measured jobs.
-What you get instead is measured, and it is progress rather than time — a bar with a tick per chunk,
-and no clock anywhere on a generating row. See `docs/gpu-notes.md` if you want the numbers.
-
-**Each finished or failed job raises a toast** — "Voiceover ready" with the voice name, or a failure toast
-that stays until dismissed. Transient errors elsewhere are toasts too. Three notices stay inline because
-they describe a condition rather than an event: the model-down row above (which carries Retry), the
-CPU-fallback notice, and the long-reference-clip warning — which names the clip's length and the chunk
-size it forces, since the clip is the thing you can actually change.
-
-**While the backend is still starting**, a full-screen overlay blocks the Studio and shows the phase
-(*Tuning*, *Almost there*) plus backend detail when it is available. In `vite dev`, the phase comes from
-the backend's `boot_status.json`; elsewhere it falls back to the elapsed wait. If model loading fails,
-the overlay closes and the Studio shows the actionable model-down state instead of leaving the app stuck.
-
-## 5. Review past voiceovers
-
-Finished jobs land in **Voiceovers** in the right-hand column, newest first.
-
-A **search box** sits at the top of the Voiceovers column, focused by **Ctrl/Cmd+F**. It is persisted, limited to 100
-characters, and does not search scripts. The canonical voice name is searched by the history API across
-all completed history. Custom voiceover display names remain browser-local, so they can narrow only pages
-already loaded in this browser. Live rows are filtered locally by voice name.
-
-Completed voiceovers are **paginated**, and a **Per page** dropdown at the bottom-left of the column
-chooses how many a page shows — **10** (the default), **25**, **50** or **100** — remembered per
-browser. The page controls sit beside it and stay in place at every size — at five or more pages they
-show a sliding window of five numbered buttons, always including the current page. Once
-everything fits on one page they are greyed out and inactive rather than disappearing, so the column never shifts. The app
-requests one server page at a time, prefetches the next page after a successful online response, and
-persists cached history pages locally for 24 hours. Cached rows remain visible while fresh data is fetched.
-The column
-itself **fills the height of the window** (about six rows on a 900px-tall screen, eleven on a 1400px
-one) and scrolls internally when a page is longer than that. Live, queued, canceling, and failed rows
-remain above every completed-history page. On a desktop-width window there is no page scroll at all —
-the list is the only thing that scrolls. Below
-1025px the layout collapses to one column — the composer on top, Voiceovers beneath it — and the page
-scrolls normally instead, with the list growing to fit rather than scrolling inside itself. The script
-textarea is a `clamp(240px, 32svh, 340px)` writing surface with its own vertical scrollbar.
-
-Each row is three lines:
-
-1. Its **name**, and on the right the **voice** that spoke it. `Voiceover 1` is the oldest — the number
-   comes from position, so deleting one renumbers the rest. The name is click-to-edit: type, click away to
-   save, **Escape** to revert, clear it to fall back to `Voiceover N`. Whatever you call it is also the
-   download filename, and the rename persists in `localStorage`. The field hugs its own text. A name typed
-   into a row that is still generating survives a reload and carries over to the finished voiceover.
-2. **Play**, the waveform (which doubles as the seek bar — click or arrow-key), a **`0:12 / 1:06`** clock,
-   and the overflow actions at the right: **download** and **delete**. The clock is itself a button: click
-   anywhere on it to switch to time remaining (`-0:54`). The total on the right stays put, and the slot is
-   a fixed width so nothing beside it shifts.
-3. The first words of the script, and on the right the time it was made — `14:32`, gaining a date
-   once it is no longer today, with the full timestamp on hover. A row still generating shows when it
-   was **sent**, which is the only indication of how long a queued job has been waiting.
-
-**Click the preview to reuse that script and voice.** A wand glyph appears on hover; the action fills the
-compose box and offers Undo if it replaces text you had written. It is **greyed out on a row that is
-still generating** — there is nothing to reuse until the voiceover exists — and becomes live when the
-row lands. Queue polls carry only the first 80 characters either way, so long scripts never ride the
-one-second refresh.
-
-**Deleting is undoable.** The row stays visible while a toast offers **Undo** for seven seconds; the
-delete is sent only when it expires, then the history refresh removes it. Leaving the page in that
-window commits the delete with a keepalive request.
-
-The permanently reserved context toolbar below search and filters shows **All voiceovers** and the total
-by default, or a result count and **Clear** while filtering. **Select several** — the checkbox appears
-on hover, shift-click takes a range, and the toolbar checkbox takes everything currently on screen (the
-current page, at whatever page size is selected). Selection takes precedence in the toolbar, which
-offers **Download**, **Delete**, and **Clear selection**. One selection downloads its MP3 directly;
-multiple selections download one `.zip`. Delete still provides one Undo for the batch.
-
-A voiceover finishing while you are scrolled down the list does not move you. It is counted instead, and an
-**N new voiceovers — show** button appears above the list.
-
-Hover the name to see when it was created. Persisted to `backend/storage/history.json`, so it survives a
-restart.
-
-## What's happening underneath (brief)
-
-- **Long scripts are chunked**, not sent as one giant generation — each chunk gets a fresh KV cache, which
-  is what prevents audio degrading into noise on long text. Chunk size is computed per voice from what its
-  reference clip leaves in the context window, and chunks are size-balanced so there is no runt final
-  chunk. A chunk whose audio comes out wildly longer or shorter than its text warrants is regenerated.
-  See `README.md`'s "How generation works".
-- **Nothing is predicted, and nothing is timed.** The bar counts chunks, which is measured; there is no
-  elapsed clock on a generating row. `/api/estimate` still exists, but only for the chunk count and the
-  long-reference-clip warning.
-- **The queue survives a backend restart** — `queue.json` persists queued/in-flight jobs and resumes them
-  (from the start of that job, not mid-chunk) on the next startup.
-- **The waveform** reflects real audio amplitude via the Web Audio API while something plays. Only one
-  element plays at a time; starting a second stops the first.
+During startup, a full-screen overlay reports model initialization. In Vite
+development, boot status comes from the backend status file; a model-load
+failure transitions to an actionable error state. The API serves
+`apps/studio/dist` when that build exists; use Vite at `:5173` while developing
+the Studio to avoid mistaking a built UI for the live source.

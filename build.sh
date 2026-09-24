@@ -4,15 +4,12 @@
 #   bash build.sh
 #
 # Runs everything documented in docs/BUILD.md. Expect ~45 minutes and ~10 GB
-# free on this drive. Git Bash, not PowerShell: setup.sh needs bash, and the
-# final SFX step concatenates two binaries, which PowerShell's `>` corrupts by
+# free on this drive. Git Bash, not PowerShell: the final SFX step concatenates
+# two binaries, which PowerShell's `>` corrupts by
 # rewriting them as text.
 #
-# frontend/.env.local is stashed before the frontend build and restored from an
-# EXIT trap, so it survives a failure or a Ctrl-C as well as a clean run. That
-# file has to be absent while Vite builds -- VITE_BACKEND_URL is baked into the
-# bundle, and a stale 127.0.0.1 makes every LAN client call its own loopback --
-# but leaving it deleted silently breaks local development afterwards.
+# apps/studio/.env.local is stashed before the Studio build and restored from
+# an EXIT trap, so it survives a failure, Ctrl-C, or clean build.
 set -Eeuo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,21 +18,13 @@ REPO_ROOT="$PWD"
 VERSION="${VERSION:-1.0.0}"
 STAGE_DIR="dist/Homegrown"
 OUTPUT="dist/Homegrown-${VERSION}.exe"
-ENV_LOCAL="frontend/.env.local"
+ENV_LOCAL="apps/studio/.env.local"
 ENV_STASH=".tmp/env.local.stash"
 SEVENZIP="/c/Program Files/7-Zip/7z.exe"
 SFX="/c/Program Files/7-Zip/7z.sfx"
 
-# What to write if .env.local has gone missing entirely. Deliberately an empty
-# setting: dev needs NOTHING here now that vite.config.ts proxies /api, /audio
-# and /refs, and an active VITE_BACKEND_URL would break dev on the LAN exactly
-# the way it breaks a LAN build -- every visiting device calling its own
-# loopback. Only two Vite variables are read anywhere in frontend/src, and the
-# other (VITE_USE_RUNPOD_WAKE) is unset outside the Vercel project.
-ENV_LOCAL_DEFAULT='# Intentionally empty. Vite proxies /api, /audio and /refs, so relative paths
-# work in dev -- including from other devices on your network, which an
-# absolute VITE_BACKEND_URL here would break. Set it only for the dormant
-# Vercel + RunPod split. See .env.local.example.'
+# A fresh local environment file intentionally contains no overrides.
+ENV_LOCAL_DEFAULT='# Intentionally empty. Supported workflows use same-origin API paths.'
 
 START_TS=$SECONDS
 step() { printf '\n\033[1m==> %s\033[0m  (+%dm%02ds)\n' "$1" $(( (SECONDS-START_TS)/60 )) $(( (SECONDS-START_TS)%60 )); }
@@ -66,17 +55,15 @@ command -v python >/dev/null 2>&1 || die "python is not on PATH."
 command -v npm    >/dev/null 2>&1 || die "npm is not on PATH."
 [ -x "$SEVENZIP" ] || die "7-Zip not found at $SEVENZIP. Install with: winget install 7zip.7zip"
 [ -f "$SFX" ]      || die "7z.sfx not found at $SFX. It ships with the full 7-Zip install, not the reduced one."
-[ -f backend/backend.spec ]   || die "backend/backend.spec is missing -- are you in the repo root?"
-[ -f launcher/launcher.spec ] || die "launcher/launcher.spec is missing."
+[ -f services/voice-api/backend.spec ]   || die "services/voice-api/backend.spec is missing -- are you in the repo root?"
+[ -f desktop/launcher/launcher.spec ] || die "desktop/launcher/launcher.spec is missing."
 echo "  python, npm, 7-Zip and both PyInstaller specs present."
 
-# ---- 1. python env + model -------------------------------------------------
-step "Python environment and model (setup.sh -- idempotent, skips what is done)"
-bash setup.sh
-
+# ---- 1. Python environment -------------------------------------------------
+step "Checking Python environment"
 PY=".venv/Scripts/python.exe"
 [ -f "$PY" ] || PY=".venv/bin/python"
-[ -f "$PY" ] || die "setup.sh did not produce a virtualenv interpreter."
+[ -f "$PY" ] || die "no virtualenv interpreter. Follow README.md: First-time setup."
 
 # ---- 2. pyinstaller --------------------------------------------------------
 step "PyInstaller"
@@ -95,8 +82,8 @@ python scripts/check_contrast.py
 python scripts/check_palette.py
 python scripts/check_orphan_css.py
 python scripts/check_desktop_port.py
-( cd frontend && npm install --no-fund --no-audit --loglevel=error && npm run test && npm run lint )
-# After npm install, because it needs the Tailwind CLI from frontend/node_modules.
+( cd apps/studio && npm install --no-fund --no-audit --loglevel=error && npm run test && npm run lint )
+# After npm install, because it needs the Tailwind CLI from apps/studio/node_modules.
 python scripts/build_splash.py --check
 
 # ---- 4. stash the dev env file --------------------------------------------
@@ -110,15 +97,15 @@ else
 fi
 
 # ---- 5. frontend -----------------------------------------------------------
-# backend.spec hard-fails without frontend/dist, so this precedes the freeze.
+# backend.spec hard-fails without apps/studio/dist, so this precedes the freeze.
 step "Building the frontend"
-( cd frontend && npm run build )
+( cd apps/studio && npm run build )
 
 # ---- 6. freeze -------------------------------------------------------------
 # TMP/TEMP land on this drive on purpose: PyInstaller pushes several GB through
 # temp and will exhaust a small system drive.
 step "Freezing backend.exe (this is the long one, ~15-20 min)"
-( cd backend && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "../$PY" -m PyInstaller backend.spec --clean --noconfirm )
+( cd services/voice-api && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "$REPO_ROOT/$PY" -m PyInstaller backend.spec --clean --noconfirm )
 
 # The splash is Tailwind, compiled ahead of time and inlined into
 # launcher/_splash.py, which launcher.py imports. It cannot use the Play CDN
@@ -130,14 +117,14 @@ step "Compiling the launcher splash"
 python scripts/build_splash.py
 
 step "Freezing Homegrown.exe (launcher)"
-( cd launcher && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "../$PY" -m PyInstaller launcher.spec --clean --noconfirm )
+( cd desktop/launcher && TMP="$REPO_ROOT/.tmp" TEMP="$REPO_ROOT/.tmp" "$REPO_ROOT/$PY" -m PyInstaller launcher.spec --clean --noconfirm )
 
 # ---- 7. stage --------------------------------------------------------------
 step "Staging the install layout"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
-cp launcher/dist/Homegrown.exe "$STAGE_DIR/"
-cp -r backend/dist/backend "$STAGE_DIR/backend"
+cp desktop/launcher/dist/Homegrown.exe "$STAGE_DIR/"
+cp -r services/voice-api/dist/backend "$STAGE_DIR/backend"
 mkdir -p "$STAGE_DIR/storage/references" "$STAGE_DIR/storage/generated" "$STAGE_DIR/models"
 echo "  staged at $STAGE_DIR"
 
@@ -199,9 +186,10 @@ cat <<'NEXT'
       action=allow program="C:\Homegrown\backend\backend.exe" ^
       protocol=TCP localport=8731 enable=yes profile=private
 
-  And note what the wildcard bind exposes: this app has no authentication
-  (auth.py returns a constant user), so anyone who reaches :8731 can create
-  voices and permanently delete voices and voiceovers. Trusted networks only.
+  And note what the wildcard bind exposes: this app has no general
+  authentication (auth.py returns a constant user). Voice and completed
+  voiceover deletion requires the admin password; other API actions, including
+  voice creation, are unauthenticated. Trusted networks only.
 
   If you publish this build, update the landing page's download link, size text
   and SHA-256 together. A stale checksum is worse than none.

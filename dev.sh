@@ -9,8 +9,7 @@
 # Reachable from other devices on the network: Vite binds every interface and
 # proxies /api, /audio and /refs to the backend, so a phone's API calls arrive
 # same-origin and come back here. Nothing to configure on the visiting device.
-# That is also why frontend/.env.local must NOT set VITE_BACKEND_URL -- an
-# absolute URL bakes one machine's address into the page. The backend itself
+# The backend itself
 # stays on loopback; the proxy reaches it from this host, so a wildcard bind
 # there would buy nothing. The address to type is printed below.
 #
@@ -96,46 +95,30 @@ bold "Preflight"
 
 PY=".venv/Scripts/python.exe"
 [ -f "$PY" ] || PY=".venv/bin/python"
-[ -f "$PY" ] || die "no virtualenv interpreter. Run: bash setup.sh"
+[ -f "$PY" ] || die "no virtualenv interpreter. Follow README.md: First-time setup (create .venv and install Python dependencies)."
 
-[ -f backend/.env ] || die "backend/.env is missing. Run: bash setup.sh"
-grep -qE '^MODEL_PATH=.+' backend/.env || die "backend/.env has no MODEL_PATH. Run: bash setup.sh"
+[ -f services/voice-api/.env ] || die "services/voice-api/.env is missing. Copy services/voice-api/.env.example and set MODEL_PATH; see README.md: First-time setup."
+grep -qE '^MODEL_PATH=.+' services/voice-api/.env || die "services/voice-api/.env has no MODEL_PATH. Set it to your downloaded model folder; see README.md: First-time setup."
 
 # ALLOWED_ORIGINS only matters for requests a browser sends straight to the
 # backend. Through the dev proxy they arrive from Vite instead, server-side,
-# and CORS never applies -- but a leftover VITE_BACKEND_URL puts the browser
-# back on that path, and then a LAN origin nobody listed is the failure.
-if ! grep -qE '^ALLOWED_ORIGINS=.*127\.0\.0\.1:5173' backend/.env; then
-  warn "backend/.env ALLOWED_ORIGINS does not list http://127.0.0.1:5173 --"
+# and CORS never applies.
+if ! grep -qE '^ALLOWED_ORIGINS=.*127\.0\.0\.1:5173' services/voice-api/.env; then
+  warn "services/voice-api/.env ALLOWED_ORIGINS does not list http://127.0.0.1:5173 --"
   warn "harmless while the dev proxy is in use, but not if something bypasses it."
 fi
 
-# This check is the reverse of what it used to be. vite.config.ts now proxies
-# /api, /audio and /refs, so api.ts's BACKEND_URL falls back to '' and every
-# call is same-origin against whatever address the browser typed -- which is
-# what lets another device on the network work with no configuration of its
-# own. Setting VITE_BACKEND_URL overrides that and hardcodes one address:
-# point it at 127.0.0.1 and every visiting device calls its own loopback,
-# loading a page that can never reach anything. A warning, not a failure -- it
-# is still the right setting for the dormant Vercel+RunPod split (CLAUDE.md,
-# deployment mode 4).
-if [ -f frontend/.env.local ] && grep -qE '^[[:space:]]*VITE_BACKEND_URL=.+' frontend/.env.local; then
-  warn "frontend/.env.local sets VITE_BACKEND_URL. The dev proxy makes it unnecessary,"
-  warn "and other devices on your network will call their own machine, not this one."
-  warn "Comment it out to serve the LAN."
-fi
+[ -d apps/studio/node_modules ] || die "apps/studio/node_modules is missing. Run: cd apps/studio && npm install"
 
-[ -d frontend/node_modules ] || die "frontend/node_modules is missing. Run: cd frontend && npm install"
+echo "    venv, services/voice-api/.env and node_modules all present."
 
-echo "    venv, backend/.env and node_modules all present."
-
-# frontend/dist only matters here as a footgun: the backend registers its SPA
+# apps/studio/dist only matters here as a footgun: the backend registers its SPA
 # catch-all when dist exists, so :8000 will serve a *built* copy of the app
 # that is not the one you are editing. Say so rather than let it confuse.
 # An `if`, not `[ ... ] && warn`: under `set -e` that idiom's safety depends on
 # its position in the script (see the same note in build.sh).
-if [ -d frontend/dist ]; then
-  warn "frontend/dist exists -- :8000 serves that stale build. Edit against :5173."
+if [ -d apps/studio/dist ]; then
+  warn "apps/studio/dist exists -- :8000 serves that stale build. Edit against :5173."
 fi
 
 # ---- start -----------------------------------------------------------------
@@ -150,12 +133,12 @@ mkdir -p .tmp
 # those writes a permanent Block rule for that exe path, which nothing in the
 # app can undo. One prompt (Node, for :5173) is enough.
 bold "Backend   http://127.0.0.1:8000   (loading the model, this takes a while)"
-( cd backend && exec "$REPO_ROOT/$PY" -m uvicorn main:app --host 127.0.0.1 --port 8000 ) \
+( cd services/voice-api && exec "$REPO_ROOT/$PY" -m uvicorn main:app --host 127.0.0.1 --port 8000 ) \
   > "$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 
 bold "Frontend  http://localhost:5173"
-( cd frontend && exec npm run dev ) > "$FRONTEND_LOG" 2>&1 &
+( cd apps/studio && exec npm run dev ) > "$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
 
 # The address to type on a phone or another laptop. Filtered, not listed: this

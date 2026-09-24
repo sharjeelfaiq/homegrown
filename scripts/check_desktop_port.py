@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail if the desktop build's two copies of its port number disagree.
 
-`backend/run.py` binds the port; `launcher/launcher.py` polls it, opens the
+`services/voice-api/run.py` binds the port; `desktop/launcher/launcher.py` polls it, opens the
 browser on it, and decides from it whether Homegrown is already running. They
 are separately frozen PyInstaller bundles -- `launcher.spec` declares no datas
 and no hiddenimports -- so there is no import path between them and the number
@@ -13,8 +13,7 @@ the launcher polls a port nothing ever binds, waits out STALL_TIMEOUT_S, and
 reports that the backend timed out during startup. The backend is fine. It is
 listening on a port nobody is asking.
 
-The port is 8731 rather than 8000 because 8000 belongs to dev (`dev.sh`) and to
-LAN mode (`start_server.bat`). Sharing it let the launcher's health probe find a
+The port is 8731 rather than 8000 because 8000 belongs to dev (`dev.sh`). Sharing it let the launcher's health probe find a
 dev uvicorn, conclude the app was already up, and return without ever starting
 backend.exe.
 
@@ -33,8 +32,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # Both are module-level `PORT = <int>`; the regex is anchored so a mention
 # inside a comment or a docstring cannot be mistaken for the declaration.
 SOURCES = [
-    ROOT / "backend" / "run.py",
-    ROOT / "launcher" / "launcher.py",
+    ROOT / "services" / "voice-api" / "run.py",
+    ROOT / "desktop" / "launcher" / "launcher.py",
 ]
 PORT_RE = re.compile(r"^PORT = (\d+)\s*$", re.MULTILINE)
 

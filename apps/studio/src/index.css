@@ -1,0 +1,1346 @@
+/* Tailwind, imported in pieces so the layer each part lands in is explicit.
+   Equivalent to `@import 'tailwindcss'`, written out.
+
+   PREFLIGHT IS NOT OPTIONAL HERE, and that is worth stating because it was
+   left out for most of the migration and the consequence was not obvious.
+   Tailwind's `border` utility compiles to
+
+       .border { border-style: var(--tw-border-style); border-width: 1px }
+
+   and the thing that establishes --tw-border-style for every element is
+   Preflight's `*, ::before, ::after { border: 0 solid }`. Drop Preflight and
+   the width still applies but the style resolves to the UA default `none`, so
+   every bordered surface in the app -- cards, the script box, row hairlines,
+   the menus -- silently draws nothing. The build stays green and the guards
+   stay green; the page just loses its outlines.
+
+   The same reset is also what gives `ring`, `divide` and `outline` utilities
+   a predictable starting point, so this is a general dependency and not a
+   quirk of one utility.
+
+   It was correct to omit during the migration -- unlayered App.css beat
+   @layer base everywhere it had an opinion, and Preflight would have restyled
+   h1-h3, ul/ol and svg/canvas where App.css said nothing. That trade ended
+   when App.css did.
+
+   The app's own base rules further down this file (body, button/form
+   elements, h1-h3) sit in @layer base alongside it, later in source order,
+   so they beat Preflight and lose to utilities. They must NOT be unlayered:
+   unlayered CSS outranks every layer, and `button { background: none;
+   border: none }` at that rank strips the fill and border off every
+   @utility-defined control in the app. See the note on that block. */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* Explicit, because automatic content detection did not pick up src/*.tsx
+   here -- a class used in a component silently produced no CSS, which is a
+   miserable thing to debug mid-migration. Relative to this file, so it means
+   apps/studio/src. index.html is deliberately NOT scanned: the only classes it
+   carries are on the pre-paint theme script's own markup, and letting the
+   scanner into it would also mean scanning the inlined theme CSS. */
+@source './**/*.{ts,tsx}';
+
+/* ==== The Tailwind bridge ==============================================
+   Maps Tailwind's --color-* / --breakpoint-* namespaces onto the design
+   tokens in styles/tokens.css, which is where the actual palettes live.
+
+   `inline` is the entire reason runtime theme switching works. A plain
+   @theme block copies the token's VALUE into each utility at build time, so
+   .bg-surface-card would compile to `background-color: #1d1f28` and freeze
+   on Studio forever. `@theme inline` emits `var(--bg-card)` instead, so
+   flipping data-theme on <html> re-resolves every utility on the page. If
+   themes ever stop switching, check that this word is still here.
+
+   It does not matter that the tokens are defined in another file: an inline
+   mapping only forwards the var() reference, it never needs the value.
+
+   Names are semantic, not physical. `--color-accent-audio` rather than
+   `--color-accent-2`: a token called "accent-2" means nothing once it is
+   rust on Tape and red on Booth. The underlying tokens in tokens.css keep
+   their historical names, so a rename here never has to touch the palette.
+
+   Adding a token to tokens.css does nothing until it is mapped here. */
+@theme inline {
+  /* Surfaces */
+  --color-surface-deepest: var(--bg-deepest);
+  --color-surface-base: var(--bg-base);
+  --color-surface-nav: var(--bg-nav);
+  --color-surface-card: var(--bg-card);
+  --color-surface-raised: var(--bg-raised);
+  --color-surface-hover: var(--bg-hover);
+
+  /* Text */
+  --color-ink: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+
+  /* Hairlines -- the app's only separator. */
+  --color-hairline: var(--line);
+  --color-hairline-strong: var(--line-strong);
+  --color-hairline-focus: var(--line-focus);
+  /* Interactive edges. Heavier than --line on purpose -- see tokens.css. */
+  --color-control: var(--control-edge);
+  --color-control-hover: var(--control-edge-hover);
+  --color-control-fill: var(--control-fill);
+  --color-control-fill-hover: var(--control-fill-hover);
+
+  /* The two accents, each with exactly one job. */
+  --color-progress: var(--progress);
+  --color-progress-dim: var(--progress-dim);
+  --color-progress-soft: var(--progress-soft);
+  --color-progress-line: var(--progress-line);
+  --color-accent: var(--accent);
+  --color-accent-line: var(--accent-line);
+  --color-audio: var(--accent-2);
+  --color-audio-bright: var(--accent-2-bright);
+  --color-audio-soft: var(--accent-2-soft);
+  --color-audio-line: var(--accent-2-line);
+
+  /* Status */
+  --color-queued: var(--queued);
+  --color-queued-soft: var(--queued-soft);
+  --color-queued-line: var(--queued-line);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-soft: var(--danger-soft);
+  --color-ok: var(--green);
+
+  /* Scrims, and the inverted primary button. */
+  --color-scrim-boot: var(--scrim-boot);
+  --color-scrim-modal: var(--scrim-modal);
+  --color-scrim-drop: var(--scrim-drop);
+  --color-sheen: var(--sheen);
+  --color-invert-bg: var(--btn-invert-bg);
+  --color-invert-fg: var(--btn-invert-fg);
+  --color-invert-bg-hover: var(--btn-invert-bg-hover);
+
+  /* Geometry and type, so utilities and hand-written CSS agree. */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  /* 1025px, NOT Tailwind's lg (1024px). The app's two-column layout and
+     HistoryList's TWO_COLUMN_QUERY both switch at 1025, and the off-by-one
+     matters: it decides whether the list or the page is the scroll root, and
+     rooting the IntersectionObserver at the wrong one chain-loads the entire
+     history in a single pass. Use `wide:` here, never `lg:`. */
+  --breakpoint-wide: 1025px;
+
+  /* The keyframes themselves sit below, outside @theme -- only the
+     shorthand belongs in the theme namespace. */
+  --animate-boot-spin: boot-spin 0.9s linear infinite;
+  --animate-sheen: sheen 2.1s var(--ease) infinite;
+  /* 1.4s, matching the .generating-dot it replaces -- not Tailwind's own
+     animate-pulse, which is 2s and uses a different opacity curve. */
+  --animate-pulse-soft: pulse-soft 1.4s var(--ease) infinite;
+}
+
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse-soft {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* The undo countdown ring, depleting over UNDO_MS.
+   
+   No shorthand in @theme above, unlike the other three: the duration is not a
+   constant here, it is UNDO_MS passed in from TypeScript as an inline
+   animation. Baking 7s into CSS would give the ring its own copy of a number
+   that lives in HistoryList, and the two would drift the first time anyone
+   retuned the undo window.
+   
+   The dasharray is set on the element from the same radius the SVG uses, so
+   this only has to move the offset from 0 to one full circumference
+   (50.265 at r=8). */
+@keyframes undo-sweep {
+  to {
+    stroke-dashoffset: 50.265;
+  }
+}
+
+/* ==== Shared control primitives ========================================
+   These four are used at roughly a dozen call sites between them. Written
+   as @utility rather than pasted inline at each one: repeating eight
+   utilities ten times is not a migration, it is ten places to forget when
+   the control changes. @utility is Tailwind's own mechanism for this -- the
+   definitions live in the utilities layer, they compose with variants the
+   normal way, and the call sites keep reading `className="icon-btn"`.
+
+   Element-specific layout (where a button sits, what it is next to) stays
+   inline at the call site. Only what makes it THAT KIND OF CONTROL is here. */
+
+@utility ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  background: var(--control-fill);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease),
+    background var(--fast) var(--ease);
+
+  &:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--control-edge-hover);
+    background: var(--control-fill-hover);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+  }
+}
+
+@utility ghost-btn-danger {
+  &:hover:not(:disabled) {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: var(--danger-soft);
+  }
+}
+
+@utility icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+
+  /* Coarse pointers get a bigger hit area without changing the visual
+     weight: the target grows, the glyph does not. 28px squares are well
+     under the ~44px a finger actually needs. */
+  @media (pointer: coarse) {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  color: var(--text-faint);
+  border-radius: var(--radius-sm);
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+
+  &:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  &:disabled {
+    opacity: 0.3;
+  }
+}
+
+@utility icon-btn-danger {
+  &:hover:not(:disabled) {
+    color: var(--danger);
+  }
+}
+
+/* Boneyard generates its keyframes inline, so stop their motion here rather
+   than relying on the library's default animation policy. */
+@media (prefers-reduced-motion: reduce) {
+  [data-boneyard-bone] {
+    animation: none !important;
+  }
+}
+
+/* Driver.js is kept visually local to its popover class so the library can be
+   upgraded without accidentally restyling other overlays. */
+.driver-overlay {
+  z-index: 1000000000 !important;
+}
+
+.driver-popover.homegrown-tour {
+  /* The overlay and popover are sibling fixed layers. Giving them the same
+     z-index lets DOM order put the dimmer over the tour, which looks right at
+     a glance but makes every tour button unclickable. */
+  z-index: 1000000001 !important;
+  --driver-popover-font-family: var(--font-body);
+  max-width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-menu);
+}
+
+.homegrown-tour .driver-popover-title { color: var(--text-primary); font-family: var(--font-display); font-size: 1rem; }
+.homegrown-tour .driver-popover-description { color: var(--text-muted); line-height: 1.5; }
+.homegrown-tour .driver-popover-progress-text { color: var(--text-faint); font-family: var(--font-mono); }
+.homegrown-tour .driver-popover-arrow { border-color: var(--bg-card); }
+.homegrown-tour .driver-popover-footer button {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--control-edge);
+  background: var(--bg-raised);
+  color: var(--text-primary) !important;
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+.homegrown-tour .driver-popover-close-btn {
+  color: var(--text-primary) !important;
+  font-size: 22px;
+  font-weight: 700;
+}
+.homegrown-tour .driver-popover-footer button:hover,
+.homegrown-tour .driver-popover-footer button:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  outline: 2px solid var(--audio);
+  outline-offset: 2px;
+}
+.homegrown-tour .driver-popover-next-btn { background: var(--accent); color: var(--bg-base) !important; text-shadow: none; }
+.homegrown-tour .driver-popover-next-btn:hover,
+.homegrown-tour .driver-popover-next-btn:focus-visible { background: var(--accent-2-bright); color: var(--bg-base); }
+
+@media (prefers-reduced-motion: reduce) {
+  .driver-popover.homegrown-tour, .driver-popover.homegrown-tour * { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}
+
+@utility primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--btn-invert-fg);
+  background: var(--btn-invert-bg);
+  border-radius: var(--radius-sm);
+
+  &:disabled {
+    color: var(--text-faint);
+    background: var(--bg-raised);
+  }
+}
+
+/* The app's single call to action. Kept as a utility beside the other button
+   primitives rather than inlined at its one call site: it is the same family
+   of control, and splitting the family across two mechanisms is how the
+   inverted-button colours drifted apart in the first place. */
+@utility generate-btn {
+  width: auto;
+  /* min-width only stops it collapsing on the short "Generate" label -- it is
+     not a target size, and it is not what sizes the button most of the time:
+     the blocked reasons ("Waiting for the voice model") are far longer and
+     set the real width whenever they appear. So this can be tight. */
+  min-width: 92px;
+  height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--btn-invert-fg);
+  background: var(--btn-invert-bg);
+  border-radius: var(--radius-md);
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+
+  /* Hover pushes the fill FURTHER from the page, not toward white. A literal
+     white hover was not merely un-themable, it was wrong: on a light theme
+     --text-primary is near-black, so the button is black and hovering it to
+     white made it disappear under the cursor. */
+  &:hover:not(:disabled) {
+    background: var(--btn-invert-bg-hover);
+  }
+
+  &:disabled {
+    color: var(--text-faint);
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+  }
+}
+
+:root {
+  /* color-scheme lived here as a second static `dark`. It is per-theme now
+     (tokens.css) plus an inline style set pre-paint (index.html); a third
+     copy here could only ever be the one that is wrong. */
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* html's background, which shows through before #root has any height and
+   behind overscroll. The real page background is body's, further down.
+
+   This used to be the literal #14151a, as the last defence against a white
+   flash on load. That job has moved to the inline <style> in index.html,
+   which lands before the first paint in `vite dev` too -- this rule cannot,
+   because in dev it arrives through the JS module graph, i.e. after. All
+   this has to do now is agree with whatever theme is live. */
+html {
+  background: var(--bg-base);
+}
+
+/* Native option popovers otherwise use the browser's default light palette,
+   even when the app is on a dark theme. `color-scheme: inherit` follows the
+   active theme token on <html>; explicit option colours cover Chromium's
+   popup implementation and keep the text readable in every palette. */
+.history-filter-select {
+  color: var(--text-primary);
+  background-color: var(--bg-raised);
+  color-scheme: inherit;
+}
+
+.history-filter-select option,
+.history-filter-select optgroup {
+  color: var(--text-primary);
+  background-color: var(--bg-raised);
+}
+
+.history-filter-select:focus-visible {
+  outline: 2px solid var(--line-focus);
+  outline-offset: 2px;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+}
+
+#root {
+  min-height: 100svh;
+}
+
+/* Scrollbars — neutral on purpose. The accents mean "in progress" (amber) and
+   "audio" (cyan); a coloured scrollbar would spend one of those signals on
+   chrome that carries no meaning. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-hover) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--line-focus);
+}
+
+/* The trigger of the hand-rolled voice dropdown. Named .select and shaped
+   like a native one, but it is a <button> -- VoicePicker deliberately is not
+   a <select>, because an <option> cannot hold per-row play and delete
+   buttons. There is no native <select> anywhere in this app, which is what
+   makes the ::after caret below possible at all. */
+@utility select {
+  /* Only so ::after can be placed. Safe for the dropdown: .voice-menu is a
+     SIBLING of this button, absolutely positioned against .voice-field, so
+     its containing block does not move. */
+  position: relative;
+  height: 32px;
+  padding: 0 30px 0 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  /* A field is raised even at rest -- unlike a button, which is a ghost
+     until hovered. This is the surface inputs sit on elsewhere. */
+  background-color: var(--bg-raised);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-sm);
+  appearance: none;
+  cursor: pointer;
+  transition: border-color var(--fast) var(--ease);
+
+  &:hover {
+    border-color: var(--control-edge-hover);
+    background-color: var(--control-fill-hover);
+  }
+
+  /* The caret is a MASK, not a background image, so it carries no colour of
+     its own and follows the theme.
+
+     A colour inside a data: URI cannot be a token -- an SVG background is a
+     separate document, and currentColor there resolves against the SVG's own
+     context, not this element's. So the old %23a9adba was a hand-mirror of
+     --text-muted that no theme could reach. Worse, it sat on the same line as
+     the xmlns, which scripts/check_design_tokens.py skips, so nothing would
+     have caught it drifting either. Masking moves the colour out into
+     `background`, where a var() works.
+
+     Absolutely positioned so it does not become a flex item of
+     .voice-trigger. Still a data: URI, still no network request: this app
+     has to render with the machine offline. */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    width: 10px;
+    height: 6px;
+    transform: translateY(-50%);
+    background: var(--text-muted);
+    --caret: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='black' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    -webkit-mask: var(--caret) no-repeat center / 10px 6px;
+    mask: var(--caret) no-repeat center / 10px 6px;
+    pointer-events: none;
+  }
+}
+
+/* The selected voice is a persistent readiness signal, not merely the last
+   value inside a generic dropdown. Keep the treatment quiet enough that
+   Generate remains primary, while making the current choice scannable. */
+@utility voice-picker-trigger {
+  /* --accent-2-*, NOT --audio-*. `audio` is only a @theme BRIDGE name
+     (--color-audio: var(--accent-2)), so it exists for the `text-audio` /
+     `border-audio-line` utilities and nowhere else -- `var(--audio-line)` in
+     raw CSS is undefined, fails at computed-value time and takes the whole
+     declaration with it, silently. This rule had been dead since it was
+     written: measured in the built app, the selected trigger had no tint and
+     no border colour at all. Same trap as the --progress one recorded in
+     CLAUDE.md; raw CSS here uses layer-1/layer-2 token names only. */
+  &.is-selected {
+    border-color: var(--accent-2-line);
+    background: var(--accent-2-soft);
+    color: var(--text-primary);
+  }
+}
+
+/* A heading whose trailing hairline fills the rest of the line -- the
+   "SCRIPT ────" / "VOICEOVERS ────" rule. Used by three headings, and the
+   ::after is the whole point of it, so it stays a utility rather than being
+   inlined three times with a pseudo-element each. */
+@utility section-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+}
+
+/* ==== Voiceover rows ===================================================
+   These four stay as utilities rather than being inlined at their call
+   sites, because each one carries an invariant that has to live in one
+   place. Inlining them would scatter the reasoning across HistoryList and
+   invite the next person to "tidy" a value that is load-bearing. */
+
+/* A fixed window, not the whole history. About eight rows are shown, the
+   first twenty are fetched up front, and the next ten arrive when the
+   sentinel at the bottom scrolls into view -- so the column has one height
+   whether the user has made three voiceovers or three hundred, and the page
+   never grows a scrollbar.
+
+   flex + min-height: 0 AS WELL AS the cap, and the two are not redundant:
+   the cap is the ceiling, the flex clamp is the floor. On a short viewport
+   (a 768px laptop, say) the block has to shrink BELOW eight rows rather than
+   push the layout past the fold, and there the max-height never applies at
+   all. Raising the multiplier alone does nothing there. */
+/* Touch devices. Used to hide things that describe a physical keyboard --
+   a "Ctrl+F" key cap on a phone advertises a key that is not there, and at
+   phone widths it was eating 12-14% of the search field to do it.
+   `pointer: coarse` rather than a width query on purpose: a narrow window on a
+   desktop still has a Ctrl key, and a large tablet still does not. */
+@custom-variant coarse (@media (pointer: coarse));
+
+/* The native clear affordance belongs at the edge of a filled search field,
+   but needs breathing room from the final typed character. This pseudo-element
+   retains the browser's own clear button rather than replacing it. */
+.voiceover-search::-webkit-search-cancel-button {
+  margin-left: 0.5rem;
+}
+
+/* The Voiceovers footer: page-size control pinned bottom-left, page buttons
+   centred. Everything here is sized so that CHANGING THE PAGE SIZE, OR THE
+   PAGE, MOVES NOTHING -- earlier versions moved four things at once.
+
+   `flex: none` plus a FIXED height. .result-list above is `flex: 1 1 auto` and
+   fills the column, so whatever height this row takes, the list gives up --
+   which means a footer that changes height resizes the list under the reader.
+   It did: measured 34.1px with a six-page link row, 32px with none, and 64px at
+   the narrow end of the two-column layout where the links wrapped onto a second
+   line. One height, always.
+
+   THREE tracks, not two, and that is what centres the buttons on the FOOTER
+   rather than on the space the label leaves. The side tracks are both `1fr`, so
+   they are equal whenever there is room; the first carries `max-content` as its
+   floor so the label can never be squeezed into wrapping ("PER" / "PAGE" was
+   the old failure, at exactly the page size where the button row was widest),
+   and the third can shrink to nothing. The degradation at the narrow end is
+   therefore a constant rightward offset rather than an overlap or a reflow:
+   both the label and the button slot are fixed widths, so nothing about it
+   varies with the page or the page size.
+
+   The controls live in a FIXED-width slot (--pager-slot) holding five numbered
+   buttons. The page range shifts around the current page without changing the
+   number of targets, and the one-page control is rendered inert rather than
+   unmounted.
+
+   The 8px side padding mirrors .result-list's own, which is what puts the
+   label's left edge on the same pixel as the row content above it -- the two
+   numbers move together or the footer stops lining up with the list. */
+.voiceover-pager {
+  /* 5 page buttons + 2 chevrons + 6 gaps = 220. */
+  --pager-slot: 220px;
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  margin-top: 4px;
+  padding: 0 8px;
+}
+
+.voiceover-pager > label {
+  white-space: nowrap;
+}
+
+.voiceover-pager > nav {
+  grid-column: 2;
+  width: var(--pager-slot);
+}
+
+/* Inert once there is only one page. The nav also carries the `inert`
+   attribute, which is what actually removes it from the tab order and blocks
+   clicks; this is only the paint. */
+.voiceover-pager > nav.is-disabled {
+  opacity: 0.45;
+}
+
+.voiceover-pager-list {
+  display: flex;
+  /* nowrap, deliberately. Wrapping is how this row grew to 64px at a 1025px
+     viewport, and a footer that changes height resizes the list. The slot is
+     sized to hold the whole window instead. */
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+/* The page buttons are the control the reader actually aims at, so they are
+   the larger half of this row -- the label and its select are deliberately
+   smaller (10px text, 28px select; set in HistoryList.tsx) and sit out of the
+   way at the bottom-left. */
+.voiceover-pager-list button {
+  display: grid;
+  min-width: 28px;
+  min-height: 28px;
+  place-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* These two rules named --audio-line / --audio-soft / --audio / --bg, none of
+   which exist as raw tokens: `audio` is only the @theme bridge
+   (--color-audio: var(--accent-2)) behind the `text-audio` utilities. An
+   undefined var() is invalid at computed-value time and takes its whole
+   declaration with it, silently -- measured in the built app, the active page
+   button computed `background: rgba(0,0,0,0)` and plain inherited text. Same
+   trap as the --progress one recorded in CLAUDE.md.
+
+   Fixed to real tokens, and to the app's OWN conventions rather than to a
+   literal reading of the dead rules. Hover is ghost-btn's (control-fill-hover,
+   text-primary); the active page is voice-picker-trigger.is-selected's
+   (accent-2-soft + accent-2-line + text-primary), which is already how this app
+   says "this is the current one". The literal reading -- a solid --accent-2
+   fill with --bg-base text -- measures 3.06:1 on daylight, which fails AA for a
+   12px numeral; check_contrast.py validates tokens, not composed surfaces, so
+   nothing would have caught it. */
+.voiceover-pager-list button:hover,
+.voiceover-pager-list button:focus-visible {
+  border-color: var(--control-edge-hover);
+  background: var(--control-fill-hover);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.voiceover-pager-page.is-active button {
+  border-color: var(--accent-2-line);
+  background: var(--accent-2-soft);
+  color: var(--text-primary);
+}
+
+/* :disabled, not a class -- the chevrons are real buttons, so the platform
+   takes them out of the tab order for us. */
+.voiceover-pager-list button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The Voiceovers column's glass surface.
+   
+   Painted on a PSEUDO-ELEMENT, and both of its properties are load-bearing.
+   
+   `backdrop-filter` makes an element the containing block for every
+   `position: fixed` descendant. Keeping it on a pseudo-element means it
+   cannot unexpectedly re-anchor any future overlay.
+   
+   And being absolutely positioned it costs ZERO layout: the row height and the
+   list heights at every viewport are untouched, which a wrapper div with
+   padding and a border could not have managed.
+   
+   z-index: -1 puts it behind this section's own content but still above the
+   CursorGrid canvas at -10, so the blur has something to blur. */
+@utility results {
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    /* Bleeds past the content box so the panel reads as a card around the
+       column rather than a box clipped to the text. */
+    inset: 0 -14px -12px;
+    z-index: -1;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--line);
+    background: var(--glass-fill);
+    backdrop-filter: blur(16px) saturate(1.06);
+    -webkit-backdrop-filter: blur(16px) saturate(1.06);
+    pointer-events: none;
+  }
+}
+
+/* The search/filter controls share the glass surface with the rows. Keeping
+   their inset in one place makes the search edge, toolbar, list content, and
+   pager line up even when the card is narrow. */
+@utility voiceovers-card-header {
+  padding: 8px;
+}
+
+/* Reserved below the search controls in HistoryList. Its fixed size and
+   horizontal overflow keep the card's rows pinned when its context changes.
+   The neutral divider establishes it as a list header without competing with
+   the selected-row tint. */
+@utility history-context-toolbar {
+  height: 40px;
+  min-height: 40px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+
+@utility result-list {
+  /* NO max-height, and its absence is the feature. Above the breakpoint the
+     shell is pinned to one viewport (.studio is height: 100svh) and the
+     min-height: 0 chain runs .studio -> main -> .aside -> .results -> here, so
+     `flex: 1 1 auto` sizes this list to whatever the Voiceovers column actually
+     has: taller viewport, more rows, with no second bound to keep in sync.
+
+     It was capped at `calc(8 * var(--result-row-h) + 12px)` = 716px, and that
+     cap only ever bound on TALL viewports -- below about 1030px the flex chain
+     was already doing the sizing (measured at 1440 wide: list 471px at a 700px
+     viewport, 539 at 768, 671 at 900, all under the cap). Past that it froze:
+     716px at both 1100 and 1400 while .results grew to 871 and 1171, so the
+     glass panel carried 455px of dead space under the last row and, in
+     paginated mode, the pager sat at y=951 in a 1400px viewport.
+
+     --result-row-h is still what a compacted row is specified to be, and the
+     is-failed/is-canceling outlines are still inset box-shadows so a row does
+     not grow -- but nothing multiplies that token into a window any more. */
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  /* 8px of side padding, and it is applied HERE rather than on the rows.
+     Every row kind has to be inset by the same amount: a generating row's
+     progress track is aligned to a finished row's waveform on both edges, so
+     padding one kind and not the other is precisely the bug the PendingRow
+     comment in HistoryList.tsx records (dL +8.0 / dR -8.1, measured in the real
+     app while a harness reported zero). One declaration on the container cannot
+     drift that way. The footer uses the same 8px side padding, or the "Per page" label stops sitting on the same pixel as the row
+     content. */
+  padding: 6px 8px;
+  overflow-y: auto;
+  list-style: none;
+  /* Keeps the scrollbar off the row content rather than over it. */
+  scrollbar-gutter: stable;
+
+  /* Below the breakpoint the PAGE is the scroller, so the inner scroller comes
+     off -- a short inner scroller inside a locked page is two nested scroll
+     regions on a phone. (There is no cap to drop here any more; the column has
+     no constrained height down there, so this list is content-sized.) 1025px,
+     matching --breakpoint-wide; HistoryList's TWO_COLUMN_QUERY has to agree
+     with this, and so does the wide: variant on the workspace grid. */
+  @media (width < 1025px) {
+    overflow-y: visible;
+  }
+}
+
+/* The voices dialog's list. Sits next to result-list because the two look
+   alike and are the OPPOSITE of each other in the one property that matters.
+
+   `height`, not `max-height`. result-list caps a list that is allowed to be
+   shorter; this one RESERVES six rows whether there are six voices or one.
+   That difference is the entire feature: the modal panel sizes to its content
+   and the backdrop centres it (Modal.tsx), so a list that grows by a row
+   grows the dialog by a row in both directions -- and the dialog deliberately
+   stays open after a voice is cloned, so the user is looking straight at the
+   jump at the moment their voice appears. A max-height cap does not fix that;
+   it only stops it after the sixth voice.
+
+   `flex: none` for the same reason, and this is the other inversion:
+   result-list is `flex: 1 1 auto; min-height: 0` so the Voiceovers column can
+   shrink BELOW eight rows on a short laptop rather than push the layout past
+   the fold. Here the reserve is the point, so the default flex-shrink: 1 of a
+   flex child would quietly undo it. The two are inconsistent on purpose --
+   different containers, opposite requirements. Do not unify them.
+
+   scrollbar-gutter keeps the scrollbar arriving at row seven from shifting
+   the row content sideways.
+
+   No `@media (width < 1025px)` release, unlike result-list: this is inside a
+   modal that is already a fixed-size box on every viewport, not a column of
+   the page, so there is no page-scroller to hand back to. */
+@utility voice-list {
+  flex: none;
+  height: calc(6 * var(--voice-row-h));
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
+/* The row title IS the rename field -- one <input>, always present, dressed
+   as plain text until focused. Every box-affecting property (height,
+   padding, border width, font) is identical focused and unfocused, so
+   clicking it moves nothing. font-family is explicit because there is no
+   `input { font: inherit }` reset reaching this, and without it the field
+   drops to the UA font.
+
+   Only `background` and `border-color` change on focus -- neither takes part
+   in layout. NEVER add a border-width or padding change here. */
+@utility inline-name-shell {
+  position: relative;
+  display: inline-flex;
+  margin-left: 4px;
+  min-width: 0;
+  max-width: 64%;
+  align-items: center;
+}
+
+@utility inline-name-pencil {
+  position: absolute;
+  z-index: 1;
+  left: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-faint);
+  pointer-events: auto;
+  opacity: 1;
+  transition: opacity var(--fast) var(--ease), color var(--fast) var(--ease);
+
+  .inline-name-shell:focus-within & {
+    opacity: 0;
+  }
+}
+
+.inline-name-shell:hover .inline-name-pencil {
+  color: var(--text-muted);
+}
+
+.inline-name-shell:has(.voiceover-name) {
+  max-width: 76%;
+}
+
+.voiceover-name {
+  max-width: 76%;
+}
+
+.voiceover-actions-menu {
+  color: var(--text-primary);
+}
+
+.voiceover-action-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 12px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.voiceover-action-item:hover,
+.voiceover-action-item:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.voiceover-action-danger {
+  color: var(--danger-text);
+}
+
+@utility result-name {
+  /* Width comes from the `size` attribute, which React sets from the value.
+     flex: 0 1 auto lets it shrink under pressure but never stretch;
+     max-width is what stops a very long name shoving the voice off the row. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 64%;
+  height: 26px;
+  padding: 0 6px;
+  padding-left: 24px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  text-overflow: ellipsis;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+
+  /* No hover border and no focus fill. The field reads as the row's title
+     rather than as a control, which is what it is 99% of the time -- a name
+     you read, not a box you fill in.
+
+     The transparent 1px border STAYS. It is not decoration: every
+     box-affecting property has to be identical focused and unfocused or
+     clicking the name shifts the row, and removing the border would collapse
+     the box by 2px at the moment of the click.
+
+     The focus ring is suppressed too, by request: clicking the name to rename
+     it should not light the field up. That has to be `outline: none` rather
+     than leaving it to :focus-visible, because a TEXT input matches
+     :focus-visible even on a mouse click -- browsers assume anything you
+     click into to type deserves an indicator -- so the app-wide ring in
+     tokens.css would still fire on exactly the interaction being removed.
+
+     What remains as the focus affordance is the caret. For a text field that
+     is the conventional one and it is genuinely visible, but it is weaker
+     than a ring: see the note in CLAUDE.md before adding another control to
+     this utility. */
+  /* Both voiceover and voice names use InlineName/result-name. Keep the edit
+     caret, but never let either the browser focus ring or a focused control
+     border make the name look like a separate input box. */
+  &:focus,
+  &:focus-visible {
+    outline: none !important;
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+}
+
+/* The time slot -- position/total on a finished row, and on a generating one
+   EMPTY unless the job failed, in which case it carries `Failed · try 3`.
+   Rendering it empty is not an oversight: it is 14ch of reserved width and the
+   only reason the progress track ends on the same pixel as a finished row's
+   waveform. It holds two separate width invariants, solved two ways.
+
+   WITHIN one row, the played/remaining toggle must not resize: that is the
+   1ch sign span reserving the minus, the single character that differs
+   between the two states, with .mono's tabular-nums making the digits equal.
+
+   ACROSS the two row kinds, the slot must be the same size regardless of
+   content, or the preview beside it (flex: 1 1 auto) starts at a different x
+   on a generating row than on a finished one -- and moves again as the
+   generating row goes "0:07" to "Failed · try 3". Hence the fixed width.
+   (It used to also swap in "Cancelling…" at 11 characters; that word is gone,
+   but the width requirement is not.)
+
+   14ch, not a pixel guess: 1ch sign + "12:07 / 45:33" is 14 characters, and
+   --font-mono (IBM Plex Mono) is a true monospace, so every glyph -- letters
+   and the ellipsis included, not just the tabular digits -- shares one
+   advance and ch measures it exactly in this element's own font. The earlier
+   attempt here was 84px, which the content outgrew; a character count cannot
+   be outgrown by content that is by construction 14 characters.
+
+   Fixed in BOTH directions, so it neither shrinks for "0:07" nor grows for a
+   two-hour voiceover -- formatClock's minutes are unbounded ("125:03 /
+   130:00"), and that case ellipsises inside the slot rather than shoving the
+   preview. */
+@utility result-time {
+  flex: none;
+  width: 14ch;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: transparent;
+  transition: color var(--fast) var(--ease);
+
+  &:hover {
+    color: var(--text-muted);
+  }
+}
+
+/* One bar at every chunk count. The ticks are a repeating gradient rather
+   than one element per chunk, so the cost is identical at 3 chunks and at
+   750. The stop positions derive from --chunks, set inline by the component,
+   which keeps the arithmetic in one place instead of splitting it between JS
+   and CSS. This replaced a cell grid whose repeat(auto-fill, minmax(14px,
+   1fr)) laid out roughly 40 tracks whatever the chunk count -- so a typical
+   3-7 chunk job drew a few ticks at the far left of a wide empty strip. */
+@utility result-bar {
+  /* Sits where the waveform sits on a finished row, so the two row kinds
+     line up down the column: flexible, with the actions beside it staying
+     put. */
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  height: 10px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* The moving part of the track. It was the `bg-progress` utility inline on the
+   element, which is correct right up to the moment a ROW STATE needs to own the
+   colour: a utility and a state rule are both in the utilities layer at one
+   class of specificity, so `is-canceling & .result-bar-fill` could not win
+   without !important. Naming the fill moves the colour into the same cascade
+   the rest of the row's state already uses. */
+@utility result-bar-fill {
+  background: var(--progress);
+}
+
+@utility has-ticks {
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(100% / var(--chunks) - 1px),
+      var(--bg-base) calc(100% / var(--chunks) - 1px),
+      var(--bg-base) calc(100% / var(--chunks))
+    );
+  }
+}
+
+/* When the voiceover was made, or sent to generate. It shares the header with
+   the voice name, and yields space to that name before it can force a wrap.
+
+   flex: none and a character-based width for the same reason result-time has
+   one: the preview beside it is flex: 1 1 auto, so a stamp that resized
+   between "02:32 PM" and "Sep 11, 02:32 PM" would move the preview's right
+   edge and change where it ellipsises. The shorter form sits right-aligned
+   inside the same slot.
+
+   17ch fits a localized date/time such as "Sep 19, 02:32 PM" without clipping.
+   The full timestamp remains available in its native tooltip.
+
+   --text-faint, the same weight as a finished row's clock: this is reference
+   information you look up, never something to notice. */
+@utility result-stamp {
+  flex: none;
+  width: 17ch;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A queued row is the same row in a different colour -- amber means the GPU
+   is working on it, purple means it is waiting its turn, red means it is
+   stopping (see is-canceling, which this rule used to say did not exist).
+
+   Queued rows deliberately have no progress track: their reorder buttons and
+   `Queued` label occupy that line instead. The label carries the state colour
+   without pretending that work has started.
+
+   Colour is not the only signal, and deliberately so -- roughly 1 in 12 men
+   would not read hue alone. In greyscale a queued row still reads "Queued"
+   where a running row has a ticking clock. */
+@utility is-queued {
+  background: var(--queued-soft);
+  box-shadow: inset 2px 0 0 var(--queued-line);
+
+  & .result-bar {
+    background: var(--queued-soft);
+    box-shadow: inset 0 0 0 1px var(--queued-line);
+  }
+
+  & .result-time {
+    color: var(--queued);
+  }
+}
+
+/* A running row is AMBER -- the tint and the bar fill, amber already meaning
+   "the GPU is working on this" everywhere else in this column.
+
+   This block used to describe a clock reading `1:12 / ~2:30`. Both halves of
+   that are gone: the `~estimate` denominator went when the estimator was
+   retired, and the elapsed clock itself went when the row stopped reporting
+   time at all. The `.result-time` rule below therefore colours nothing on a
+   running row; it is kept because `is-failed` and `is-canceling` do use that
+   slot, and a running row's colour should not be the odd one out if a readout
+   ever returns.
+
+   Not in is-queued's block: a queued row has not started, and is already
+   purple. */
+@utility is-running {
+  background: var(--progress-soft);
+  box-shadow: inset 2px 0 0 var(--progress-line);
+
+  & .result-time {
+    /* --progress IS a raw token now (tokens.css layer 1, one per theme). It
+       was not when this rule was written: the clock used var(--accent) and a
+       comment here warned that var(--progress) resolved to nothing and left
+       the clock inheriting --text-primary -- a bug nothing caught, because
+       check_design_tokens.py scans hex literals and an undefined var() is
+       invisible to it. Splitting progress out of accent fixed the cause; the
+       clock now names the state it is showing rather than the theme's
+       identity colour, which is what it always meant. */
+    color: var(--progress);
+  }
+}
+
+/* Terminal and unrecoverable, so it is coloured like every other failure in
+   the app rather than getting a state colour of its own -- --danger already
+   means "this went wrong" on the error row and the delete button.
+
+   Same construction as is-queued: the track and the label carry it, because a
+   failed job has no progress and so its bar fill has no width to colour, and
+   the outline is an inset box-shadow so the box does not grow -- a border would
+   make a failed row taller than every row around it. */
+@utility is-failed {
+  & .result-bar {
+    background: var(--danger-soft);
+    box-shadow: inset 0 0 0 1px var(--danger);
+  }
+
+  & .result-time,
+  & .result-text {
+    color: var(--danger-text);
+  }
+}
+
+/* Cancelled: the work is stopping, so every amber thing on the row hands over
+   to --danger at once -- the tint, the bar fill that is now frozen at the last
+   committed chunk, the still dot, and the clock.
+
+   This state used to have NO colour of its own, and the comment on is-queued
+   said why: the job is still running until the current chunk ends, so painting
+   it as "not started" would be a lie. That reasoning was about --queued, and it
+   still holds; red is not "not started", it is "stopping", which is exactly
+   what is true here. The row also no longer carries the word "Cancelling", so
+   colour and the disabled Cancel button are now the whole signal.
+
+   Same construction as is-failed -- an inset box-shadow, never a border -- so
+   a cancelling row is exactly as tall as the rows above and below it.
+   Written after is-running so it wins on source order for the .result-time
+   colour; the two cannot both apply anyway, since `running` and `canceling` are
+   different statuses. */
+@utility is-canceling {
+  background: var(--danger-soft);
+  box-shadow: inset 2px 0 0 var(--danger);
+
+  & .result-bar-fill {
+    background: var(--danger);
+  }
+
+  & .result-time {
+    color: var(--danger-text);
+  }
+}
+
+/* Bulk selection needs a row-level signal as well as the small checkbox: the
+   selection context should still be obvious while a reader follows a row. */
+@utility is-selected {
+  /* --accent-2-*, not --audio-*: see voice-picker-trigger above. This one was
+     dead too -- a selected row carried no tint and no edge, which is the whole
+     signal the bulk bar depends on. */
+  background: var(--accent-2-soft);
+  box-shadow: inset 2px 0 0 var(--accent-2-line);
+}
+
+/* Collapsed by default. The driver's message is worth keeping -- it is the
+   only record of what actually happened -- but it is several lines of CUDA
+   text, and putting that in front of someone who just wants to know whether
+   their work survived is how a dialog stops being read at all.
+
+   Stays a utility because a <summary> marker cannot be reset with utilities:
+   it needs list-style, the -webkit pseudo-element, and ::before content that
+   flips on [open]. */
+@utility fault-more {
+  & > summary {
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--text-faint);
+    list-style: none;
+  }
+
+  & > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  & > summary::before {
+    content: '▸ ';
+  }
+
+  &[open] > summary::before {
+    content: '▾ ';
+  }
+
+  & > summary:hover {
+    color: var(--text-muted);
+  }
+}
+
+/* The row's action strip. Always visible, just dimmed at rest -- these used
+   to be opacity: 0 until hover, which hid the only way to download a
+   voiceover behind a gesture you had to already know about. Still
+   opacity-only, so nothing here changes the box and the row cannot reflow as
+   its state changes; the dimming itself is a group-hover utility at the call
+   site. Only the two input-conditional rules live here. */
+@utility result-actions {
+  /* Both row states reserve this exact strip. A pending row sometimes needs
+     two confirmation buttons while a completed row currently has one overflow
+     button; letting either strip size itself makes the progress bar and
+     waveform different widths. Keep the spare space on the left and pin the
+     controls to the right, so their flexible tracks share both endpoints. */
+  min-width: 58px;
+  justify-content: flex-end;
+
+  /* A touch screen has neither :hover nor :focus-within until you have
+     already tapped something, which left download and delete looking
+     permanently disabled on a phone. Keyed to the input, not to a width: a
+     small window on a desktop still has a mouse. */
+  @media (hover: none) {
+    opacity: 1;
+
+    & .row-overflow-action {
+      opacity: 1;
+    }
+  }
+
+  @media (pointer: coarse) {
+    gap: 4px;
+  }
+}
+
+/* ==== Base elements ====================================================
+   IN @layer base, and that is not cosmetic -- it is the whole reason these
+   work.
+
+   Unlayered CSS beats EVERY cascade layer, utilities included. When these
+   rules came out of App.css they were written unlayered, which read as
+   harmless (they had been unlayered in App.css too) and quietly broke every
+   bordered control in the app: `button { background: none; border: none }`
+   outranked @utility ghost-btn, select, generate-btn and icon-btn, all of
+   which live in @layer utilities. Generate lost its fill, the voice
+   dropdown lost its border and its fill, and no amount of raising
+   --control-edge could bring them back, because the border was not being
+   drawn at all. In App.css the same rules were also unlayered but came
+   EARLIER in source order, so the component rules won; moving them here
+   inverted that without changing a single declaration.
+
+   Inside `base` these still beat Preflight -- same layer, later in source
+   order -- and lose to utilities, which is the relationship that was
+   intended all along. Do not lift them out of this block. */
+@layer base {
+  body {
+    margin: 0;
+    /* Transparent, NOT --bg-base, and this is load-bearing for the CursorGrid
+       background. CSS paints a stacking context in a fixed order: the context's
+       own background, then negative-z-index descendants, THEN in-flow block
+       backgrounds. body is in-flow, so an opaque body background paints over
+       every `-z-10` element beneath it -- the canvas rendered correctly and was
+       invisible; the fixed layer was correct, but painted underneath body.
+       html still paints var(--bg-base) (see the rule above), which is step one
+       of the same context and therefore below the canvas, so the page colour is
+       unchanged in every theme and the overscroll area still fills. */
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-weight: 600;
+  }
+}
+
+/* Phone portrait. 24px each side is 15% of a 320px viewport spent on
+   nothing -- the content is already narrow here, so the margin is what has
+   to give. --gutter is consumed by utilities as p-(--gutter), so changing
+   the token is enough; no utility needs a variant. */
+@media (max-width: 380px) {
+  :root {
+    --gutter: 14px;
+  }
+}

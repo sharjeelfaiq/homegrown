@@ -33,7 +33,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TOKENS = ROOT / "frontend" / "src" / "styles" / "tokens.css"
+TOKENS = ROOT / "apps" / "studio" / "src" / "styles" / "tokens.css"
 
 # Default floor for the tonal rule below. 40 degrees is roughly the point at
 # which amber stops being confusable with rust, and rust with red -- the three

@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
-# Render the landing page to landing-page/og.png at exactly 1200x630 — the
-# image every social card points at.
+# Render the landing page to apps/marketing/og.png at exactly 1200x630.
 #
 # A screenshot of the real page rather than a hand-authored card, so it cannot
 # misrepresent the product: it IS the product's page. The cost is that it has
 # to be regenerated when the design changes, which is what the size/staleness
 # note at the end is for.
 #
-# The output is COMMITTED. Vercel serves landing-page/ as-is with no build
-# step (vercel.json: buildCommand null), so a generated-but-uncommitted file
-# would 404 and every shared link would render bare — which is the exact
-# failure this script exists to fix.
+# The output is committed with the standalone static page.
 #
 #   bash scripts/build_og_image.sh
 #
@@ -19,8 +15,8 @@ set -u
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
 
-SRC="landing-page/index.html"
-OUT="landing-page/og.png"
+SRC="apps/marketing/index.html"
+OUT="apps/marketing/og.png"
 CHROME="${CHROME:-/c/Program Files/Google/Chrome/Application/chrome.exe}"
 
 [ -f "$SRC" ]    || { echo "landing page not found at: $SRC"; exit 1; }

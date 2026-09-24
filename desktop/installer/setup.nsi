@@ -1,0 +1,129 @@
+; ============================================================================
+; DOES NOT BUILD AT THE CURRENT PAYLOAD SIZE -- read before running makensis.
+;
+; NSIS caps its output at 2,147,483,647 bytes (signed 32-bit offsets). The
+; frozen backend is 4.47 GB, of which torch is 3.84 GB (torch_cuda.dll alone is
+; 999 MB). makensis does not fail on this: it compresses for ~25 minutes, parks
+; its temp file at exactly 2 GB, and keeps burning CPU while producing nothing.
+;
+; The shipping build uses a 7-Zip self-extracting archive instead -- see the
+; "Standalone Windows build" section of README.md. That trades the Start Menu
+; entry and uninstaller for the ability to exceed 2 GB.
+;
+; This script is kept, unmodified and working, for if the payload ever drops
+; back under 2 GB (a CPU-only build, or torch slimmed of unused CUDA libs).
+; ============================================================================
+
+; Homegrown -- Windows Installer
+; Compile with: makensis setup.nsi   (run from the installer/ folder)
+
+!define APP_NAME "Homegrown"
+!define APP_VERSION "1.0.0"
+!define APP_PUBLISHER "Runtime Gurus"
+!define INSTALL_DIR "$LOCALAPPDATA\Programs\Homegrown"
+; Deliberately distinct from a plain "Homegrown" key: a separate,
+; Electron-based build of this same app (different repo) previously used that
+; exact key name, and InstallDirRegKey below reusing it silently redirected
+; this installer to that build's leftover InstallLocation instead of
+; ${INSTALL_DIR}. A unique key avoids ever colliding with it again.
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\HomegrownPy"
+
+Name "${APP_NAME} ${APP_VERSION}"
+OutFile "..\dist\Homegrown-Setup-${APP_VERSION}.exe"
+InstallDir "${INSTALL_DIR}"
+InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
+; Per-user, no admin/UAC required -- installs to %LOCALAPPDATA%, works on
+; office machines where the user's Windows account has no admin rights.
+; $DESKTOP/$SMPROGRAMS and the uninstall registry key below resolve to the
+; current user's own locations (not all-users) under this execution level.
+RequestExecutionLevel user
+; Not /SOLID: makensis is a 32-bit process and the backend bundle (~5GB,
+; mostly torch/CUDA DLLs) overflows its single mmap'd solid datablock
+; ("Internal compiler error #12345: error mmapping datablock"). Per-file lzma
+; avoids that one-giant-block requirement at a small cost to compression ratio.
+SetCompressor lzma
+
+!include "MUI2.nsh"
+!define MUI_ABORTWARNING
+!define MUI_ICON "..\assets\icon.ico"
+!define MUI_UNICON "..\assets\icon.ico"
+!define MUI_WELCOMEPAGE_TITLE "Welcome to Homegrown Setup"
+!define MUI_WELCOMEPAGE_TEXT "This will install Homegrown on your computer.$\r$\n$\r$\nREQUIREMENT: An NVIDIA GPU with up-to-date CUDA drivers is required. The app will show an error message if no compatible GPU is found.$\r$\n$\r$\nClick Next to continue."
+!define MUI_FINISHPAGE_RUN "$INSTDIR\Homegrown.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch Homegrown now"
+
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+!insertmacro MUI_LANGUAGE "English"
+
+Section "Main" SecMain
+  SetOutPath "$INSTDIR"
+  File "..\launcher\dist\Homegrown.exe"
+
+  ; Backend bundle (backend.exe + all its DLLs/data, incl. the built frontend
+  ; under backend\frontend_dist -- see backend.spec's `datas`).
+  SetOutPath "$INSTDIR\backend"
+  File /r "..\..\services\voice-api\dist\backend\*.*"
+
+  ; Storage folder -- survives reinstalls/uninstalls unless the user opts in
+  ; to deleting it (see the Uninstall section below).
+  SetOutPath "$INSTDIR\storage\references"
+  SetOutPath "$INSTDIR\storage\generated"
+
+  ; Model snapshot downloaded on first run (see services/voice-api/run.py) -- not
+  ; bundled in the installer, kept out of the ~2.5GB download this way.
+  SetOutPath "$INSTDIR\models"
+
+  ; .env pins the paths run.py would otherwise infer -- kept explicit so an
+  ; advanced user can repoint MODEL_PATH at an existing snapshot.
+  SetOutPath "$INSTDIR\backend"
+  FileOpen $0 "$INSTDIR\backend\.env" w
+  FileWrite $0 "MODEL_PATH=$INSTDIR\models$\r$\n"
+  FileWrite $0 "HOMEGROWN_STORAGE_DIR=$INSTDIR\storage$\r$\n"
+  FileClose $0
+
+  CreateShortcut "$DESKTOP\Homegrown.lnk" "$INSTDIR\Homegrown.exe" "" "$INSTDIR\Homegrown.exe" 0
+  CreateDirectory "$SMPROGRAMS\Homegrown"
+  CreateShortcut "$SMPROGRAMS\Homegrown\Homegrown.lnk" "$INSTDIR\Homegrown.exe"
+  CreateShortcut "$SMPROGRAMS\Homegrown\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
+
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
+
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "${APP_NAME}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${APP_VERSION}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "${APP_PUBLISHER}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" "$INSTDIR\Uninstall.exe"
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
+SectionEnd
+
+Section "Uninstall"
+  MessageBox MB_YESNO "Do you want to delete your voice presets and generation history?$\r$\n$\r$\nClick Yes to delete everything.$\r$\nClick No to keep your data for a future reinstall." IDYES DeleteData IDNO SkipData
+
+  DeleteData:
+    RMDir /r "$INSTDIR\storage"
+    RMDir /r "$INSTDIR\models"
+    Goto DoneData
+  SkipData:
+    Goto DoneData
+  DoneData:
+
+  Delete "$INSTDIR\Homegrown.exe"
+  Delete "$INSTDIR\Uninstall.exe"
+  RMDir /r "$INSTDIR\backend"
+  RMDir "$INSTDIR"
+
+  Delete "$DESKTOP\Homegrown.lnk"
+  Delete "$SMPROGRAMS\Homegrown\Homegrown.lnk"
+  Delete "$SMPROGRAMS\Homegrown\Uninstall.lnk"
+  RMDir "$SMPROGRAMS\Homegrown"
+
+  DeleteRegKey HKCU "${UNINSTALL_KEY}"
+SectionEnd

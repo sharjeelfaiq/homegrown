@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-FRONTEND = ROOT / "frontend" / "src"
+FRONTEND = ROOT / "apps" / "studio" / "src"
 CSS_FILES = [FRONTEND / "index.css", FRONTEND / "styles" / "tokens.css"]
 
 # Class selectors in the stylesheet, e.g. `.foo`, `.foo:hover`, `.a .b`.

@@ -1,18 +1,18 @@
 # Python
 __pycache__/
 *.pyc
-backend/venv/
+services/voice-api/venv/
 
 # Node
 node_modules/
 dist/
 
 # Personal/generated data -- uploaded voice clips, generated audio, presets & history
-backend/storage/
+services/voice-api/storage/
 
 # Stray test artifacts
-backend/gen_resp.json
-backend/uvicorn.log
+services/voice-api/gen_resp.json
+services/voice-api/uvicorn.log
 
 # Env / secrets
 .env
@@ -28,8 +28,8 @@ Thumbs.db
 .tmp_pip/
 
 # PyInstaller build output
-backend/build/
-launcher/build/
+services/voice-api/build/
+desktop/launcher/build/
 
 # Packaged installer output
 installer.zip

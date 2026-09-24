@@ -3,10 +3,10 @@
 
 This app has three frontends -- the studio SPA, the launcher's loading page,
 and the landing page -- and only the SPA can import
-`frontend/src/styles/tokens.css`. The launcher's HTML is compiled into a
+`apps/studio/src/styles/tokens.css`. The launcher's HTML is compiled into a
 standalone .exe that must render offline, and the landing page is a separate
 deployment with no build step, so both mirror the palette by hand. So does the
-pre-paint theme script in `frontend/index.html`, which has to set a page
+pre-paint theme script in `apps/studio/index.html`, which has to set a page
 background before any stylesheet exists.
 
 The canvas waveform used to be on that list -- `WaveRibbon.tsx` carried three
@@ -54,36 +54,36 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TOKENS = ROOT / "frontend" / "src" / "styles" / "tokens.css"
+TOKENS = ROOT / "apps" / "studio" / "src" / "styles" / "tokens.css"
 
 # Files that mirror the palette by hand, plus the SPA's own stylesheets.
 TARGETS = [
     # App.css is gone -- the SPA is Tailwind utilities plus this one stylesheet.
-    ROOT / "frontend" / "src" / "index.css",
+    ROOT / "apps" / "studio" / "src" / "index.css",
     # Carries an inlined per-theme page background, because the pre-paint
     # frame in `vite dev` has no stylesheet at all. Five more hand-mirrored
     # hexes, so five more chances to drift.
-    ROOT / "frontend" / "index.html",
+    ROOT / "apps" / "studio" / "index.html",
     # The launcher splash is authored here and compiled by
     # scripts/build_splash.py; _splash.py is generated from it, so checking the
     # source is what matters. launcher.py itself no longer carries any colour.
-    ROOT / "launcher" / "splash.css",
-    ROOT / "launcher" / "splash.html",
-    ROOT / "launcher" / "launcher.py",
-    ROOT / "landing-page" / "index.html",
+    ROOT / "desktop" / "launcher" / "splash.css",
+    ROOT / "desktop" / "launcher" / "splash.html",
+    ROOT / "desktop" / "launcher" / "launcher.py",
+    ROOT / "apps" / "marketing" / "index.html",
 ]
-TARGETS += sorted((ROOT / "frontend" / "src").rglob("*.tsx"))
-TARGETS += sorted((ROOT / "frontend" / "src").rglob("*.ts"))
+TARGETS += sorted((ROOT / "apps" / "studio" / "src").rglob("*.tsx"))
+TARGETS += sorted((ROOT / "apps" / "studio" / "src").rglob("*.ts"))
 
 # Checked against the DEFAULT theme only, not the full nine-theme palette.
 # None of these can ever render as anything but Studio: the launcher paints
 # before a browser (and so any stored preference) exists, and the landing page
 # is a separate deployment that is not the studio at all.
 STRICT_TARGETS = {
-    ROOT / "launcher" / "splash.css",
-    ROOT / "launcher" / "splash.html",
-    ROOT / "launcher" / "launcher.py",
-    ROOT / "landing-page" / "index.html",
+    ROOT / "desktop" / "launcher" / "splash.css",
+    ROOT / "desktop" / "launcher" / "splash.html",
+    ROOT / "desktop" / "launcher" / "launcher.py",
+    ROOT / "apps" / "marketing" / "index.html",
 }
 
 # The negative lookahead on the 6-digit form stops an 8-digit #rrggbbaa being
@@ -249,7 +249,7 @@ def main() -> int:
             print(f"  {path}:{lineno}  {raw}")
             print(f"      {text}")
         print(
-            "\nEither add the colour to frontend/src/styles/tokens.css, or use an\n"
+            "\nEither add the colour to apps/studio/src/styles/tokens.css, or use an\n"
             "existing token. Surfaces that cannot import the stylesheet still have\n"
             "to mirror a value that exists in it."
         )

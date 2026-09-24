@@ -1,9 +1,10 @@
 # Historical deployment proposal (archived)
 
-> **Historical and non-authoritative.** This is the original proposal for the dormant Vercel + RunPod
-> split. It includes superseded assumptions (including Clerk authentication and a 60-second upload limit).
-> For current supported deployments, use `README.md`; for the dormant path, use `docs/DEPLOYMENT.md` and
-> verify against source before acting.
+> **Historical and non-authoritative.** This is the original Vercel + RunPod
+> proposal. It describes retired cloud paths, directories, and authentication
+> assumptions; it is retained only for project history. Do not follow it as
+> operational guidance. For the supported local/desktop workflow, use
+> `README.md` and `docs/BUILD.md`.
 
 I'm restructuring deployment for Homegrown:
 - Frontend: deploy to Vercel (separate from the backend now)

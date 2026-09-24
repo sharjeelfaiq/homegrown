@@ -4,8 +4,8 @@ Every step needed to turn the current source into a distributable executable, in
 the order they must run. Run everything in **Git Bash** from the repo root
 (`D:\dev-projects\websites\homegrown`).
 
-Git Bash, not PowerShell — `setup.sh` needs bash, and the final SFX step
-concatenates two binaries, which PowerShell's `>` corrupts by rewriting them as
+Git Bash, not PowerShell — the final SFX step concatenates two binaries, which
+PowerShell's `>` corrupts by rewriting them as
 text.
 
 **Budget:** ~45 minutes and ~10 GB free on the repo's drive.
@@ -21,15 +21,12 @@ bash build.sh
 Runs every step below in order and ends by printing the `.exe` path, its size
 and its SHA-256. Expect ~45 minutes and ~10 GB free.
 
-It also **stashes `frontend/.env.local` and restores it afterwards**. That file
-must be absent while Vite builds — `VITE_BACKEND_URL` is baked into the bundle,
-so a stale `127.0.0.1` makes every LAN client call its own loopback — but
-leaving it deleted silently breaks local development. The restore runs from an
+It also **stashes `apps/studio/.env.local` and restores it afterwards**. The restore runs from an
 `EXIT` trap, so it happens whether the build succeeds, fails, or you Ctrl-C it.
 If no file was there to stash, it writes the default dev value, so the tree is
-always left usable. `frontend/.env.local.example` is the committed reference.
+always left usable. `apps/studio/.env.local.example` is the committed reference.
 
-Two gates abort the build rather than warn: a `backend/.env` reaching the staged
+Two gates abort the build rather than warn: a `services/voice-api/.env` reaching the staged
 tree (it carries an absolute `MODEL_PATH` that exists on no other machine), and
 a non-empty `models/`.
 
@@ -51,17 +48,13 @@ need to re-run just that part.
 
 ## 1. Python environment and model
 
-```bash
-cd /d/dev-projects/websites/homegrown
-bash setup.sh
-```
-
-Creates `.venv`, installs `backend/requirements.txt` (~3 GB, pulls the
-`+cu126` torch build via the index URL in that file's header), verifies CUDA,
-and downloads the ~2.5 GB model into `models/` if absent.
-
-Safe to re-run — every step is skipped when already done. Re-run it after
-deleting `.venv`.
+Complete [First-time setup](../README.md#first-time-setup) before building. It
+creates `.venv`, installs `services/voice-api/requirements.txt`, downloads the
+model, configures `services/voice-api/.env`, and installs Studio dependencies.
+The compiled default admin password is `Homegrown-Admin-8731!`. Override it
+with `ADMIN_PASSWORD` in `services/voice-api/.env` for local use. That `.env`
+is not bundled; an optional `<install>/backend/.env` can override the default
+for an extracted package.
 
 ```bash
 ./.venv/Scripts/python.exe -m pip install pyinstaller
@@ -80,7 +73,7 @@ These are the same six gates `build.sh` runs, in the same order. All six
 must pass; each exists because something once shipped broken past it.
 
 ```bash
-# 1. No colour outside frontend/src/styles/tokens.css (reads 6-digit hex,
+# 1. No colour outside apps/studio/src/styles/tokens.css (reads 6-digit hex,
 #    3-digit hex and rgb()/rgba(); two palettes -- all nine themes for the
 #    SPA, Studio only for launcher.py and the landing page).
 python scripts/check_design_tokens.py
@@ -96,15 +89,15 @@ python scripts/check_palette.py
 #    .compose-bar .generate matching nothing and un-anchored Generate.
 python scripts/check_orphan_css.py
 
-# 5. backend/run.py's PORT and launcher/launcher.py's PORT must agree. They
+# 5. services/voice-api/run.py's PORT and desktop/launcher/launcher.py's PORT must agree. They
 #    are separately frozen exes with no import path between them.
 python scripts/check_desktop_port.py
 
-# 6. launcher/_splash.py must be current with splash.html/splash.css.
+# 6. desktop/launcher/_splash.py must be current with its splash sources.
 python scripts/build_splash.py --check
 
-# Frontend types, unit tests, and lint
-cd frontend && npm install && npm run test && npm run lint && cd ..
+# Studio types, unit tests, and lint
+cd apps/studio && npm install && npm run test && npm run lint && cd ../..
 ```
 
 `npm run lint` may report `react(only-export-components)` Fast Refresh warnings
@@ -112,7 +105,8 @@ for context/provider modules and `VoiceoverFilters.tsx`. They are existing
 warnings from exporting hooks or helpers alongside components; treat any new
 lint error or warning outside that known class as a build issue.
 
-`npm run build` is the typecheck (`tsc -b && vite build`); step 4 runs it.
+`npm run build` runs the TypeScript project build and Vite production build
+(`tsc -b && vite build`); section 3 runs it.
 `npm run test` runs the Vitest suite, including history-query normalization,
 cache-key isolation, and sliding history-pager-window checks.
 
@@ -121,7 +115,7 @@ regenerate the checked-in Boneyard assets before committing. In one terminal
 run `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`; in another:
 
 ```bash
-cd frontend && npm run bones:build
+cd apps/studio && npm run bones:build
 ```
 
 The capture is local, root-route-only, and needs Playwright Chromium once
@@ -130,41 +124,30 @@ The capture is local, root-route-only, and needs Playwright Chromium once
 
 ---
 
-## 3. Remove the dev-only backend override
+## 3. Build the Studio
 
 ```bash
-rm -f frontend/.env.local
+cd apps/studio && npm run build && cd ../..
 ```
 
-**Do not skip this.** `VITE_BACKEND_URL` is baked into the bundle at build time.
-If it is set to `http://127.0.0.1:8000`, every LAN user's browser will call
-*their own* loopback instead of the server, and the app will appear dead.
-
----
-
-## 4. Build the frontend
-
-```bash
-cd frontend && npm run build && cd ..
-```
-
-`backend.spec` hard-fails if `frontend/dist/index.html` is missing, so this must
+`services/voice-api/backend.spec` hard-fails if `apps/studio/dist/index.html` is missing, so this must
 precede the freeze.
 
 ---
 
-## 5. Freeze both executables (~15–20 min)
+## 4. Freeze both executables (~15–20 min)
 
 ```bash
 mkdir -p .tmp
 python scripts/build_splash.py
-cd backend  && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe backend.spec  --clean --noconfirm && cd ..
-cd launcher && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe launcher.spec --clean --noconfirm && cd ..
+cd services/voice-api && TMP=../../.tmp TEMP=../../.tmp ../../.venv/Scripts/pyinstaller.exe backend.spec --clean --noconfirm && cd ../..
+cd desktop/launcher && TMP=../../.tmp TEMP=../../.tmp ../../.venv/Scripts/pyinstaller.exe launcher.spec --clean --noconfirm && cd ../..
 ```
 
-`build_splash.py` compiles the launcher's loading screen — `launcher/splash.html`
-and `splash.css` — with the Tailwind CLI and writes `launcher/_splash.py`, which
-`launcher.py` imports. It must run **before** the launcher freeze, or the exe
+`build_splash.py` compiles the launcher's loading screen —
+`desktop/launcher/splash.html` and `desktop/launcher/splash.css` — with the
+Tailwind CLI and writes `desktop/launcher/_splash.py`, which `launcher.py`
+imports. It must run **before** the launcher freeze, or the exe
 ships whatever `_splash.py` last held.
 
 That splash is the one surface that cannot use the Tailwind Play CDN the landing
@@ -173,37 +156,37 @@ exactly when a CDN is unavailable. `_splash.py` is committed, so a build on a
 machine without npm still produces a working exe; `python scripts/build_splash.py
 --check` fails if it is stale relative to its sources.
 
-It is a generated **module**, not a data file. `launcher.spec` declares
+It is a generated **module**, not a data file. `desktop/launcher/launcher.spec` declares
 `datas=[]` and PyInstaller follows imports, so the spec needs no change.
 
 `TMP`/`TEMP` are redirected off `C:` on purpose — PyInstaller unpacks several GB
 through the temp directory and will exhaust a small system drive.
 
-Both must be rebuilt whenever `backend/` **or** `launcher/` changes. Rebuilding
+Both must be rebuilt whenever `services/voice-api/` **or** `desktop/launcher/` changes. Rebuilding
 only the launcher leaves a stale `backend.exe` with the old API and bind address.
 
 ---
 
-## 6. Stage the install layout
+## 5. Stage the install layout
 
 ```bash
 rm -rf dist/Homegrown
 mkdir -p dist/Homegrown
-cp launcher/dist/Homegrown.exe dist/Homegrown/
-cp -r backend/dist/backend dist/Homegrown/backend
+cp desktop/launcher/dist/Homegrown.exe dist/Homegrown/
+cp -r services/voice-api/dist/backend dist/Homegrown/backend
 mkdir -p dist/Homegrown/storage/references \
          dist/Homegrown/storage/generated \
          dist/Homegrown/models
 ```
 
-`launcher.py` looks for `backend/backend.exe` beside itself; this is that layout.
+`desktop/launcher/launcher.py` looks for `backend/backend.exe` beside itself; this is that layout.
 
 `models/` ships **empty** — the app downloads the model on first run into
 `<install>/models`.
 
 ---
 
-## 7. Portability gate
+## 6. Portability gate
 
 ```bash
 ls dist/Homegrown/backend/.env 2>/dev/null && echo "^^ DELETE THIS" || echo "OK: no .env shipped"
@@ -215,7 +198,7 @@ If `.env` is present, delete it. It carries an absolute
 
 ---
 
-## 8. Smoke-test before packing
+## 7. Smoke-test before packing
 
 Cheaper to catch a bad build here than after compressing 1.8 GB.
 
@@ -242,6 +225,10 @@ Expect, in order:
    the adjacent blocked-state reason, and use Ctrl/Cmd+Enter when it is ready. In each theme, move the pointer over the enabled
    button and confirm the specular highlight stays within the button without moving layout. It must be
    absent while disabled or when reduced motion is enabled.
+7. Verify voice and completed-voiceover deletes: a wrong admin password closes
+   the modal without deleting; the default password opens a seven-second Undo
+   toast; selecting Undo preserves the item, while allowing the timer to expire
+   deletes it. Queue cancellation is separate and has no Undo timer toast.
 
 This is manual UI QA: the build gates validate source and generated assets, not GPU generation or browser
 WebGL/compositing paths. Before release, generate a voiceover on the target GPU and confirm queueing,
@@ -253,8 +240,12 @@ Then confirm the listener is on every interface:
 netstat -ano | findstr :8731    # expect 0.0.0.0:8731
 ```
 
-The app has **no authentication**, so anyone who reaches this port can create voices and permanently
-delete voices and voiceovers. Trusted networks only.
+The app has **no general authentication or multi-user isolation**. The admin
+password gates only voice and completed-voiceover deletion; anyone who reaches
+this port can still use other API actions, including uploading voices and
+generating audio. The shared default is `Homegrown-Admin-8731!`; override it in
+`<install>/backend/.env` before allowing other trusted-LAN users to delete.
+Trusted networks only.
 
 If the loader never appears, the launcher exe is stale — step 5 did not rebuild.
 
@@ -262,7 +253,7 @@ Stop the app before continuing.
 
 ---
 
-## 9. Pack the self-extractor (~10 min)
+## 8. Pack the self-extractor (~10 min)
 
 ```bash
 cd dist
@@ -280,7 +271,7 @@ compression costs far more time for a couple of percent.
 
 ---
 
-## 10. Verify the artifact
+## 9. Verify the artifact
 
 ```bash
 ls -lh dist/Homegrown-1.0.0.exe
@@ -317,10 +308,10 @@ means deleting the folder.
 
 | Symptom | Cause |
 |---|---|
-| `frontend/dist is missing` during step 5 | Step 4 was skipped |
+| `apps/studio/dist is missing` during step 5 | Step 4 was skipped |
 | Loader never appears | Stale launcher exe — re-run step 5 |
 | Firewall prompt on first run | Expected when `backend.exe` binds `0.0.0.0:8731`; allow it only on a trusted private network |
-| App works locally, dead on LAN | `frontend/.env.local` survived step 3 and set `VITE_BACKEND_URL`. `start_server.bat` catches this before serving; the frozen build does not, so check the bundle |
+| Delete password | `Homegrown-Admin-8731!` unless `ADMIN_PASSWORD` is set in `backend/.env` |
 | Long-reference warning is missing | Backend predates the `POST /api/estimate` chunking check — rebuild |
 | PyInstaller runs out of disk | `TMP`/`TEMP` not redirected in step 5 |
 | `No matching distribution` for torch | `--extra-index-url` header in `requirements.txt` was bypassed |

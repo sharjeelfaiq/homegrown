@@ -13,8 +13,8 @@ moment the splash exists for. So this surface compiles ahead of time.
     python scripts/build_splash.py            # generate
     python scripts/build_splash.py --check    # fail if the output is stale
 
-Reads  launcher/splash.html  +  launcher/splash.css
-Writes launcher/_splash.py   (committed, so a build without npm still works)
+Reads  desktop/launcher/splash.html  +  desktop/launcher/splash.css
+Writes desktop/launcher/_splash.py   (committed, so a build without npm still works)
 
 _splash.py is a MODULE, not a data file, and that is deliberate:
 launcher.spec declares `datas=[]` and scripts/check_desktop_port.py relies on
@@ -32,11 +32,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-LAUNCHER = ROOT / "launcher"
+LAUNCHER = ROOT / "desktop" / "launcher"
 HTML = LAUNCHER / "splash.html"
 CSS = LAUNCHER / "splash.css"
 OUT = LAUNCHER / "_splash.py"
-FRONTEND = ROOT / "frontend"
+FRONTEND = ROOT / "apps" / "studio"
 
 PLACEHOLDER = "__SPLASH_CSS__"
 
@@ -51,7 +51,7 @@ def tailwind_cli() -> list[str]:
     if npx:
         return [npx, "--no-install", "@tailwindcss/cli"]
     sys.exit(
-        "Tailwind CLI not found. Run `npm install` in frontend/ first "
+        "Tailwind CLI not found. Run `npm install` in apps/studio/ first "
         "(@tailwindcss/cli is a devDependency there)."
     )
 
@@ -65,7 +65,7 @@ def sources_fingerprint() -> str:
 
 
 def compile_css() -> str:
-    # --cwd points at frontend/, because that is the only directory in this
+    # --cwd points at apps/studio/, because that is the only directory in this
     # repo with a node_modules -- without it `@import 'tailwindcss'` cannot
     # resolve from launcher/. The input path and the @source glob inside
     # splash.css stay relative to launcher/, which is where they belong.

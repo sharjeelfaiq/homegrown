@@ -10,7 +10,7 @@
 #
 #   bash scripts/measure_landing.sh [path/to/index.html]
 set -u
-SRC="${1:-landing-page/index.html}"
+SRC="${1:-apps/marketing/index.html}"
 OUT="$(mktemp -d)"
 CHROME="${CHROME:-/c/Program Files/Google/Chrome/Application/chrome.exe}"
 [ -f "$CHROME" ] || { echo "Chrome not found at: $CHROME (set CHROME=)"; exit 1; }

@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TOKENS = ROOT / "frontend" / "src" / "styles" / "tokens.css"
+TOKENS = ROOT / "apps" / "studio" / "src" / "styles" / "tokens.css"
 
 # Body text must clear 4.5:1 (WCAG AA, normal weight).
 AA_TEXT = 4.5

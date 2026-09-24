@@ -1,718 +1,120 @@
 # Homegrown
 
-A local/LAN web dashboard for voice cloning, built around a vendored copy of `FasterQwen3TTS`
-(Qwen3-TTS-12Hz-0.6B with CUDA-graph acceleration). Upload a short reference clip, save it as a named voice,
-write a script, get a voiceover back as an `.mp3`.
+Homegrown is a local Windows voice-generation app built around Qwen3-TTS. It
+has no accounts or hosted service: audio, presets, history, and the model stay
+on the computer that runs it.
 
-No accounts, no credits, no billing — every request runs as a single local user.
+## First-time setup
 
-> **Generation is stochastic.** The model samples (`do_sample=True`, nothing is seeded), so the same script
-> generated twice produces different audio: different pacing, different pauses, occasionally different
-> pronunciation of hard words. That is inherent to the model, not a bug. If you like a take, keep it — you
-> cannot reproduce it.
-
----
-
-## Quick start
+Use Windows 10/11 with Git Bash, Python 3.11+, Node 20.19+ (or 22.12+), and (for a packaged
+build) 7-Zip. An NVIDIA GPU is recommended; CPU fallback works but generation
+may take many minutes.
 
 ```bash
 git clone git@github.com:sharjeelfaiq/homegrown.git
 cd homegrown
-bash setup.sh
+
+python -m venv .venv
+PY=.venv/Scripts/python.exe; [ -f "$PY" ] || PY=.venv/bin/python
+"$PY" -m pip install --upgrade pip
+"$PY" -m pip install -r services/voice-api/requirements.txt
+
+cd apps/studio && npm install && cd ../..
+cp services/voice-api/.env.example services/voice-api/.env
 ```
 
-`setup.sh` is idempotent — every step is skipped if already done, so if it fails or you interrupt it, run it
-again. It creates `.venv`, installs Python dependencies (~3GB), downloads the model (~2.5GB), writes
-`backend/.env`, and builds the frontend.
-
-It deliberately keeps pip's cache/temp **and** the model on the repo's own drive rather than `C:` — this
-project pulls roughly 5GB, and the defaults would put all of it on your system drive.
-
-Then start the server:
+Download the model once (the default location is the ignored `models/`
+directory), then set `MODEL_PATH` in `services/voice-api/.env` to its absolute
+Windows path. The default admin password is `Homegrown-Admin-8731!`; override
+`ADMIN_PASSWORD` with a long, unique password in `services/voice-api/.env`
+before anyone else can reach the app. Only delete operations use this password;
+other API actions are not authenticated:
 
 ```bash
-cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
+PY=.venv/Scripts/python.exe; [ -f "$PY" ] || PY=.venv/bin/python
+MODEL_DIR="${MODEL_DIR:-$PWD/models}" "$PY" - <<'PYEOF'
+from huggingface_hub import snapshot_download
+import os
+
+snapshot_download(
+    "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    local_dir=os.environ["MODEL_DIR"],
+    ignore_patterns=["*.msgpack", "*.h5", "flax_model*"],
+)
+PYEOF
 ```
 
-Open **http://localhost:8000**.
-
----
-
-## Requirements
-
-| | |
-|---|---|
-| OS | Windows 10/11 (64-bit). The code is cross-platform; the launcher scripts are Windows. |
-| GPU | NVIDIA, or none — see below |
-| Disk | ~10GB (3GB dependencies + 2.5GB model + generated voiceovers) |
-| Python | 3.11+ |
-| Node | 18+ (frontend build) |
-
-**GPU support.** Torch is pinned to the **cu126** build, which ships kernels for `sm_50` through `sm_90` — so
-Maxwell and Pascal cards (GTX 9xx, GTX 10xx) work, as do Turing, Ampere and Ada. This is deliberate: the
-cu128 build only covers `sm_75+`, and on an older card `torch.cuda.is_available()` still returns `True`
-before every GPU operation dies with `no kernel image is available for execution on the device`.
-
-Blackwell (RTX 50xx, `sm_100`/`sm_120`) needs cu128 instead — change the `--extra-index-url` and both the
-`torch` and `torchaudio` pins in `backend/requirements.txt` together.
-
-**No GPU?** It still runs. The backend detects an unusable GPU (it checks the architecture list *and*
-executes a test matmul, because `torch.cuda.is_available()` alone lies), falls back to CPU in float32, and
-shows a warning banner in the UI. Correct output, but expect **many minutes per chunk**.
-
----
-
-## Running it
-
-### LAN server (the main way)
-
-One process serves the API and the built frontend on one port, reachable from any device on your network.
-
-```bash
-cd frontend && npm run build      # once, and again after any frontend change
-cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-Or double-click **`start_server.bat`** in the repo root, which runs that second command for you and
-prints the exact address to type on other devices. Prefer it: it also refuses to start in three states
-that otherwise fail silently or blame the wrong thing —
-
-| It stops when | Because otherwise |
-|---|---|
-| `frontend/dist/index.html` is missing | `FRONTEND_DIST` is read once at import, so every page load answers `{"detail":"Not Found"}` while `/api` works fine |
-| a localhost address is compiled into the bundle | the app works on this PC and fails on every other device, with nothing at runtime able to detect it |
-| something already holds :8000 | uvicorn dies with a bind traceback that never mentions the usual culprit, a `dev.sh` backend still running |
-
-- On this PC: **http://localhost:8000**
-- From other devices: **http://\<this-PC's-LAN-IP\>:8000** — `start_server.bat` prints it. If you look it
-  up yourself with `ipconfig`, pick the real adapter: a machine with Hyper-V or WSL also lists a
-  `172.x.x.x` vEthernet address that no other device can reach.
-
-> ⚠️ **There is no sign-in.** `auth.py` is a stub that returns the same user for every request. Anyone who
-> can reach the port can create voices, generate voiceovers, and delete other people's. Run it on a network
-> you trust.
-
-> **Do not open `http://0.0.0.0:8000`.** `0.0.0.0` means "listen on every interface" — it is a bind address,
-> not a destination. Browsers reject it with `ERR_ADDRESS_INVALID`.
-
-**Let other devices through the firewall** (once, as Administrator):
-
-```powershell
-New-NetFirewallRule -DisplayName "Homegrown" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
-```
-
-**If port 8000 is already taken** on your machine, pick another and tell clients the new port — nothing on
-the frontend side is hardcoded to 8000:
-
-```bash
-cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 0.0.0.0 --port 8010
-```
-
-**Auto-start at login** — use `start_server_silent.vbs` (same thing, no console window) with Task Scheduler:
-
-```powershell
-schtasks /create /tn "Homegrown" /tr "wscript.exe \"C:\path\to\repo\start_server_silent.vbs\"" /sc onlogon /rl highest /f
-```
-
-### Local development (hot reload)
-
-One command from the repo root:
+## Local development
 
 ```bash
 bash dev.sh
 ```
 
-It preflights the venv and both env files, starts uvicorn on `127.0.0.1:8000` and Vite on `:5173`, tails
-both logs side by side with `[backend]` / `[frontend]` prefixes, polls `/api/health` and prints when the
-model is actually ready (which the frontend does not wait for), and stops both processes on Ctrl-C —
-including the orphaned node child that `kill` alone leaves holding `:5173` on Windows. Logs stay at
-`.tmp/dev-backend.log` and `.tmp/dev-frontend.log`.
+Open `http://localhost:5173`. The script starts FastAPI on `127.0.0.1:8000`
+and Vite on port 5173. Vite proxies `/api`, `/audio`, and `/refs`, so Studio
+always uses same-origin API paths. It prints a LAN address when available.
+There is no sign-in; the admin password only gates deletion of voices and
+completed voiceovers. Use only a trusted network.
 
-No `--reload` on the backend, deliberately: the model takes tens of seconds to minutes to load, and a
-watcher would pay that on every edit. Restart `dev.sh` by hand after backend changes.
-
-**Dev is reachable from other devices too**, at `http://<this-PC's-IP>:5173`. `dev.sh` prints the address.
-Nothing to configure on the visiting phone or laptop — `vite.config.ts` proxies `/api`, `/audio` and
-`/refs` to the backend, so each device's API calls are same-origin against whatever address it typed. The
-same "no sign-in" warning above applies.
-
-The same thing by hand is two terminals:
+For manual startup, use separate terminals:
 
 ```bash
-# terminal 1
-cd backend && ../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
-
-# terminal 2
-cd frontend && npm run dev        # http://localhost:5173
+cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
-
-`frontend/.env.local` should set **nothing**. `VITE_BACKEND_URL` hardcodes one backend address into the
-page, which is right for the dormant Vercel + RunPod split and wrong everywhere else: point it at
-`127.0.0.1` and every device except this one loads the app, calls its own loopback, and finds nothing.
-`dev.sh` warns if it is set.
-
-The backend stays on `127.0.0.1` even in this mode. Vite reaches it from this machine, so binding it wide
-would add nothing but a second Windows Firewall prompt.
-
-`ALLOWED_ORIGINS` in `backend/.env` only matters for requests that skip the proxy — through it they arrive
-server-side from Vite and CORS never applies. Keep
-`ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173` anyway; both spellings, since they are the
-same socket but different origins to CORS.
-
-> ⚠️ **`VITE_BACKEND_URL` must be unset before building for LAN or the installer.** It is baked into the
-> bundle at build time. If it says `127.0.0.1` when you run `npm run build`, every LAN client calls *their
-> own* localhost and the app is broken for everyone except this machine. `build.sh` stashes
-> `frontend/.env.local` for you; a hand-run `npm run build` does not, which is why `start_server.bat`
-> greps the emitted bundle and refuses to serve one that has it.
-
-### Standalone Windows build (frozen desktop app)
-
-Produces a single self-extracting `.exe` for a non-developer machine — no Python, no Node, no source. The
-last build came out at **1.66 GB**, expanding to **4.48 GB** on disk.
-
-> **`installer/setup.nsi` cannot build this.** NSIS caps its output at 2,147,483,647 bytes and the payload
-> is 4.47 GB — `torch` alone is 3.84 GB of it (`torch_cuda.dll` 999 MB, `cublasLt64_12.dll` 507 MB). Running
-> `makensis setup.nsi` does not error: it spins for ~25 minutes, parks its temp file at exactly 2 GB, and
-> produces nothing. Use the 7-Zip route below. The NSIS script is kept for the day the payload fits.
-
-Requires `pip install pyinstaller` and 7-Zip (`winget install 7zip.7zip`).
 
 ```bash
-# 1. Frontend first -- backend.spec hard-fails if frontend/dist is missing.
-#    Make sure frontend/.env.local does NOT set VITE_BACKEND_URL.
-cd frontend && npm install && npm run build && cd ..
-
-# 2. Freeze. Redirect TEMP off the system drive first -- PyInstaller unpacks
-#    several GB through it and will exhaust a small C:.
-cd backend  && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe backend.spec  --clean --noconfirm && cd ..
-cd launcher && TMP=../.tmp TEMP=../.tmp ../.venv/Scripts/pyinstaller.exe launcher.spec --clean --noconfirm && cd ..
-
-# 3. Stage the app in the layout launcher.py expects (<root>/backend/backend.exe).
-mkdir -p dist/Homegrown
-cp launcher/dist/Homegrown.exe dist/Homegrown/
-cp -r backend/dist/backend dist/Homegrown/backend
-mkdir -p dist/Homegrown/storage/references dist/Homegrown/storage/generated dist/Homegrown/models
-
-# 4. Compress. -mx5, not -mx9: the payload is mostly incompressible CUDA DLLs,
-#    so maximum compression costs far more time for a couple of percent.
-cd dist && "/c/Program Files/7-Zip/7z.exe" a -t7z -m0=lzma2 -mx5 -mmt=on app.7z Homegrown
-
-# 5. Prepend the SFX module -> one double-clickable .exe.
-cat "/c/Program Files/7-Zip/7z.sfx" app.7z > Homegrown-1.0.0.exe
+cd apps/studio && npm run dev
 ```
 
-The result is a **self-extractor, not an installer**: the recipient runs it, picks a folder, then opens that
-folder and runs `Homegrown.exe`. There is no Start Menu entry and no uninstaller — uninstalling means
-deleting the folder. Their machine needs **~8 GB free**: 1.66 GB download + 4.48 GB extracted (~6.1 GB peak
-with both present) plus the 2.5 GB model on first launch.
+Keep `apps/studio/.env.local` empty for supported local workflows.
 
-The build artifact is **not** checked in — `dist/` is gitignored.
+## Packaged Windows app
 
-**What the user sees on launch.** Double-clicking `Homegrown.exe` opens a browser loader within a
-second or two, which shows the real startup phase — model download percentage on a first run, then library
-load, GPU check, model load — and redirects to the app once the backend is healthy. Double-clicking again
-while it is already running just reopens the tab; it never restarts a backend that might be mid-generation.
-If startup fails, the loader shows the backend's own error and a **Try again** button, and the backend's
-output is kept at `<install>/storage/backend.log`.
-
-**The desktop build listens on `0.0.0.0:8731`** (`backend/run.py`), so it *is* reachable from other
-machines on the network. That reverses an earlier loopback-only bind; two things come with it:
-
-- **The first run triggers a Windows Defender Firewall prompt, and Cancel is unrecoverable.** Cancel
-  writes a permanent Block rule for that exe path, after which the app never starts again and nothing in
-  the app can undo it. Pre-authorise the exe *before* the first launch, from an elevated prompt, and the
-  prompt never appears:
-
-  ```
-  netsh advfirewall firewall add rule name="Homegrown" dir=in ^
-    action=allow program="C:\Homegrown\backend\backend.exe" ^
-    protocol=TCP localport=8731 enable=yes profile=private
-  ```
-
-- **There is no authentication.** `auth.py`'s `get_current_user` returns a constant user, so anyone who
-  can reach :8731 has the owner's rights: they can create voices, and permanently delete voices and
-  voiceovers (both deletes unlink the underlying files and are irreversible). Run it only on a network
-  you trust.
-- **8731, not 8000.** 8000 belongs to dev (`dev.sh`) and to LAN mode. Sharing it meant the launcher's
-  health probe could find a dev uvicorn already listening, conclude Homegrown was running, open the browser
-  and never start `backend.exe` — leaving the user on a bare `{"detail": "Not Found"}`. The desktop build
-  is the one mode whose port nobody types (single origin, relative API paths), so it is the one that moved.
-  The number is written twice — `PORT` in `backend/run.py` binds it, `PORT` in `launcher/launcher.py` polls
-  it — because they are separately frozen exes with no import path between them.
-  `scripts/check_desktop_port.py`, run from `build.sh`'s pre-build checks, is what stops them drifting.
-
-The `.exe` is unsigned, so Windows SmartScreen still shows "Windows protected your PC → More info → Run
-anyway" the first time. Only an Authenticode certificate removes that.
-
-Relevant files: `backend/run.py` (frozen entrypoint: path resolution, first-run model download, loopback
-bind), `backend/boot_status.py` (startup phases published to `storage/boot_status.json`),
-`launcher/launcher.py` (serves the loader, starts the backend hidden, polls `/api/health`, redirects),
-`installer/setup.nsi` (unusable at current size, see above).
-
-### Vercel + RunPod (dormant)
-
-A split deployment: static frontend on Vercel, backend on a RunPod pod that sleeps when idle and is woken by
-`frontend/api/wake.ts`. Gated behind `VITE_USE_RUNPOD_WAKE`, which is unset everywhere except that project.
-See `docs/DEPLOYMENT.md`. Not used by the LAN or installer paths.
-
----
-
-## Making a voice that actually works
-
-This matters more than any setting in the app. Three rules, all measured on this hardware.
-
-**1. Keep the reference clip to 10–20 seconds.**
-
-The reference clip and your script share a single 1024-position context window. A clip costs roughly
-`duration × 12.5` positions before generation even starts:
-
-| clip length | positions used | what's left for your script |
-|---|---|---|
-| 15s | ~230 of 1024 | plenty — ~200-character chunks |
-| 27s | ~400 of 1024 | comfortable |
-| **53s** | **~860 of 1024** | **too little — output degrades** |
-
-When too little is left, the app is forced into chunk sizes below the point where this model starts padding
-and dragging — which you hear as murmuring, long pauses, and dropped words. **The app tells you before you
-spend a render on it**: the voice carries its clip length as a badge in the Voices dialog, and selecting it
-puts a notice under the script box naming the clip length and the chunk size it forces.
-
-Measured on this machine against `REF_TRIM_SECS=40`, at a nominal 13 characters/second:
-
-| clip length | chunk size | what happens |
-|---|---|---|
-| up to 48s | 150–200 | fine, no notice |
-| 50–54s | 104–127 | notice shown; still generates |
-| 56s and over | 80 (the floor) | notice shown, and `/api/generate` **refuses the job** — the clip leaves no room to generate speech |
-
-A voice reporting 80-character chunks is therefore a ~54s clip sitting a second from that refusal. Anything longer than 40 seconds is **trimmed to the first 40 seconds of speech**
-rather than rejected (`REF_TRIM_SECS`), and the upload itself is only capped at 30 minutes
-(`MAX_REF_AUDIO_SECS`) — a guard on buffering the file in memory, not a quality limit. But **longer is not
-better**: 10–20 seconds of clean speech clones better than 40 seconds of anything, and past ~23s output has
-been observed to garble regardless of the budget arithmetic.
-
-**2. Record dry and close-mic.** Voice cloning copies the *room*, not just the voice. A reverberant clip
-produces reverberant output — measurably so: a clip with a 0.618 reverb tail generated audio at 0.474. No
-setting removes it. Record close to the microphone, in a soft-furnished room, and never over speakerphone.
-
-**3. The transcript must match the audio exactly.** Leave the transcript field blank to auto-transcribe with
-faster-whisper, or type it yourself — but a wrong or placeholder transcript is the single most common cause
-of bad output. The app rejects transcripts that are implausibly short or long for the clip's duration (under
-3 or over 22 characters per second), which catches most mistakes.
-
-Accent is **not** a factor. A non-native English clip at the right length performs as well as a native one —
-in a direct comparison it produced *less* silence and finished faster.
-
----
-
-## Using the app
-
-### Voices
-
-The **✚** button beside the voice dropdown opens the Voices dialog.
-
-- **Add a voice** — drop or pick a `.wav`/`.mp3` reference clip (2s–30min accepted and trimmed to the
-  first 40 seconds of speech, **10–20s recommended**). A spinner runs on the dropzone while it clones.
-  That is the whole step: the voice is cloned and saved on drop, with no name field and no Save button.
-  The name comes from the filename and is edited in place on the row afterwards. The language is detected
-  from the recording by faster-whisper and stamped onto the voice, which is what generation uses — so
-  there is no language control anywhere. The transcript is auto-transcribed too. Saved to
-  `backend/storage/presets.json`, clip to `backend/storage/references/`.
-- **Rename a voice** — click its name in the dialog, type, press Enter or click away. Escape cancels.
-  Unlike a voiceover's name, this is stored on the server (`PATCH /api/presets/{id}`), because the backend
-  reads it on every generate. Renaming does **not** change the voice name recorded on voiceovers you have
-  already made — that is a snapshot of what the voice was called at the time.
-- **Clips over 40s** are shortened to the first 40 seconds *of speech* — long internal pauses are packed
-  out first, so a mostly-silent voice note still yields a full window. The limit is stated up front under
-  the dropzone rather than reported per clip afterwards. Shorter is better anyway — see "Making a voice
-  that actually works".
-- **The dialog does not change height** as voices are added or removed: the list is a fixed six-row window
-  that scrolls past six.
-- **Play** — the ▶ on a row plays that voice's *reference clip*, not a live generation. Available both in
-  the dialog and on each row of the voice dropdown.
-- **Download** — the ⭳ on a dialog row saves the reference clip, named after the voice and in whatever
-  format it was uploaded in (no re-encoding). Renaming the voice changes the downloaded filename.
-- **A voice that is mid-generation is marked `busy`**, and its delete confirmation warns that queued
-  voiceovers will fail. The delete is still allowed — wanting a voice gone is a good enough reason.
-- **A voice whose reference clip is too long is marked with that clip's length** (`55s`), with the full
-  explanation in its tooltip. This is how a voice made by an older build — before clips were trimmed on
-  upload — is spotted without generating anything first. Upgrading does not re-trim an existing voice, so
-  the fix is to delete it and re-create it from a 10–20s clip. At most one badge shows per row: `busy`
-  wins while it applies, being the transient one.
-- **Delete** — in the dialog only, and two-step (the row flips to Delete/Keep). Removes the voice and its
-  reference audio permanently. Deleting the selected voice clears the selection. The dropdown deliberately
-  has no delete: it is a menu you open to pick a voice, not to destroy one.
-
-### Script
-
-One script box, up to 60,000 characters, sized `clamp(240px, 32svh, 340px)` — ten visible lines on a
-1080p window, never fewer than seven on a short laptop, and never the 40%-of-viewport slab it used to
-be. A word count sits
-in the bottom-right corner *inside* the box rather than in a row of its own. The **voice dropdown**
-and **✚** sit *above* the box, at the right; **Generate** sits alone below it.
-
-**Everything you type survives a reload — immediately, not a moment later.** The script, the
-voiceovers search, a voiceover's name and a voice's name are all written as you type or, for the
-names, the instant you stop editing; and anything still unsaved is flushed when the page goes away.
-That includes a name typed into a voiceover that is *still generating*: reload mid-render and the
-name is still there, and still lands on the finished voiceover. The script is kept in `localStorage`,
-so closing the tab or refreshing does not lose it — which is also why there is no "are you sure you want to leave" prompt.
-The script-preview reuse control, which replaces the box with an old script and voice, offers an **Undo**
-when it overwrites something you had written.
-
-Keyboard shortcuts: **Ctrl/Cmd+Enter** generates, **/** focuses the script, **Ctrl/Cmd+F** focuses the
-voiceovers search, **Escape** dismisses an error. `/` and `Ctrl+F` are shown as key caps on the controls
-they drive; Generate shows its shortcut on hover. There is no Space shortcut — it was removed, because
-binding a bare Space globally means taking over page scrolling everywhere outside a text field.
-
-**Generate remains a semantic 40px button.** Its action and shortcut do not change: it says
-**Generate**, **Starting the voice model…** during the pre-submit wake check, and **Submitting…** while
-the request is sent. (`GenerateButton` can also render `Generate N voiceovers`, but nothing reaches it:
-`StudioShell` passes `count` as 0 or 1, since one submission is one script.) Disabled controls do not show the
-effect. On an enabled control, a pointer-local, theme-aware specular highlight follows the pointer; it is
-suppressed for reduced motion. CSS still paints the same highlight if a browser cannot transparently
-composite the optional WebGL layer, so WebGL is never required for a usable control.
-
-### While it generates
-
-Only one job runs at a time — one worker thread, one GPU lock.
-
-The voiceover being generated appears at once as the **first row of the Voiceovers column**, in the slot
-its finished self will occupy and laid out identically, with three swaps: the waveform becomes a progress
-bar (hairline ticks at the chunk boundaries, advancing smoothly between completions rather than jumping),
-the transport becomes a labelled **Cancel** beside a **greyed-out play button** — there is nothing to
-play yet. A generating row reports no time at all: no elapsed counter, no estimate. Its script
-preview's **Reuse** is greyed out until the voiceover lands.
-
-The Generate button stays live throughout, so a second script submitted mid-run is queued rather than
-refused. Queued voiceovers are further rows above the finished ones, in processing order, and are
-**purple** rather than amber — reorder controls and the word `Queued` in place of a progress bar, so
-the difference survives greyscale as well as colour. Each promotes in place when its turn comes.
-
-The **Generate** control stays an action rather than a progress panel: queue and render progress belong
-in the Voiceovers column, not on the control that submits another job.
-
-**The app never predicts how long a render will take, and no longer reports elapsed time either.** A
-generating row shows chunk progress, which is measured. Two estimators were built and both were
-retired — the second was accurate to a 22% mean error and still ran *over* on 12 of 12 measured jobs,
-because a median is beaten by half
-of all jobs by construction and chunk resampling makes the tail worse. A number that is always beaten
-teaches you to ignore it, so it is gone rather than tuned. The reasoning and the measurements are in
-`docs/gpu-notes.md`.
-
-**A toast reports each job as it ends** — "Voiceover ready" with the voice name, or a failure toast that
-does not auto-dismiss. Transient errors elsewhere in the app are toasts too. Three notices stay inline
-instead, because they describe a *condition* rather than an event and would be wrong to fade out while
-still true: the model-down banner (which carries **Retry**), the CPU-fallback notice, and the
-long-reference-clip warning.
-
-**Cancel** stops a running job after the current chunk, within about a second. Clicking Cancel on either
-a **running** or **queued** row replaces it with compact tick/cross confirmation controls, and confirming
-either opens a seven-second **Undo** toast rather than acting at once. Nothing is paused meanwhile: the
-voiceover keeps generating and the bar keeps filling — but the row turns **red** straight away, so the
-tick visibly registers, and Cancel greys out. Undo puts it back to amber with nothing to restore;
-letting the timer run sends the cancellation, and the bar freezes then.
-A voiceover that finishes inside the window releases the hold by itself. The cost is that confirming no
-longer frees the GPU straight away — if you are cancelling to start something else, you wait those seven
-seconds. There is still no pause — a paused job would hold the GPU lock and stall the whole queue.
-
-A voiceover that **fails** stays visible rather than disappearing: the row turns red, reads `Failed`, and
-carries the backend's own error in place of the script preview, with the full text on hover. It sorts below
-the running and queued rows and consumes no voiceover number. **Retry** resubmits it and **Dismiss** clears
-it. From the second attempt on, the row reads `Failed · try 2` and counts up — a retry mints a new job and
-replaces the row, so without the count a voiceover that fails instantly every time is indistinguishable
-from a button that does nothing. Retry is server-side (`POST /api/queue/{job_id}/retry`): the queue entry only carries a truncated
-preview, but the backend still holds the full script, so nothing is retyped and nothing large is reposted
-on every poll. It runs the same validation as `/api/generate`, so a voice deleted since the failure returns
-a clear 404 instead of failing again. Failed jobs live in the backend's in-memory job table, so restarting
-the backend clears them.
-
-The voice dropdown stays usable throughout, so you can line up the next voice while one job runs.
-
-Queued rows include **up/down** icon controls between their status and cancel controls. They reorder the
-queued jobs through `POST /api/queue/reorder`; the first and last queued rows disable the unavailable
-direction.
-
-### Themes
-
-Nine explicit choices appear in the picker at the top right: six dark — **Studio** (charcoal and cyan), **Greenroom** (deep
-green and jade), **Booth** (near-black, on air), **Marquee** (violet, magenta and cyan), **Vinyl**
-(warm black and gold), **Tide** (midnight navy and teal) — and three light — **Daylight** (neutral),
-**Tape** (warm paper and rust), **Score** (paper white, high contrast).
-
-The default picker is a compact, right-curving option wheel. It supports mouse wheel/trackpad input,
-dragging, clicking, and Arrow keys; a theme is applied only after the wheel settles, and the picker stays
-open for browsing. With reduced motion enabled, it becomes an immediate static list grouped under **Dark**
-and **Light** headings. The persisted theme model still understands `system` for existing preferences and
-first-run defaults, but System is intentionally not exposed as a picker choice.
-
-Each theme has its own **identity colour** — the wordmark tells you which one you are in at a
-glance — while the amber "generating" bar means the same thing in all nine, the way the red error
-and purple queued colours do. Those were one colour until recently, which is why eight of the nine
-themes used to look alike.
-
-Every palette is checked at build time rather than by eye: `scripts/check_contrast.py` for WCAG AA,
-and `scripts/check_palette.py` for the things a contrast ratio cannot see — a waveform that looks
-like an error message, or a card that does not separate from the page.
-
-### Voiceovers
-
-A **search box** sits at the top of the Voiceovers column, focused by `Ctrl/Cmd+F`. It keeps its query across a reload,
-limits queries to 100 characters, and does not search scripts. Completed-history searches are sent to the
-server and match the canonical voice name stored with each entry across the complete history. A custom
-voiceover display name is browser-local, so it can additionally narrow only history pages already cached
-in that browser; it cannot be a global server search. Live rows are filtered by voice name locally.
-
-The adjacent **Filters** button opens a compact popover for voice, browser-local
-date range (today, last 7/30 days, or custom), duration, and generation status.
-The button carries the count of applied filters, and its **Clear filters** control
-is disabled until at least one of them is. Voice/date/duration filters are applied
-by the history API before pagination.
-Completed voiceovers are server-paginated; only the active page is requested and the next page is
-prefetched after a successful online response. Pages are cached in memory and persisted in local storage
-for up to 24 hours, then revalidated in the background. The list keeps cached rows visible while it
-refreshes. Generating, queued, and failed rows are live client-side queue data:
-**All** shows live work above matching completed rows, while active and failed
-views show only their respective live rows.
-
-Every finished job is newest first, in a list that **fills the height of its column** — there is no
-fixed row cap, so a taller viewport shows more rows before it has to scroll (measured at 1440 wide:
-6 rows at a 900px viewport, 8 at 1100px, 11 at 1400px). A **Per page** dropdown at the bottom-left of
-the column chooses **10** (the default), **25**, **50** or **100** completed rows per page, and the
-choice is remembered per browser. The page controls sit beside it in a fixed slot and stay there at
-every page size — at five or more pages they show a sliding window of five numbered buttons, keeping the
-current page visible as the chevrons move through the history. When everything fits on one page they are shown disabled
-rather than removed, so changing the page size never shifts the layout. Active queue rows remain above the completed rows. On a desktop-width
-viewport the page itself does not scroll at all; the list is the only scrolling region.
-Below 1025px the layout is one column — composer first, Voiceovers under it — and the page
-scrolls normally instead of the list. The script textarea is a
-`clamp(240px, 32svh, 340px)` writing surface with its own vertical scrollbar.
-
-Each row is three lines:
-
-1. Its name — **`Voiceover 1`** is the oldest, numbered by position — and, on the right, the voice that
-   spoke it. The name is click-to-edit: type, click away to save, Escape to revert, clear it to fall back
-   to `Voiceover N`. Whatever you call it is also the download filename. The field is sized to its text. A
-   name typed while the voiceover is still generating survives a reload and carries over when it
-   lands.
-2. Play, the waveform (which doubles as the seek bar), a `0:12 / 1:06` clock — the whole clock is a
-   button, and clicking it counts down the time remaining instead — and the overflow actions at the right:
-   download and delete. The clock occupies a fixed 14ch so nothing beside it shifts as it ticks.
-3. The first words of the script, and on the right the time it was generated (or, on a row still
-   working, sent to generate) — `14:32`, with the date once it is no longer today and the full
-   timestamp on hover.
-
-**Click the script preview to reuse that script and voice.** The preview carries a wand affordance on
-hover and replaces the compose box, offering Undo if it overwrites text. It is **disabled on a row that
-is still generating** — there is no voiceover to reuse yet — and becomes live when the row lands. Every
-row carries just the first 80 characters in queue polls, which matches the backend's `text_preview` cut,
-so a voiceover does not visibly gain characters at the moment it finishes.
-
-**Deleting a voiceover is undoable.** The row remains visible while the toast offers **Undo** for seven
-seconds; the request is only sent when that expires, then the history refresh removes the row. Leaving
-the page during that window commits the delete with a keepalive request.
-
-The row below search and filters is a permanently reserved context toolbar: it shows **All voiceovers**
-and the visible total by default, or a result count and **Clear** while filtering. **Select rows** with
-the checkbox that appears on hover, **shift-click** for a range, or use the toolbar checkbox to take
-everything on screen — that means the current page only, at whatever page size is selected; with a
-search running it means the matches, and rows selected before searching stay selected. Selection takes
-precedence in that toolbar, offering **Download**, **Delete**, and **Clear selection**. One selected
-voiceover downloads its MP3 directly; several download as one `.zip`. Delete remains one toast and one
-Undo for the whole batch.
-
-A voiceover finishing while you are scrolled down does not move you; it is counted, and an **N new
-voiceovers — show** button appears above the list.
-
-Persisted to `backend/storage/history.json`, so it survives a restart.
-
----
-
-## How generation works
-
-```
-script -> chunk_text() -> per-chunk generate -> resample if degenerate -> trim edges -> stitch (200ms gaps) -> .mp3
+```bash
+bash build.sh
 ```
 
-- **Chunk size is per-preset, not fixed.** `_seq_budget()` works out how many characters fit alongside *this*
-  preset's reference clip, using the clip's own measured speaking rate. `CHUNK_MAX_CHARS=800` is only a
-  ceiling; a second ceiling caps chunks at 200 characters, above which the model starts skipping clauses.
-- **Chunks are balanced, not greedily packed**, so there is no undersized final chunk — those are the ones
-  that misbehave.
-- **Each chunk gets a fresh KV cache**, which is what keeps quality stable however long the script is.
-- **Degenerate output is resampled.** Each chunk's audio is checked against how long its text should take
-  and regenerated (up to 3 attempts) if it is wildly off. This was written when roughly one chunk in three
-  came out wrong — babbling, or stopping short. **It has since stopped reproducing**: a re-measurement on
-  2026-09-09 produced 32/32 clean chunks over 8 runs and the retry loop never fired, most likely because
-  `_seq_budget()`, balanced chunking and the per-chunk token cap each removed a cause. The check stays —
-  one voice on one machine is not a proof of absence. Numbers in `docs/gpu-notes.md`.
-- **No partial delivery.** You get audio when the whole job finishes; progress is chunk-level.
+This creates `dist/Homegrown-<version>.exe`. Run that self-extracting archive,
+then run the extracted `Homegrown.exe`; it opens the browser loader and starts
+the local Studio and API. The packaged backend listens on port 8731 for trusted
+LAN use; deletion uses the default admin password unless `ADMIN_PASSWORD` is
+overridden in the extracted `backend/.env`. Other API actions are not
+authenticated, so never expose it to an untrusted network. The detailed,
+recoverable build procedure is in [docs/BUILD.md](docs/BUILD.md).
 
-Nothing predicts the duration. `generation_s` and `total_chunks` are still recorded per voiceover, so
-the raw material for an estimate exists, but nothing reads them. The queue survives a restart
-(`queue.json`), resuming from the *start* of an interrupted job.
+## Marketing page
 
----
+`apps/marketing/` is a standalone static page. Open `apps/marketing/index.html`
+directly in a browser or manually share that directory. It does not require a
+build system or hosting-provider configuration.
 
-## API
+## Repository layout
 
-All routes are under `/api`, and every request is the same single local user.
-
-| Method | Route | Purpose |
-|---|---|---|
-| GET | `/api/health` | `model_loaded`, `sample_rate`, `device`, `device_reason`, `gpu_fault` |
-| GET | `/api/languages` | Languages the loaded model supports |
-| POST | `/api/estimate` | `{text, preset_id}` → `chunks`, `chunk_chars`, `ref_seconds`, `warning`. POST, and the whole script, because chunk count depends on sentence boundaries *and* on the voice; it does not predict duration |
-| GET | `/api/presets` | List voice presets |
-| POST | `/api/presets` | Create one (multipart: `audio`, `name`, `ref_text`, `language`, `tag`) → also returns `ref_seconds` and `trimmed_from_seconds` |
-| PATCH | `/api/presets/{id}` | Rename one (`{name}`). Does not touch `preset_name` on existing history entries |
-| GET | `/api/presets/{id}/download` | The voice's reference clip, named after the voice |
-| DELETE | `/api/presets/{id}` | Delete a preset and its reference clip |
-| POST | `/api/generate` | Queue a job → `{job_id, total_chunks, queue_position}` |
-| GET | `/api/jobs/{id}` | One job's status |
-| GET | `/api/queue` | The queue, in real processing order |
-| GET | `/api/queue/{id}/script` | Complete script and preset ID for an explicit pending-script reuse |
-| POST | `/api/queue/{id}/cancel` | Cancel a queued or running job |
-| POST | `/api/queue/{id}/retry` | Resubmit a failed job's own script → same shape as `/api/generate` |
-| DELETE | `/api/queue/{id}` | Dismiss a **canceled or failed** job. Finished ones are deleted through `/api/history` |
-| POST | `/api/queue/reorder` | Reorder queued jobs |
-| GET | `/api/history` | Completed voiceovers, newest first. Optional `preset_id`, `created_from`, `created_to`, `duration_min`, `duration_max`, and canonical voice-name `q` filter before `limit`/`offset` pagination |
-| POST | `/api/history/zip` | Several voiceovers as one `.zip` (`{ids, names}`). `names` carries the display names, which the server has never seen |
-| DELETE | `/api/history/{id}` | Delete an entry and its audio |
-| GET | `/api/download/{filename}?name=` | Download with a chosen filename |
-
-Static mounts: `/audio` (generated clips) and `/refs` (reference clips). The SPA catch-all is registered
-last, so it can never shadow `/api`.
-
----
-
-## Configuration
-
-`backend/.env` (copy from `backend/.env.example`):
-
-| Variable | Purpose |
-|---|---|
-| `MODEL_PATH` | Path to the model snapshot. Written by `setup.sh`. |
-| `ALLOWED_ORIGINS` | CORS origins — only needed when the frontend is on a different origin (dev mode). |
-| `RUNPOD_API_KEY` / `RUNPOD_POD_ID` | Optional; RunPod idle auto-stop only. |
-| `IDLE_CHECK_INTERVAL_MIN` / `IDLE_STOP_THRESHOLD_MIN` | Idle-stop tuning. |
-
-Environment overrides:
-
-| Variable | Purpose |
-|---|---|
-| `VITE_BACKEND_URL` | Frontend only, **baked in at build time**. Leave it unset: relative paths are what LAN mode, the installer *and* dev all need (dev proxies instead). Set it only for the Vercel + RunPod split. |
-| `DECODE_CHUNK_FRAMES` | Vocoder frames per GPU launch (default 100). Lower it if a slower display GPU trips its watchdog. |
-| `REQUIRE_GPU=1` | Makes `setup.sh` fail instead of accepting the CPU fallback. |
-| `MODEL_DIR` / `PIP_CACHE_DIR` / `TMP_OVERRIDE` | `setup.sh` paths. |
-
----
-
-## Troubleshooting
-
-| Symptom | Cause and fix |
-|---|---|
-| `ERR_ADDRESS_INVALID` on `0.0.0.0:8000` | That is a bind address. Use `localhost` or the LAN IP. |
-| LAN devices cannot connect | `ERR_CONNECTION_REFUSED` means a loopback bind — use `start_server.bat` (`0.0.0.0`) or `dev.sh` (:5173), not a hand-run `--host 127.0.0.1`. A *timeout* instead means the firewall rule above is missing. |
-| LAN clients load the UI but every action fails | `VITE_BACKEND_URL` was set when you built (or, in dev, is set at all). Comment it out in `frontend/.env.local` and rebuild. `start_server.bat` now catches this before it starts. |
-| `no kernel image is available for execution on the device` | The torch build has no kernels for your GPU. cu126 covers `sm_50`–`sm_90`; Blackwell needs cu128. |
-| `CUDA error: the launch timed out and was terminated` | Windows TDR killed a GPU batch running over ~2s on a display-attached card. It kills the whole process's CUDA context, so the running voiceover **and everything queued behind it** fail together — the app detects this (`gpu_fault`), hides Retry and asks you to restart, because nothing in-app can recover it. Lower `DECODE_CHUNK_FRAMES`, and do not run two model processes at once. |
-| Red banner, and an in-flight row whose progress bar has stopped moving | The backend stopped answering — crashed, machine asleep, network dropped. **Retry** in the banner re-checks it. Jobs may still be running server-side; the app has only lost contact. |
-| Yellow "Running on CPU" banner | No usable GPU was found; the reason is in the banner and in `/api/health`. |
-| Output murmurs, drags, or drops words | Almost always the reference clip — see "Making a voice that actually works". |
-| Output has echo | Reverb in your reference clip. Re-record dry and close-mic. |
-| Port already in use | Another app owns it. Start with `--port 8010`. |
-| Jobs are slow | Normal on a small GPU. A shorter reference clip gives bigger chunks, fewer of them, and a much faster job. |
-
----
-
-## Interface background
-
-The studio uses a Canvas 2D CursorGrid behind its surfaces. Its static lattice takes its colour from
-each active theme's `--accent`; pointer movement briefly illuminates nearby cells and primary clicks
-emit a pulse, including when the click lands on a control. The canvas is always `pointer-events: none`,
-so it never intercepts the UI, and the same feedback remains available for reduced-motion users.
-
-It caps device-pixel-ratio at 2, redraws on resize, and only keeps an animation frame alive while a
-highlight or pulse is active. Theme updates resolve `var(--accent)` to RGB before Canvas draws, so all
-nine themes update immediately.
-
-## Known limitations
-
-- **No accounts.** `auth.py`'s `get_current_user` returns the constant `"local-user"`; presets and history
-  are global to the instance.
-- **Single GPU, serialized.** CUDA graphs are not reentrant, so all generation sits behind one lock.
-  Multiple users share one FIFO queue.
-- **In-memory job state.** Finished and failed job status lives in process memory, so a restart loses it.
-  Queued work and completed history are on disk.
-- **No cross-chunk prosody.** Chunks are independent, so pacing resets at each boundary.
-- **No partial audio delivery.** Streaming is used internally so cancel lands quickly, not to stream to the
-  client.
-- **Not reproducible.** Sampling is unseeded — see the note at the top.
-- **Automated coverage is focused, not exhaustive.** Frontend unit tests run with `npm run test` (Vitest)
-  and cover history-query normalization/cache-key isolation plus the sliding history-pager window. `npm run lint` and
-  `npm run build` remain required; browser interaction and real model generation still need manual QA.
-- **Loading layouts are generated assets.** Model initialization displays a full-studio skeleton and an
-  uncached first history request displays a compact history skeleton. Their responsive captures live in
-  `frontend/src/bones/` for 375, 768, 1025, and 1280px. If their fixtures or layout change, start the Vite
-  server on `127.0.0.1:5173` and run `cd frontend && npm run bones:build`; commit the regenerated files.
-- **Search covers names and voices, not scripts.** The voiceovers column has a search box
-  (`Ctrl/Cmd+F`) matching a voiceover's name and the voice that spoke it. Script text is deliberately
-  excluded: a script runs to 60,000 characters, so a common word matches nearly everything. The voice list
-  in the dialog has no search.
-- **Voiceover names are per-browser.** A voiceover's display name is a `localStorage` override, so a
-  rename — and therefore searching for that name — only exists in the browser that made it. A *voice's*
-  name is server-side and shared.
-
----
-
-## Repo layout
-
-```
-README.md      This file
-CLAUDE.md      Architecture and the hard-won gotchas (agent instructions)
-dev.sh         Local development: uvicorn :8000 + Vite :5173 together, one command
-build.sh       Source -> Homegrown-<ver>.exe, one command
-setup.sh       One-shot idempotent installer (venv, deps, model, backend/.env)
-start_server.bat / start_server_silent.vbs   LAN server launchers (host 0.0.0.0)
-vercel.json    Deploys landing-page/ only; main-branch deploys disabled
-
-docs/
-  BUILD.md       Build procedure, step by step
-  DEPLOYMENT.md  Vercel + RunPod split (dormant)
-  workflow.md    Day-to-day usage, end to end
-  gpu-notes.md   GPU measurements behind the empirical constants
-  history/       Superseded, kept for rationale -- HANDOFF.md, DEPLOY_SPEC.md
-
-qwen/          Vendored FasterQwen3TTS (CUDA-graph Qwen3-TTS wrapper). Treat as third-party.
-backend/
-  main.py            FastAPI app: model load, REST API, job queue, worker thread
-  run.py             Frozen-desktop entrypoint: path resolution, first-run model download, :8731
-  boot_status.py     Startup phases, published to storage/boot_status.json
-  text_chunker.py    Splits scripts into chunks (sentence -> clause -> word fallback), balanced
-  audio_stitcher.py  Trims chunk edge silence, concatenates with a gap
-  audio_convert.py   wav/mp3 conversion
-  auth.py            Single-user stub
-  backend.spec       PyInstaller spec (hard-fails without frontend/dist)
-  storage/           presets.json, history.json, queue.json, generated/, references/  (gitignored)
-frontend/      React 19 + Vite + TypeScript dashboard (the app)
-  boneyard.config.json  Local root-route skeleton capture configuration
-  src/bones/            Checked-in responsive loading-skeleton assets
-landing-page/  Marketing page -- the only thing Vercel deploys; separate release cadence
-launcher/      Frozen-app launcher (PyInstaller)
-installer/     NSIS installer script (unusable at current payload size, see above)
-scripts/       Build gates and dev utilities. build.sh runs six: check_design_tokens.py,
-               check_contrast.py, check_palette.py, check_orphan_css.py,
-               check_desktop_port.py and build_splash.py --check. Also
-               build_og_image.sh and measure_landing.sh
-assets/        Build-time binaries: icon.ico, consumed by launcher.spec and setup.nsi
+```text
+apps/
+  marketing/       standalone static marketing page
+  studio/          React + Vite Studio
+services/
+  voice-api/       FastAPI service and PyInstaller spec
+engine/
+  qwen/            vendored FasterQwen3TTS wrapper
+desktop/
+  launcher/        browser loader and launcher executable
+  installer/       legacy NSIS source (not the supported packaging path)
+  assets/          desktop icon assets
+docs/BUILD.md      detailed frozen-build procedure
+docs/workflow.md   day-to-day Studio workflow
 ```
 
-Directory depth here is load-bearing: `backend/main.py`, both `.spec` files, `launcher/launcher.py`,
-`scripts/check_design_tokens.py`, `scripts/check_desktop_port.py`, `build.sh`, `setup.sh` and
-`installer/setup.nsi` each resolve paths by
-counting parents from their own location. Moving a top-level directory means editing all of them.
+## Safety and support
 
-Further reading: `CLAUDE.md` (architecture and the hard-won gotchas), `docs/workflow.md` (day-to-day
-usage), `docs/BUILD.md` (building the .exe), `docs/DEPLOYMENT.md` (Vercel + RunPod),
-`qwen/HOW_TO_RUN.md` (the model wrapper itself).
+- Do not commit `.env` files, model snapshots, generated audio, or local
+  storage.
+- There is no sign-in or multi-user isolation. The default admin password is
+  shared and only protects deletions; other API actions are unauthenticated.
+  Change it before allowing other trusted-LAN users to delete, and never expose
+  the development or packaged app to an untrusted network.
+- See [docs/gpu-notes.md](docs/gpu-notes.md) for local-GPU measurements and
+  [engine/qwen/README.md](engine/qwen/README.md) for the vendored wrapper.
+- `docs/history/` is archival material only; it documents superseded cloud and
+  pre-migration workflows and is not executable guidance.
