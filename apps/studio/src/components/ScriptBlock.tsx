@@ -1,8 +1,9 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { getEstimate, type Estimate, type Preset } from '../api'
 import { MAX_SCRIPT_CHARS } from '../constants'
 import VoicePicker from './VoicePicker'
 import { UploadIcon } from './Icons'
+import StatusMark, { type StatusMarkStatus } from './StatusMark'
 
 interface Props {
   text: string
@@ -19,7 +20,7 @@ interface Props {
   onDeleteVoice: (id: string, adminPassword: string) => Promise<void>
   voicesLoading: boolean
   creatingVoice: boolean
-  onAddVoice: (file: File) => void
+  onAddVoice: (file: File) => Promise<'done' | 'failed'>
 }
 
 export default function ScriptBlock({
@@ -38,6 +39,52 @@ export default function ScriptBlock({
 }: Props) {
   const overLimit = text.length > MAX_SCRIPT_CHARS
   const voiceUploadRef = useRef<HTMLInputElement>(null)
+  const [uploadStatus, setUploadStatus] = useState<StatusMarkStatus | 'idle'>('idle')
+  const completionTimerRef = useRef<number | null>(null)
+  // The global drop target shares `creatingVoice`; only the inline picker can
+  // tell us whether the request ended in success or failure. Keep this ref so
+  // the global request can return to its idle icon without interrupting the
+  // inline request's short confirmation mark.
+  const inlineUploadRef = useRef(false)
+
+  useEffect(() => () => {
+    if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (creatingVoice) {
+      if (completionTimerRef.current !== null) {
+        window.clearTimeout(completionTimerRef.current)
+        completionTimerRef.current = null
+      }
+      setUploadStatus('running')
+    } else if (!inlineUploadRef.current && completionTimerRef.current === null) {
+      setUploadStatus('idle')
+    }
+  }, [creatingVoice])
+
+  function showUploadResult(result: 'done' | 'failed') {
+    setUploadStatus(result)
+    if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current)
+    completionTimerRef.current = window.setTimeout(() => {
+      completionTimerRef.current = null
+      setUploadStatus('idle')
+    }, 2000)
+  }
+
+  async function handleVoiceFile(file: File) {
+    inlineUploadRef.current = true
+    if (completionTimerRef.current !== null) {
+      window.clearTimeout(completionTimerRef.current)
+      completionTimerRef.current = null
+    }
+    setUploadStatus('running')
+    try {
+      showUploadResult(await onAddVoice(file))
+    } finally {
+      inlineUploadRef.current = false
+    }
+  }
 
   // The estimate is not displayed. onEstimate feeds StudioShell's
   // long-reference-clip warning; the backend calculation also keeps the
@@ -71,11 +118,14 @@ export default function ScriptBlock({
 
   const trimmed = text.trim()
   const words = trimmed ? trimmed.split(/\s+/).length : 0
+  // Derive the active state directly from the existing request flag so a
+  // dropped file changes the glyph in the same render that disables Upload.
+  const visibleUploadStatus = creatingVoice ? 'running' : uploadStatus
 
   return (
     // The card owns the focus treatment so the textarea and its footer read as
     // one editor; the theme-aware hairline is defined in index.css.
-    <div className="script-editor grid h-[clamp(272px,36svh,372px)] min-h-[clamp(272px,36svh,372px)] max-h-[clamp(272px,36svh,372px)] grid-rows-[minmax(0,1fr)_auto] overflow-visible rounded-md border border-hairline bg-surface-card transition-[border-color] duration-(--base) ease-(--ease)" data-tour="script-editor">
+    <div className="script-editor grid h-[clamp(272px,36svh,372px)] min-h-[clamp(272px,36svh,372px)] max-h-[clamp(272px,36svh,372px)] grid-rows-[minmax(0,1fr)_auto] overflow-visible rounded-md border border-transparent bg-surface-card" data-tour="script-editor">
       {/* The stable 272–372px editor range leaves a predictable writing area
           while the grid reserves a separate footer row for its controls. */}
       <textarea
@@ -116,7 +166,7 @@ export default function ScriptBlock({
             onChange={(event) => {
               const file = event.target.files?.[0]
               event.target.value = ''
-              if (file) onAddVoice(file)
+              if (file) void handleVoiceFile(file)
             }}
           />
           <button
@@ -129,14 +179,22 @@ export default function ScriptBlock({
             title={creatingVoice ? 'Uploading voice' : 'Upload a voice'}
             onClick={() => voiceUploadRef.current?.click()}
           >
-            {creatingVoice ? (
-              <span className="size-3.5 rounded-full border-2 border-progress-line border-t-progress animate-boot-spin" aria-hidden="true" />
+            {visibleUploadStatus === 'running' || visibleUploadStatus === 'done' || visibleUploadStatus === 'failed' ? (
+              <StatusMark
+                status={visibleUploadStatus}
+                size={16}
+                strokeWidth={2.2}
+                color="var(--progress)"
+                doneColor="var(--green)"
+                errorColor="var(--danger)"
+              />
             ) : (
               <UploadIcon size={15} />
             )}
           </button>
         </div>
       </footer>
+      <span className="script-editor-frame" aria-hidden="true" />
     </div>
   )
 }

@@ -22,7 +22,8 @@ import { useHotkeys } from '../hooks/useHotkeys'
 import { wakeBackend } from '../wake'
 import Modal from './Modal'
 import CursorGrid from './CursorGrid'
-import UndoCountdown from './UndoCountdown'
+import BootOverlay from './BootOverlay'
+import FuseButton from './FuseButton'
 import { useOnboardingTour } from '../hooks/useOnboardingTour'
 import {
   ApiError,
@@ -250,8 +251,8 @@ export default function StudioShell() {
   // A dropped clip IS the decision -- there is no Save step and no name to
   // fill in. The name comes off the filename and is editable in place on the
   // row this creates, which is the whole point of the dialog now.
-  async function handleAddVoice(file: File) {
-    if (creatingPreset) return
+  async function handleAddVoice(file: File): Promise<'done' | 'failed'> {
+    if (creatingPreset) return 'failed'
     setCreatingPreset(true)
     setVoiceError(null)
     try {
@@ -265,8 +266,10 @@ export default function StudioShell() {
       )
       setPresets((prev) => [preset, ...prev])
       setVoiceId(preset.id) // a voice you just made is the one you want to use
+      return 'done'
     } catch (e) {
       setVoiceError(e instanceof ApiError ? e.message : 'Failed to add the voice')
+      return 'failed'
     } finally {
       setCreatingPreset(false)
     }
@@ -330,24 +333,28 @@ export default function StudioShell() {
       if (wasSelected) setVoiceId(id)
     }
     const timer = window.setTimeout(() => {
+      const toastId = voiceDeleteTimers.current.get(timer)
       voiceDeleteTimers.current.delete(timer)
+      if (toastId !== undefined) toast.dismiss(toastId)
       void deletePreset(id, adminPassword).catch((e: unknown) => {
         restoreVoice()
         setError(e instanceof ApiError ? e.message : 'Failed to delete voice')
       })
     }, UNDO_MS)
-    const toastId = toast(`${doomed.name} deleted`, {
-      duration: UNDO_MS,
-      icon: <TrashIcon size={15} />,
-      action: {
-        label: <span className="inline-flex items-center gap-1.5">Undo<UndoCountdown ms={UNDO_MS} /></span>,
-        onClick: () => {
-          window.clearTimeout(timer)
-          voiceDeleteTimers.current.delete(timer)
-          restoreVoice()
-        },
-      },
-    })
+    let toastId: string | number
+    const undo = () => {
+      window.clearTimeout(timer)
+      voiceDeleteTimers.current.delete(timer)
+      toast.dismiss(toastId)
+      restoreVoice()
+    }
+    toastId = toast.custom(() => (
+      <div className="undo-toast" role="status">
+        <TrashIcon size={15} />
+        <span>{doomed.name} deleted</span>
+        <FuseButton ms={UNDO_MS} onUndo={undo} />
+      </div>
+    ), { duration: UNDO_MS })
     voiceDeleteTimers.current.set(timer, toastId)
   }
 
@@ -650,7 +657,7 @@ export default function StudioShell() {
             onDeleteVoice={handleDeletePreset}
             voicesLoading={modelStatus === 'checking'}
             creatingVoice={creatingPreset}
-            onAddVoice={(file) => void handleAddVoice(file)}
+            onAddVoice={handleAddVoice}
           />
 
           {/* The voice's own reference clip decides chunk size, so a long
@@ -807,6 +814,7 @@ export default function StudioShell() {
           </p>
         </div>
       )}
+      {modelStatus === 'checking' && <BootOverlay boot={boot} elapsed={wakeMessage} />}
       </div>
     </Skeleton>
   )

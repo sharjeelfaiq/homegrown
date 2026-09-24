@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { bootTagline, bootWord, type BootStatus } from '../hooks/useBootStatus'
-import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
+import LatticeLoader from './LatticeLoader'
 
 interface Props {
   /** Phase from the backend, or null when no dev-server source is serving it. */
@@ -26,7 +26,6 @@ interface Props {
 const APPEAR_AFTER_MS = 250
 
 export default function BootOverlay({ boot, elapsed }: Props) {
-  const reduced = usePrefersReducedMotion()
   // A warm desktop start reaches 'ready' in a few hundred milliseconds -- the
   // launcher only opens the browser once the backend is healthy -- and a
   // spinner that flashes for one frame is worse than no spinner. Nothing is
@@ -50,12 +49,7 @@ export default function BootOverlay({ boot, elapsed }: Props) {
       aria-live="polite"
     >
       <div className="flex w-[min(340px,100%)] flex-col items-center text-center">
-        <div
-          className={`mb-[18px] size-[34px] rounded-full border-2 border-progress-line border-t-progress ${
-            reduced ? '' : 'animate-boot-spin'
-          }`}
-          aria-hidden="true"
-        />
+        <div className="mb-[18px]"><LatticeLoader /></div>
 
         <p className="m-0 text-[15px] font-medium text-ink">
           {boot ? bootWord(boot.phase) : 'Waking up'}

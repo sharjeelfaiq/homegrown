@@ -24,7 +24,7 @@ import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { UNDO_MS } from '../constants'
 import InlineName from './InlineName'
 import VoiceoverPlayer from './VoiceoverPlayer'
-import UndoCountdown from './UndoCountdown'
+import FuseButton from './FuseButton'
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrossIcon, DownloadIcon, MoreIcon, PlayIcon, TrashIcon, WandIcon } from './Icons'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
@@ -1425,7 +1425,9 @@ export default function HistoryList({
 
     const { ids, label } = deleteRequest
     const timer = window.setTimeout(() => {
+      const toastId = deleteTimers.current.get(timer)
       deleteTimers.current.delete(timer)
+      if (toastId !== undefined) toast.dismiss(toastId)
       void (async () => {
         for (const id of ids) {
           try {
@@ -1442,17 +1444,19 @@ export default function HistoryList({
         }
       })()
     }, UNDO_MS)
-    const toastId = toast(`${label} deleted`, {
-      duration: UNDO_MS,
-      icon: <TrashIcon size={15} />,
-      action: {
-        label: <span className="inline-flex items-center gap-1.5">Undo<UndoCountdown ms={UNDO_MS} /></span>,
-        onClick: () => {
-          window.clearTimeout(timer)
-          deleteTimers.current.delete(timer)
-        },
-      },
-    })
+    let toastId: string | number
+    const undo = () => {
+      window.clearTimeout(timer)
+      deleteTimers.current.delete(timer)
+      toast.dismiss(toastId)
+    }
+    toastId = toast.custom(() => (
+      <div className="undo-toast" role="status">
+        <TrashIcon size={15} />
+        <span>{label} deleted</span>
+        <FuseButton ms={UNDO_MS} onUndo={undo} />
+      </div>
+    ), { duration: UNDO_MS })
     deleteTimers.current.set(timer, toastId)
   }
 
