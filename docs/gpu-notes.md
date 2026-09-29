@@ -10,7 +10,7 @@ performance guarantee.
 UI NOTE (current)
 ----------------------------------------
 The GPU/render path remains independent of the Generate control's presentation.
-Generate is a 40px semantic button with unchanged Ctrl/Cmd+Enter activation;
+Generate is a 44px semantic button with unchanged Ctrl/Cmd+Enter activation;
 its optional pointer-local WebGL specular layer has a CSS fallback and is off
 for disabled or reduced-motion states. Confirm an actual generation on target
 hardware after UI changes: queueing, progress, completion, audio output, and
@@ -209,10 +209,12 @@ leave-one-out: predict each job from the other 23 only.
     per-frame (chars x frames_per_char)       135%    278%
     per-character keyed by voice               36%    147%
     least squares  a*frames + b*chunks         26%     77%
-    overhead + chunks x MEDIAN(sec/chunk)      22%     75%   <- adopted
+    overhead + chunks x MEDIAN(sec/chunk)      22%     75%   <- briefly shipped; later retired
 
-Adopted model measured through the shipped _estimate_seconds: 20% mean,
-75% worst, displayed string wrong 9/23 (39%) against 15/23 (65%).
+The then-shipped `_estimate_seconds` implementation measured 20% mean error,
+75% worst-case error, and a wrong displayed string on 9/23 (39%) samples versus
+15/23 (65%) for the older model. It is retained here as historical evaluation,
+not current product behavior.
 
 Three findings that are not obvious and cost real time:
 

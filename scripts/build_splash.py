@@ -108,7 +108,7 @@ def render(css: str) -> str:
         f"Sources fingerprint: {sources_fingerprint()}\n"
         "\n"
         "Committed on purpose, so a build without npm still produces a working\n"
-        "exe. Regenerate with `python scripts/build_splash.py`; CI and build.sh\n"
+        "exe. Regenerate with `python scripts/build_splash.py`; CI and `npm run build`\n"
         "fail if this is stale.\n"
         '"""\n'
         "\n"

@@ -1,12 +1,12 @@
 # Building a fresh `Homegrown-1.0.0.exe`
 
 Every step needed to turn the current source into a distributable executable, in
-the order they must run. Run everything in **Git Bash** from the repo root
-(`D:\dev-projects\websites\homegrown`).
+the order they must run. Run everything from the repo root.
 
-Git Bash, not PowerShell — the final SFX step concatenates two binaries, which
-PowerShell's `>` corrupts by rewriting them as
-text.
+The one command below works from any shell. The by-hand steps further down are
+written for **Git Bash**, because the final SFX step concatenates two binaries,
+which PowerShell's `>` corrupts by rewriting them as text. `npm run build` does
+that concatenation with a Node stream instead, so it is shell-agnostic.
 
 **Budget:** ~45 minutes and ~10 GB free on the repo's drive.
 
@@ -15,7 +15,7 @@ text.
 ## The one command
 
 ```bash
-bash build.sh
+npm run build
 ```
 
 Runs every step below in order and ends by printing the `.exe` path, its size
@@ -27,8 +27,8 @@ Before checking prerequisites, it removes previous generated outputs:
 `desktop/launcher/build/`. Do not keep files in those build-output folders
 that you need to retain; the build recreates them.
 
-It also **stashes `apps/studio/.env.local` and restores it afterwards**. The restore runs from an
-`EXIT` trap, so it happens whether the build succeeds, fails, or you Ctrl-C it.
+It also **stashes `apps/studio/.env.local` and restores it afterwards**. The restore runs from a
+process-exit handler, so it happens whether the build succeeds, fails, or you Ctrl-C it.
 If no file was there to stash, it writes the default dev value, so the tree is
 always left usable. `apps/studio/.env.local.example` is the committed reference.
 
@@ -76,8 +76,10 @@ not a runtime dependency.
 
 Do these before spending 30 minutes freezing a broken build.
 
-These are the same six gates `build.sh` runs, in the same order. All six
-must pass; each exists because something once shipped broken past it.
+These are the same six gates `npm run build` runs. All six must pass; each
+exists because something once shipped broken past it. Note the order: the build
+runs `build_splash.py --check` *after* `npm install`, because it needs the
+Tailwind CLI from `apps/studio/node_modules`.
 
 ```bash
 # 1. No colour outside apps/studio/src/styles/tokens.css (reads 6-digit hex,
@@ -129,6 +131,8 @@ cd apps/studio && npm run bones:build
 The capture is local, root-route-only, and needs Playwright Chromium once
 (`npx playwright install chromium`). Commit `src/bones/*.bones.json` and
 `src/bones/registry.ts`; they are production build inputs, not disposable cache.
+The fixtures intentionally model stable shell geometry only: do not add the
+mascot, canvas effects, live status/errors, or conditional queue controls.
 
 ---
 
@@ -229,8 +233,8 @@ Expect, in order:
      protocol=TCP localport=8731 enable=yes profile=private
    ```
 5. The loader redirects to the app once the model has loaded.
-6. In the Studio, verify Generate is 40px high; check its normal, starting, and submitting labels plus
-   the adjacent blocked-state reason, and use Ctrl/Cmd+Enter when it is ready. In each theme, move the pointer over the enabled
+6. In the Studio, verify Generate is 44px high and centered beneath the editor; check its normal, starting, and submitting labels plus
+   the adjacent blocked-state reason, and use Ctrl/Cmd+Enter when it is ready. Drag the mascot by its artwork, then use its subtle side arrows to cycle numbered mascots without moving it; Mascot 2 (the Cat sheets) should be the default. Confirm every committed mascot has a matching `<id>a.webp` directions sheet and `<id>b.webp` reactions sheet, and that `apps/studio/src/generated/mascotCatalog.ts` is current. In each theme, move the pointer over the enabled
    button and confirm the specular highlight stays within the button without moving layout. It must be
    absent while disabled or when reduced motion is enabled.
 7. Verify voice and completed-voiceover deletes: a wrong admin password closes

@@ -10,12 +10,12 @@ on the hardware identified in [gpu-notes.md](gpu-notes.md).
 From the repository root, run:
 
 ```bash
-bash dev.sh
+npm run dev
 ```
 
 Open `http://localhost:5173`. The script starts FastAPI on `127.0.0.1:8000`
 and Vite on `:5173`; Vite proxies `/api`, `/audio`, and `/refs` to the API.
-`dev.sh` prints a LAN address because Vite listens on the network interfaces.
+`npm run dev` prints a LAN address because Vite listens on the network interfaces.
 Use a trusted network only: the admin password protects voice and completed
 voiceover deletion, but it is not sign-in and does not protect other app actions.
 
@@ -40,6 +40,16 @@ users on an untrusted network.
 The app has no accounts or multi-user authorization: API requests use the
 single local user. The password is checked by the API for deletes, and the
 delete endpoints check it again when a deferred delete is committed.
+
+## First-run orientation
+
+Once the model is ready, Studio automatically offers a concise, read-only tour.
+It covers theme/help, reusable voice selection and reference-clip upload,
+Script entry (`/` focuses it), the centered Generate action (`Ctrl/Cmd+Enter`),
+Voiceovers, and search/filter controls. Escape or the close button dismisses
+it; the header help button replays it. The tour excludes the mascot and
+volatile queue, error, and row-action surfaces so it remains reliable on a
+fresh launch.
 
 ## Create and manage voices
 
@@ -73,6 +83,14 @@ are the original uploaded audio.
 Write up to 60,000 characters in the Script editor, choose a voice in its
 footer, then select **Generate**. Press `/` to focus the editor or
 Ctrl/Cmd+Enter to generate when the form is ready.
+The 44px Generate button remains centered below the editor even when its
+disabled reason is shown. On wide screens, that auxiliary text sits beside the
+button; on narrow screens it moves below it. The fixed mascot is dragged by
+the mascot artwork itself, while its subdued side arrows cycle the numbered
+catalog without initiating a drag. Mascot 2 (the Cat sheets) is the default.
+To add one, commit `<id>a.webp` (directions) and `<id>b.webp` (reactions) in
+`apps/studio/public/mascots/`; normal Studio commands regenerate and validate
+`src/generated/mascotCatalog.ts`, which must be committed with the pair.
 Generation is serial: one job runs at a time under the model's generation lock;
 additional jobs queue. Reference audio and script text share the model context
 window, so the available chunk size depends on the selected voice. Long scripts

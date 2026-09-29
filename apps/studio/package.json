@@ -4,11 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "generate:mascot-catalog": "node scripts/generate-mascot-catalog.mjs",
+    "predev": "npm run generate:mascot-catalog",
     "dev": "vite",
+    "prebuild": "npm run generate:mascot-catalog",
     "build": "tsc -b && vite build",
     "bones:build": "boneyard-js build http://127.0.0.1:5173",
+    "prelint": "npm run generate:mascot-catalog",
     "lint": "oxlint",
-    "test": "vitest run",
+    "pretest": "npm run generate:mascot-catalog",
+    "test": "node --test scripts/generate-mascot-catalog.node-test.mjs && vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,6 +29,7 @@
     "framer-motion": "^12.42.2",
     "motion": "^13.4.2",
     "ogl": "^1.0.11",
+    "page-mascot": "^0.1.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",

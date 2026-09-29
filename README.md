@@ -19,7 +19,8 @@ PY=.venv/Scripts/python.exe; [ -f "$PY" ] || PY=.venv/bin/python
 "$PY" -m pip install --upgrade pip
 "$PY" -m pip install -r services/voice-api/requirements.txt
 
-cd apps/studio && npm install && cd ../..
+npm install                       # root orchestration (concurrently)
+npm install --prefix apps/studio  # Studio dependencies
 cp services/voice-api/.env.example services/voice-api/.env
 ```
 
@@ -47,7 +48,7 @@ PYEOF
 ## Local development
 
 ```bash
-bash dev.sh
+npm run dev
 ```
 
 Open `http://localhost:5173`. The script starts FastAPI on `127.0.0.1:8000`
@@ -78,10 +79,32 @@ lower left. Open it to read the backend message and retry startup. A failed
 background refresh keeps cached voiceovers visible without adding an inline
 warning above the list.
 
+The Studio mascot is a session-local viewport companion. On wide screens it
+rests at the Voiceovers section's lower-left corner until you drag the mascot
+artwork itself; after a completed drag, its clamped position remains for the
+open tab. The small previous/next arrows cycle the numbered mascot catalog.
+Mascot 2 (the Cat sheets) is the default.
+
+To add a mascot, place a numbered pair in `apps/studio/public/mascots/`:
+`<id>a.webp` for directions and `<id>b.webp` for reactions. Run Studio normally
+(`npm run dev`, `npm run test`, `npm run lint`, or `npm run build`); each command
+regenerates `apps/studio/src/generated/mascotCatalog.ts`. Commit the two assets
+and that generated catalog together.
+
+The **Generate** button is centered below the editor and is 44px high. Its
+disabled reason and keyboard-shortcut reminder are auxiliary text, so they do
+not shift the action off the editor's centerline.
+
+On the first model-ready launch, Studio offers a short, read-only tour of the
+theme/help controls, reusable voice creation, the Script editor, Generate, and
+the Voiceovers search/filter workflow. Press Escape or close it to dismiss it;
+use the header help button to replay it. It intentionally excludes the mascot,
+queue rows, errors, and other state that may not exist at startup.
+
 ## Packaged Windows app
 
 ```bash
-bash build.sh
+npm run build
 ```
 
 This creates `dist/Homegrown-<version>.exe`. Run that self-extracting archive,

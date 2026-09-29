@@ -54,11 +54,13 @@ export default function GenerateButton({
         ? `Generate ${count} voiceovers`
         : 'Generate'
 
-  // flex-none, but no longer ml-auto: the voice controls anchor the right of
-  // the compose row now, and Generate sits at the left. The slack between
-  // them is taken by the wrapper around the voice field in StudioShell.
+  // The action sits in the middle grid column. Auxiliary copy is absolutely
+  // positioned on desktop, so a long blocked reason can never nudge it off
+  // the composer axis.
   return (
-    <section className="flex flex-none flex-wrap items-center gap-x-2 gap-y-1">
+    <section className="generate-action-grid grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start">
+      <div aria-hidden="true" />
+      <div className="relative flex flex-col items-center">
       {/* Tooltip, not a visible key cap -- unlike the script box and the play
           control, which wear theirs. The button stays a stable action label;
           any missing prerequisite is carried by the adjacent warning icon.
@@ -88,10 +90,14 @@ export default function GenerateButton({
           </motion.span>
         </AnimatePresence>
       </SpecularButton>
-      {blockedReason && <span className="text-[12px] text-muted" role="status">{blockedReason}</span>}
-      <span className="flex items-center gap-1 text-[11px] text-faint coarse:hidden" aria-hidden="true">
-        <Kbd>{`${MOD_KEY}+Enter`}</Kbd><span>to generate</span>
-      </span>
+        <div className="generate-action-auxiliary mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center wide:absolute wide:left-full wide:top-1/2 wide:mt-0 wide:ml-3 wide:-translate-y-1/2 wide:flex-nowrap wide:text-left wide:whitespace-nowrap">
+          {blockedReason && <span className="text-[12px] text-muted" role="status">{blockedReason}</span>}
+          <span className="flex items-center gap-1 text-[11px] text-faint coarse:hidden" aria-hidden="true">
+            <Kbd>{`${MOD_KEY}+Enter`}</Kbd><span>to generate</span>
+          </span>
+        </div>
+      </div>
+      <div aria-hidden="true" />
     </section>
   )
 }

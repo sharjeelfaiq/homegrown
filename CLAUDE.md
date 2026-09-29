@@ -7,7 +7,7 @@ This document describes the checked-in application. User-facing usage is in
 
 ```bash
 # Development from the repository root
-bash dev.sh
+npm run dev
 
 # Frontend verification
 cd apps/studio && npm run test && npm run lint && npm run build
@@ -20,9 +20,11 @@ cd apps/studio && npm run bones:build
 python -m py_compile services/voice-api/main.py
 ```
 
-`dev.sh` starts FastAPI on `127.0.0.1:8000` and Vite on `:5173`. Vite proxies
-`/api`, `/audio`, and `/refs`. The finished-product path is `bash build.sh` followed by the
-generated `Homegrown-<version>.exe`.
+`npm run dev` starts FastAPI on `127.0.0.1:8000` and Vite on `:5173`, via
+`concurrently` from the root `package.json`. Vite proxies `/api`, `/audio`, and
+`/refs`. The finished-product path is `npm run build` followed by the generated
+`Homegrown-<version>.exe`. Both root commands are thin wrappers over
+`scripts/dev.mjs` and `scripts/build.mjs`.
 
 ## Architecture
 
@@ -85,6 +87,26 @@ generated `Homegrown-<version>.exe`.
   action when available. Do not put a failure banner above the Script editor.
   Failed background history refreshes keep cached rows and do not add an
   inline warning above the voiceovers list.
+- `MascotPicker` is fixed to the viewport rather than participating in the
+  composer or Voiceovers layout. Before a completed drag it follows the
+  Voiceovers lower-left corner on wide screens and the viewport lower-left on
+  narrow screens; after drag it retains only a clamped in-memory position.
+  The mascot artwork is the drag surface. Mark only the side navigation
+  controls with `data-mascot-navigation`, so their clicks cycle mascots without
+  beginning a drag.
+- `useOnboardingTour` keeps a static target sequence: header controls, voice
+  controls, Script editor, Generate, Voiceovers, then search/filters. Do not
+  add mascot, queue-row, error, or other conditional targets; the automatic
+  model-ready tour must work on an empty Studio.
+- The mascot catalog is generated from top-level numbered pairs in
+  `apps/studio/public/mascots/`: `<id>a.webp` is directions and `<id>b.webp`
+  is reactions. Do not hand-edit `src/generated/mascotCatalog.ts`; add a pair,
+  run a normal Studio command, and commit the assets with its regenerated
+  catalog. Mascot 2 (the Cat sheets) is the default when it exists.
+- Generate is a 44px action in the center column of a three-column grid. Keep
+  blocked-state and shortcut copy in `.generate-action-auxiliary`: it is
+  outside normal layout flow on wide screens and below the button on narrow
+  screens, so it cannot offset the real button from the editor axis.
 - Completed rows are paginated with persisted page-size choices: 10, 25, 50,
   or 100. The fixed pager shows all pages through four; thereafter it shows a
   sliding window of five numbered buttons, always including the current page.

@@ -59,13 +59,13 @@ export function useOnboardingTour(modelStatus: 'checking' | 'ready' | 'down') {
         startedRef.current = false
       },
       steps: [
-        { popover: { title: 'Welcome to Homegrown', description: 'Create reusable voices and turn scripts into voiceovers—all from this studio.', nextBtnText: 'Take the tour' } },
-        { element: '[data-tour="header-controls"]', popover: { title: 'Make it yours', description: 'Switch the studio theme here. This help button is always available when you want to replay the tour.', side: 'bottom', align: 'end' } },
-        { element: '[data-tour="voice-controls"]', popover: { title: 'Choose a voice', description: 'Select an existing voice and preview it, or add a short reference clip to create a reusable voice.', side: 'bottom', align: 'end' } },
-        { element: '[data-tour="script-editor"]', popover: { title: 'Write the script', description: 'Type what the voice should say. Press / anytime to focus this editor.', side: 'bottom', align: 'start' } },
-        { element: '[data-tour="generate-control"]', popover: { title: 'Generate a voiceover', description: 'Choose a voice and add a script, then generate. Ctrl/Cmd + Enter works too.', side: 'top', align: 'start' } },
-        { element: '[data-tour="voiceovers"]', popover: { title: 'Follow every voiceover', description: 'See queued and finished work here, play it back, download it, or reuse its script.', side: 'top', align: 'start' } },
-        { element: '[data-tour="voiceover-search-filters"]', popover: { title: 'Find past work', description: 'Search voiceovers by name or voice, and narrow the list with filters.', side: 'bottom', align: 'end' } },
+        { popover: { title: 'Welcome to Homegrown', description: 'Create reusable voices, then turn a script into a voiceover from one focused studio.', nextBtnText: 'Take the tour' } },
+        { element: '[data-tour="header-controls"]', popover: { title: 'Personalize and get help', description: 'Switch the studio theme here. Use the help button anytime to replay this tour.', side: 'bottom', align: 'end' } },
+        { element: '[data-tour="voice-controls"]', popover: { title: 'Choose or create a voice', description: 'Pick a reusable voice, preview it, or upload a short reference clip to make a new one.', side: 'bottom', align: 'end' } },
+        { element: '[data-tour="script-editor"]', popover: { title: 'Write the script', description: 'Type what the voice should say. Press / anytime to focus the script editor.', side: 'bottom', align: 'start' } },
+        { element: '[data-tour="generate-control"]', popover: { title: 'Generate a voiceover', description: 'The centered Generate action creates your voiceover. Ctrl/Cmd + Enter works too.', side: 'top', align: 'start' } },
+        { element: '[data-tour="voiceovers"]', popover: { title: 'Monitor and reuse work', description: 'Active and finished voiceovers appear here. Play, download, or reuse a script whenever you need it.', side: 'top', align: 'start' } },
+        { element: '[data-tour="voiceover-search-filters"]', popover: { title: 'Find past work', description: 'Search voiceovers by name or voice, then filter the list to find what you need.', side: 'bottom', align: 'end' } },
         { popover: { title: 'You are ready', description: 'Your voices, draft, and voiceover history stay close at hand. Replay this tour from the help button whenever you need it.', doneBtnText: 'Done' } },
       ],
     })

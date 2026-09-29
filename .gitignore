@@ -34,6 +34,11 @@ desktop/launcher/build/
 # Packaged installer output
 installer.zip
 
+# /brag video output -- plan, composition, render and share copy are all
+# regenerable from the skill, and brag.mp4 is far too large to track
+brag-output/
+brag-output-*/
+
 # setup.sh working dirs -- kept on the repo's drive so multi-GB pip wheels and
 # model weights don't fill the system drive (see setup.sh header)
 .pip-cache/

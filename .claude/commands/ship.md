@@ -11,13 +11,13 @@ archival: preserve its historical body and keep a prominent non-current banner.
 
 Current source roots are `apps/studio`, `apps/marketing`,
 `services/voice-api`, `engine/qwen`, and `desktop/{launcher,installer,assets}`.
-The supported workflows are `bash dev.sh` and `bash build.sh`; do not reintroduce
+The supported workflows are `npm run dev` and `npm run build`; do not reintroduce
 the retired setup script, source-server launcher, or hosted/cloud deployment
 instructions.
 
-Verify paths, Markdown links, and fenced commands. Run `bash -n dev.sh` and
-`bash -n build.sh` separately, the Studio tests/lint/build, Python compilation,
-and these gates:
+Verify paths, Markdown links, and fenced commands. Run `node --check scripts/dev.mjs`
+and `node --check scripts/build.mjs` separately, the Studio tests/lint/build,
+Python compilation, and these gates:
 
 ```bash
 python scripts/check_design_tokens.py

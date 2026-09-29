@@ -19,7 +19,7 @@ from pathlib import Path
 
 import boot_status
 
-# Not 8000, deliberately. 8000 belongs to dev (`dev.sh`); this build is the only one whose port nobody types,
+# Not 8000, deliberately. 8000 belongs to dev (`npm run dev`); this build is the only one whose port nobody types,
 # because it serves the API and the SPA from the same loopback origin and the
 # frontend calls it with relative paths. Sharing 8000 meant the launcher's
 # health probe could find a dev uvicorn already listening, conclude Homegrown
@@ -29,7 +29,7 @@ import boot_status
 #
 # MUST match PORT in desktop/launcher/launcher.py, which is what polls this process
 # into readiness. They are separately frozen exes with no import path between
-# them, so nothing but `build.sh`'s pre-build check stops them drifting; if
+# them, so nothing but `npm run build`'s pre-build check stops them drifting; if
 # they disagree the launcher polls a dead port and reports the backend as
 # having timed out during startup, which is a badly wrong diagnosis.
 PORT = 8731

@@ -5,6 +5,7 @@ import ScriptBlock from './ScriptBlock'
 import HistoryList from './HistoryList'
 import { restoreVoiceoverFilters, type VoiceoverFilterState } from './VoiceoverFilters'
 import GenerateButton from './GenerateButton'
+import MascotPicker from './MascotPicker'
 import { MAX_SCRIPT_CHARS, UNDO_MS } from '../constants'
 import { presetNameFromFile } from '../format'
 import { AlertIcon, CheckIcon, HelpIcon, TrashIcon } from './Icons'
@@ -50,6 +51,7 @@ import { StudioStartupFixture } from './BoneyardFixtures'
 const LANGUAGE_FALLBACK = 'English'
 
 export default function StudioShell() {
+  const voiceoversRef = useRef<HTMLElement>(null)
   const [modelStatus, setModelStatus] = useState<'checking' | 'ready' | 'down'>('checking')
   const { startTour } = useOnboardingTour(modelStatus)
   const [wakeMessage, setWakeMessage] = useState<string | null>(null)
@@ -647,7 +649,7 @@ export default function StudioShell() {
               time plus chunk progress are more honest. /api/estimate remains
               on the 400ms debounce solely for exact chunking and the
               long-reference-clip warning rendered above. */}
-          <section className="compose-bar flex flex-wrap items-center gap-2" data-tour="generate-control">
+          <section className="compose-bar -mt-1" data-tour="generate-control">
             <GenerateButton
               disabled={!canGenerate}
               blockedReason={blockedReason}
@@ -656,12 +658,11 @@ export default function StudioShell() {
               count={scriptReady ? 1 : 0}
               onClick={handleGenerate}
             />
-
           </section>
 
         </div>
 
-        <aside className="min-w-0 wide:h-full wide:min-h-0" data-tour="voiceovers">
+        <aside ref={voiceoversRef} className="relative min-w-0 wide:h-full wide:min-h-0" data-tour="voiceovers">
           <HistoryList
             presets={presets}
             filters={historyFilters}
@@ -676,6 +677,7 @@ export default function StudioShell() {
             onError={setError}
             gpuFault={gpuFault != null}
           />
+          <MascotPicker anchorRef={voiceoversRef} />
         </aside>
       </main>
 

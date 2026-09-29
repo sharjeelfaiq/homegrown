@@ -1,0 +1,16 @@
+{
+  "name": "homegrown",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local voiceover studio. Root orchestration for the FastAPI backend and the Vite Studio.",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "npm --prefix apps/studio run test",
+    "lint": "npm --prefix apps/studio run lint",
+    "bones:build": "npm --prefix apps/studio run bones:build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

@@ -13,7 +13,7 @@ the launcher polls a port nothing ever binds, waits out STALL_TIMEOUT_S, and
 reports that the backend timed out during startup. The backend is fine. It is
 listening on a port nobody is asking.
 
-The port is 8731 rather than 8000 because 8000 belongs to dev (`dev.sh`). Sharing it let the launcher's health probe find a
+The port is 8731 rather than 8000 because 8000 belongs to dev (`npm run dev`). Sharing it let the launcher's health probe find a
 dev uvicorn, conclude the app was already up, and return without ever starting
 backend.exe.
 

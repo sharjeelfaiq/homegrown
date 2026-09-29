@@ -1,0 +1,476 @@
+{
+  "D:\\code\\websites\\homegrown\\apps\\studio\\.oxlintrc.json": {
+    "mtime": 1788535217.2095482,
+    "seen": 1790668150.6067812,
+    "ast_hash": "1f0703525c59e961c2b7f20e78aa1cd4",
+    "semantic_hash": "1f0703525c59e961c2b7f20e78aa1cd4"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\boneyard.config.json": {
+    "mtime": 1790057432.9614692,
+    "seen": 1790668150.6067858,
+    "ast_hash": "92dfed7318049b3485d9aa7b43250686",
+    "semantic_hash": "92dfed7318049b3485d9aa7b43250686"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\package.json": {
+    "mtime": 1790668086.0576136,
+    "seen": 1790668150.606788,
+    "ast_hash": "337340a4d3fa2c4ca65b1fc17afb2e2f",
+    "semantic_hash": "337340a4d3fa2c4ca65b1fc17afb2e2f"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\App.tsx": {
+    "mtime": 1790057032.8983932,
+    "seen": 1790668150.6067889,
+    "ast_hash": "34e0c7d1548f65fd0c3e3bfe7d10d6e5",
+    "semantic_hash": "34e0c7d1548f65fd0c3e3bfe7d10d6e5"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\AudioActivityContext.tsx": {
+    "mtime": 1788700881.3824568,
+    "seen": 1790668150.60679,
+    "ast_hash": "7264cc35c3eaa6abccf9405d855427bd",
+    "semantic_hash": "7264cc35c3eaa6abccf9405d855427bd"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\GenerationActivityContext.tsx": {
+    "mtime": 1789135270.6408684,
+    "seen": 1790668150.6067913,
+    "ast_hash": "45dc28db95ad6b7f367ee68efd0ea467",
+    "semantic_hash": "45dc28db95ad6b7f367ee68efd0ea467"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\ThemeContext.tsx": {
+    "mtime": 1789820721.8702831,
+    "seen": 1790668150.6067922,
+    "ast_hash": "3213e64310723af6c05394ec3330d59d",
+    "semantic_hash": "3213e64310723af6c05394ec3330d59d"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\api.ts": {
+    "mtime": 1790224479.5535116,
+    "seen": 1790668150.6067932,
+    "ast_hash": "f87624d4d0adb0c44038303ea0f5f5f5",
+    "semantic_hash": "f87624d4d0adb0c44038303ea0f5f5f5"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\audio\\AudioEngine.ts": {
+    "mtime": 1788535217.2175477,
+    "seen": 1790668150.6067944,
+    "ast_hash": "a6b6b5f6094630180b8e9c87ba1d3e8d",
+    "semantic_hash": "a6b6b5f6094630180b8e9c87ba1d3e8d"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\audio\\waveformPeaks.ts": {
+    "mtime": 1790221199.147782,
+    "seen": 1790668150.6067953,
+    "ast_hash": "403f98feaa291fc5b7866fb764e7716a",
+    "semantic_hash": "403f98feaa291fc5b7866fb764e7716a"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\bones\\registry.ts": {
+    "mtime": 1790233342.2982264,
+    "seen": 1790668150.6067963,
+    "ast_hash": "d5963de41dd5374c2fffbd9a5dd07f87",
+    "semantic_hash": "d5963de41dd5374c2fffbd9a5dd07f87"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\bones\\studio-startup.bones.json": {
+    "mtime": 1790233342.297225,
+    "seen": 1790668150.6067972,
+    "ast_hash": "9f646feb0f8f6f405365eceac3d260db",
+    "semantic_hash": "9f646feb0f8f6f405365eceac3d260db"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\bones\\voiceover-history.bones.json": {
+    "mtime": 1790233342.297225,
+    "seen": 1790668150.6067986,
+    "ast_hash": "f358c2a7031ee3e72378f05d3e2d8441",
+    "semantic_hash": "f358c2a7031ee3e72378f05d3e2d8441"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\boneyard.d.ts": {
+    "mtime": 1790057032.1740935,
+    "seen": 1790668150.6067996,
+    "ast_hash": "39c6bd8d13d80e4d4cd985f28864acb1",
+    "semantic_hash": "39c6bd8d13d80e4d4cd985f28864acb1"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\AdminPasswordModal.tsx": {
+    "mtime": 1790224065.6185665,
+    "seen": 1790668150.6068006,
+    "ast_hash": "4a1f2ab8e2d9d9ebb7520f5d85adf98d",
+    "semantic_hash": "4a1f2ab8e2d9d9ebb7520f5d85adf98d"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\BoneyardFixtures.tsx": {
+    "mtime": 1790057031.4973729,
+    "seen": 1790668150.6068015,
+    "ast_hash": "98c7c2f5937bc9e394af3a65991affc9",
+    "semantic_hash": "98c7c2f5937bc9e394af3a65991affc9"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\BootOverlay.tsx": {
+    "mtime": 1790236300.7101228,
+    "seen": 1790668150.6068025,
+    "ast_hash": "e4d7880501fc1debf47c7716b94d8b16",
+    "semantic_hash": "e4d7880501fc1debf47c7716b94d8b16"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\CursorGrid.tsx": {
+    "mtime": 1789820721.889426,
+    "seen": 1790668150.6068032,
+    "ast_hash": "34a820e7bba53d4e7df93ad272714f6c",
+    "semantic_hash": "34a820e7bba53d4e7df93ad272714f6c"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\Dock.tsx": {
+    "mtime": 1789820721.9100928,
+    "seen": 1790668150.6068041,
+    "ast_hash": "c02608f090a67a8fdc53e1e29a2847a8",
+    "semantic_hash": "c02608f090a67a8fdc53e1e29a2847a8"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\GenerateButton.test.tsx": {
+    "mtime": 1790665441.1079502,
+    "seen": 1790668150.606805,
+    "ast_hash": "fea54efd0695d10608adecd1c947932e",
+    "semantic_hash": "fea54efd0695d10608adecd1c947932e"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\GenerateButton.tsx": {
+    "mtime": 1790665357.6712542,
+    "seen": 1790668150.606806,
+    "ast_hash": "84619496e7d980f6b180c683908c7dad",
+    "semantic_hash": "84619496e7d980f6b180c683908c7dad"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\HistoryList.test.ts": {
+    "mtime": 1789982644.3001497,
+    "seen": 1790668150.6068068,
+    "ast_hash": "649934c393862b45ec6888951727720d",
+    "semantic_hash": "649934c393862b45ec6888951727720d"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\HistoryList.tsx": {
+    "mtime": 1790237205.3391788,
+    "seen": 1790668150.6068084,
+    "ast_hash": "957441a1f63b69f46cf615ead9abdbee",
+    "semantic_hash": "957441a1f63b69f46cf615ead9abdbee"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\Icons.tsx": {
+    "mtime": 1790664573.7207909,
+    "seen": 1790668150.6068091,
+    "ast_hash": "6f9401d252f0718d8d815b1a2117a7bd",
+    "semantic_hash": "6f9401d252f0718d8d815b1a2117a7bd"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\InlineName.tsx": {
+    "mtime": 1790230694.419773,
+    "seen": 1790668150.60681,
+    "ast_hash": "3df24e13f223ba2cd8e853d87f0dfca1",
+    "semantic_hash": "3df24e13f223ba2cd8e853d87f0dfca1"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\Kbd.tsx": {
+    "mtime": 1789125344.3154454,
+    "seen": 1790668150.606811,
+    "ast_hash": "0e898518377a85437a0f30647c1ed7a8",
+    "semantic_hash": "0e898518377a85437a0f30647c1ed7a8"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\LatticeLoader.tsx": {
+    "mtime": 1790236300.4295924,
+    "seen": 1790668150.6068122,
+    "ast_hash": "00cbeb17e67f1b37bec9e37489efc346",
+    "semantic_hash": "00cbeb17e67f1b37bec9e37489efc346"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\MascotPicker.test.tsx": {
+    "mtime": 1790668096.9043899,
+    "seen": 1790668150.606813,
+    "ast_hash": "dc8ddeb4df601cdb9f03c9030d8396e6",
+    "semantic_hash": "dc8ddeb4df601cdb9f03c9030d8396e6"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\MascotPicker.tsx": {
+    "mtime": 1790667890.413754,
+    "seen": 1790668150.606814,
+    "ast_hash": "b35d1c5536393c2536f5186f0ffd291b",
+    "semantic_hash": "b35d1c5536393c2536f5186f0ffd291b"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\Modal.tsx": {
+    "mtime": 1790230694.6545963,
+    "seen": 1790668150.6068149,
+    "ast_hash": "147b9d73ef733c39bac95d039c68caae",
+    "semantic_hash": "147b9d73ef733c39bac95d039c68caae"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\OfflineBadge.tsx": {
+    "mtime": 1789820721.9589853,
+    "seen": 1790668150.6068158,
+    "ast_hash": "4d02930e49cdb28cb9d944aa3b28bd8e",
+    "semantic_hash": "4d02930e49cdb28cb9d944aa3b28bd8e"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\OptionWheel.tsx": {
+    "mtime": 1789820721.9915671,
+    "seen": 1790668150.6068168,
+    "ast_hash": "c565effed2340fdf6d10f5de9c7fc438",
+    "semantic_hash": "c565effed2340fdf6d10f5de9c7fc438"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\ParticleText.tsx": {
+    "mtime": 1789820721.9915671,
+    "seen": 1790668150.6068177,
+    "ast_hash": "022a4d6518008d98e5db68047b0784fb",
+    "semantic_hash": "022a4d6518008d98e5db68047b0784fb"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\ScriptBlock.test.tsx": {
+    "mtime": 1790235101.406325,
+    "seen": 1790668150.606819,
+    "ast_hash": "16b265b7182178d80ac0f8f01a76db81",
+    "semantic_hash": "16b265b7182178d80ac0f8f01a76db81"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\ScriptBlock.tsx": {
+    "mtime": 1790235101.3123796,
+    "seen": 1790668150.6068196,
+    "ast_hash": "98918eedda57999d47f3b3597ed44da9",
+    "semantic_hash": "98918eedda57999d47f3b3597ed44da9"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\SpecularButton.tsx": {
+    "mtime": 1789820722.0092177,
+    "seen": 1790668150.6068206,
+    "ast_hash": "9127bc5a7af3f86c7a5d203a36bb5710",
+    "semantic_hash": "9127bc5a7af3f86c7a5d203a36bb5710"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\StatusMark.test.tsx": {
+    "mtime": 1790234809.680553,
+    "seen": 1790668150.6068213,
+    "ast_hash": "57ad3cb3169cd7a71a99e84a092022ab",
+    "semantic_hash": "57ad3cb3169cd7a71a99e84a092022ab"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\StatusMark.tsx": {
+    "mtime": 1790235295.9806428,
+    "seen": 1790668150.6068225,
+    "ast_hash": "7259fd86682af4c47af157d47d9b4a15",
+    "semantic_hash": "7259fd86682af4c47af157d47d9b4a15"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\StudioShell.tsx": {
+    "mtime": 1790665895.3999274,
+    "seen": 1790668150.6068234,
+    "ast_hash": "ef08f211830682dd2da7fc5d28cefa43",
+    "semantic_hash": "ef08f211830682dd2da7fc5d28cefa43"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\ThemeSwitch.tsx": {
+    "mtime": 1789820722.062059,
+    "seen": 1790668150.6068242,
+    "ast_hash": "74ee60e3dc087785fb17c0dd8ad222c9",
+    "semantic_hash": "74ee60e3dc087785fb17c0dd8ad222c9"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\UndoCountdown.tsx": {
+    "mtime": 1789362332.0007463,
+    "seen": 1790668150.606825,
+    "ast_hash": "edc61520ebc815e411d0ac918412495c",
+    "semantic_hash": "edc61520ebc815e411d0ac918412495c"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\VoicePicker.tsx": {
+    "mtime": 1790232940.148856,
+    "seen": 1790668150.606826,
+    "ast_hash": "511855ac330c6086b20aaf5132a8b7fd",
+    "semantic_hash": "511855ac330c6086b20aaf5132a8b7fd"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\VoiceoverFilters.tsx": {
+    "mtime": 1789982506.7823281,
+    "seen": 1790668150.606827,
+    "ast_hash": "699b0d882d8d98066f9dc3614ee8041c",
+    "semantic_hash": "699b0d882d8d98066f9dc3614ee8041c"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\VoiceoverPlayer.tsx": {
+    "mtime": 1789981002.1566336,
+    "seen": 1790668150.6068282,
+    "ast_hash": "9817e7890fa96dcba0102647e3f2ed45",
+    "semantic_hash": "9817e7890fa96dcba0102647e3f2ed45"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\components\\WaveRibbon.tsx": {
+    "mtime": 1789111702.0945067,
+    "seen": 1790668150.6068296,
+    "ast_hash": "e82a9c2cac59e940a07f6ff5cda8174d",
+    "semantic_hash": "e82a9c2cac59e940a07f6ff5cda8174d"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\constants.ts": {
+    "mtime": 1790230694.2635517,
+    "seen": 1790668150.6068306,
+    "ast_hash": "e8b741cc6a0026bb2f7db7dd962e1722",
+    "semantic_hash": "e8b741cc6a0026bb2f7db7dd962e1722"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\format.ts": {
+    "mtime": 1789820722.1099992,
+    "seen": 1790668150.6068316,
+    "ast_hash": "58d18dc1895c8f8178b841026dc46afa",
+    "semantic_hash": "58d18dc1895c8f8178b841026dc46afa"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\historyPageSize.ts": {
+    "mtime": 1789820722.116127,
+    "seen": 1790668150.6068323,
+    "ast_hash": "d27e3b5a5fa2b13cf7112b1923365297",
+    "semantic_hash": "d27e3b5a5fa2b13cf7112b1923365297"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\historyPager.ts": {
+    "mtime": 1789976711.416512,
+    "seen": 1790668150.6068335,
+    "ast_hash": "7738f70b6b19d447617dc0dffa7f58d7",
+    "semantic_hash": "7738f70b6b19d447617dc0dffa7f58d7"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\historyQuery.test.ts": {
+    "mtime": 1789974738.960214,
+    "seen": 1790668150.6068344,
+    "ast_hash": "c1dffcc062c13209c2ec9ddfe7e42976",
+    "semantic_hash": "c1dffcc062c13209c2ec9ddfe7e42976"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\historyQuery.ts": {
+    "mtime": 1789974489.9776618,
+    "seen": 1790668150.6068354,
+    "ast_hash": "a2b0eac556061b68585b1133c2425edd",
+    "semantic_hash": "a2b0eac556061b68585b1133c2425edd"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\useBootStatus.ts": {
+    "mtime": 1790221977.0640798,
+    "seen": 1790668150.6068363,
+    "ast_hash": "51ca40b15d05049129efc08633fb65ea",
+    "semantic_hash": "51ca40b15d05049129efc08633fb65ea"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\useCopyToClipboard.ts": {
+    "mtime": 1790220414.2330756,
+    "seen": 1790668150.6068373,
+    "ast_hash": "46278764f365ae6d73e4ade158031b78",
+    "semantic_hash": "46278764f365ae6d73e4ade158031b78"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\useErrorToast.ts": {
+    "mtime": 1789362332.002745,
+    "seen": 1790668150.6068382,
+    "ast_hash": "2d5819e517ef0fbe3d4092a67fb349ce",
+    "semantic_hash": "2d5819e517ef0fbe3d4092a67fb349ce"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\useFileDrop.ts": {
+    "mtime": 1788700881.3864563,
+    "seen": 1790668150.6068392,
+    "ast_hash": "d21364c03a2a7a365afeff12a4783a91",
+    "semantic_hash": "d21364c03a2a7a365afeff12a4783a91"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\useFlushOnHide.ts": {
+    "mtime": 1789219624.4860482,
+    "seen": 1790668150.6068404,
+    "ast_hash": "3c77cbbbeefc710158d8e3a0ffccfc68",
+    "semantic_hash": "3c77cbbbeefc710158d8e3a0ffccfc68"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\useHotkeys.ts": {
+    "mtime": 1789126099.9910862,
+    "seen": 1790668150.606841,
+    "ast_hash": "6300028e950b75a213fc9cb70c0e4f08",
+    "semantic_hash": "6300028e950b75a213fc9cb70c0e4f08"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\useJobToasts.ts": {
+    "mtime": 1789362332.0037458,
+    "seen": 1790668150.606842,
+    "ast_hash": "402a90bc7a654acae3dcfcc68162b533",
+    "semantic_hash": "402a90bc7a654acae3dcfcc68162b533"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\useOnboardingTour.ts": {
+    "mtime": 1789905877.2728534,
+    "seen": 1790668150.6068432,
+    "ast_hash": "38e595042ff9bd489a636498cd3d4926",
+    "semantic_hash": "38e595042ff9bd489a636498cd3d4926"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\useOptimisticProgress.ts": {
+    "mtime": 1789362332.0037458,
+    "seen": 1790668150.606844,
+    "ast_hash": "042d5b3c224ae04aebe7a20d34b8c3b5",
+    "semantic_hash": "042d5b3c224ae04aebe7a20d34b8c3b5"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\usePageVisible.ts": {
+    "mtime": 1788535217.224548,
+    "seen": 1790668150.6068451,
+    "ast_hash": "8fb90792d802cf1bcf6537290d3c28a9",
+    "semantic_hash": "8fb90792d802cf1bcf6537290d3c28a9"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\usePersistedDraft.ts": {
+    "mtime": 1789219647.3661146,
+    "seen": 1790668150.606846,
+    "ast_hash": "2efc9927c457fdc011658c2738683eea",
+    "semantic_hash": "2efc9927c457fdc011658c2738683eea"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\usePersistedRecord.ts": {
+    "mtime": 1789018291.284829,
+    "seen": 1790668150.606847,
+    "ast_hash": "350c0fd29f841a7c48be7ad84635874f",
+    "semantic_hash": "350c0fd29f841a7c48be7ad84635874f"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\usePrefersDark.ts": {
+    "mtime": 1789109465.6395628,
+    "seen": 1790668150.606848,
+    "ast_hash": "a828c087249f2c9abfd3fa125023d1c3",
+    "semantic_hash": "a828c087249f2c9abfd3fa125023d1c3"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\hooks\\usePrefersReducedMotion.ts": {
+    "mtime": 1788535217.2255483,
+    "seen": 1790668150.606849,
+    "ast_hash": "a109388d4fd452141280e538f3d4b71c",
+    "semantic_hash": "a109388d4fd452141280e538f3d4b71c"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\keys.ts": {
+    "mtime": 1789125334.63016,
+    "seen": 1790668150.6068501,
+    "ast_hash": "72cd7e80aa2be1a0b9b50c0d0ecb563e",
+    "semantic_hash": "72cd7e80aa2be1a0b9b50c0d0ecb563e"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\main.tsx": {
+    "mtime": 1790057032.667721,
+    "seen": 1790668150.606851,
+    "ast_hash": "cbac5b472480ee85843b171c7989ed72",
+    "semantic_hash": "cbac5b472480ee85843b171c7989ed72"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\theme.ts": {
+    "mtime": 1790221976.901024,
+    "seen": 1790668150.606852,
+    "ast_hash": "3b902f0b2d970bebe388ee727d306ff8",
+    "semantic_hash": "3b902f0b2d970bebe388ee727d306ff8"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\wake.ts": {
+    "mtime": 1790221108.296105,
+    "seen": 1790668150.606853,
+    "ast_hash": "d7e1dad99d4f351b85e695e78a9d1d55",
+    "semantic_hash": "d7e1dad99d4f351b85e695e78a9d1d55"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\tsconfig.app.json": {
+    "mtime": 1790057033.1700754,
+    "seen": 1790668150.6068542,
+    "ast_hash": "246f12e5b9e789fada36cf98bbeb9d49",
+    "semantic_hash": "246f12e5b9e789fada36cf98bbeb9d49"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\tsconfig.json": {
+    "mtime": 1788535217.2265484,
+    "seen": 1790668150.6068552,
+    "ast_hash": "852c3a5df14a4b43ac28e9554ebedf4a",
+    "semantic_hash": "852c3a5df14a4b43ac28e9554ebedf4a"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\tsconfig.node.json": {
+    "mtime": 1788535217.2265484,
+    "seen": 1790668150.6068559,
+    "ast_hash": "74cde0261ad0a13045ca0a05ab1542ae",
+    "semantic_hash": "74cde0261ad0a13045ca0a05ab1542ae"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\vite-boot-status.ts": {
+    "mtime": 1790221976.7419777,
+    "seen": 1790668150.606857,
+    "ast_hash": "4be32368e44e1bbfa6739d98d63da1e8",
+    "semantic_hash": "4be32368e44e1bbfa6739d98d63da1e8"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\vite.config.ts": {
+    "mtime": 1790221976.662978,
+    "seen": 1790668150.606858,
+    "ast_hash": "bf38a77f8238af66d85d9f3509844f0e",
+    "semantic_hash": "bf38a77f8238af66d85d9f3509844f0e"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\index.html": {
+    "mtime": 1790221976.582452,
+    "seen": 1790668150.606859,
+    "ast_hash": "80b32c27037da4b2aeee6d81f0759f13",
+    "semantic_hash": "80b32c27037da4b2aeee6d81f0759f13"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\public\\favicon.svg": {
+    "mtime": 1789018291.2808273,
+    "seen": 1790668150.6068597,
+    "ast_hash": "4422089e5397ddca98229f2cc6650d82",
+    "semantic_hash": "4422089e5397ddca98229f2cc6650d82"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\assets\\hero.png": {
+    "mtime": 1788535217.215549,
+    "seen": 1790668150.6068623,
+    "ast_hash": "aead493361b27e7510691c5d7072dfc1",
+    "semantic_hash": "aead493361b27e7510691c5d7072dfc1"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\assets\\react.svg": {
+    "mtime": 1788535217.215549,
+    "seen": 1790668150.6068633,
+    "ast_hash": "f0402b67b6ce880f65666bb49e841696",
+    "semantic_hash": "f0402b67b6ce880f65666bb49e841696"
+  },
+  "D:\\code\\websites\\homegrown\\apps\\studio\\src\\assets\\vite.svg": {
+    "mtime": 1788535217.21655,
+    "seen": 1790668150.6068645,
+    "ast_hash": "6d5180a782d64c8cf51ba01c2a2184d8",
+    "semantic_hash": "6d5180a782d64c8cf51ba01c2a2184d8"
+  }
+}

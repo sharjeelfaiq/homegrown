@@ -34,14 +34,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP_NAME = "Homegrown"
-# The desktop build's own port, not 8000. 8000 is used by dev (`dev.sh`); this build never shares it, because a dev
+# The desktop build's own port, not 8000. 8000 is used by dev (`npm run dev`); this build never shares it, because a dev
 # uvicorn answering on the same port made the health probe below conclude
 # Homegrown was already running -- so this process opened the browser and
 # returned without ever starting backend.exe.
 #
 # MUST match PORT in services/voice-api/run.py, which is what actually binds it. The two
 # are separately frozen exes with no import path between them, so nothing but
-# `build.sh`'s pre-build check stops them drifting; if they disagree this
+# `npm run build`'s pre-build check stops them drifting; if they disagree this
 # process polls a dead port for STALL_TIMEOUT_S and then blames the backend for
 # a startup timeout it never had.
 PORT = 8731
