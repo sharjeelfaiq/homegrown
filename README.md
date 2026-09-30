@@ -80,9 +80,13 @@ background refresh keeps cached voiceovers visible without adding an inline
 warning above the list.
 
 The Studio mascot is a session-local viewport companion. On wide screens it
-rests at the Voiceovers section's lower-left corner until you drag the mascot
-artwork itself; after a completed drag, its clamped position remains for the
-open tab. The small previous/next arrows cycle the numbered mascot catalog.
+rests at the Voiceovers section's lower-left corner, and on narrow screens at
+the viewport's lower-left, until you drag the mascot artwork itself; after a
+completed drag, its clamped position remains for the open tab. Clicking the
+artwork without moving it plays the mascot's reaction instead. The small
+previous/next arrows cycle the numbered mascot catalog, and the corner grip
+resizes the mascot between 56 and 176px by drag or arrow keys. Like the
+position, that size lasts only for the open tab and is never persisted.
 Mascot 2 (the Cat sheets) is the default.
 
 To add a mascot, place a numbered pair in `apps/studio/public/mascots/`:

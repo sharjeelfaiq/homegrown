@@ -299,6 +299,40 @@
   &:disabled { opacity: 0.28; }
 }
 
+/* The resize grip borrows the cycling controls' quiet language so the character
+   stays the focus; size itself is session-local and never persisted. */
+@utility mascot-resize {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-faint);
+  opacity: 0.3;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease), opacity var(--fast) var(--ease), outline-color var(--fast) var(--ease);
+
+  @media (pointer: coarse) {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  &:hover,
+  &:focus-visible {
+    color: var(--audio);
+    opacity: 1;
+    background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--audio);
+    outline-offset: 2px;
+  }
+}
+
 /* Boneyard generates its keyframes inline, so stop their motion here rather
    than relying on the library's default animation policy. */
 @media (prefers-reduced-motion: reduce) {

@@ -308,7 +308,9 @@ function PendingRow({
   job: QueueEntry
   nameControl: NameControl
   onCancel: () => void
-  /** True while the Undo toast still allows this cancellation to be reversed. */
+  /** True while this row's cancel request is in flight. Cancellation is sent
+   * immediately on confirmation and is not reversible; there is no Undo toast
+   * for it, unlike a delete. */
   cancelPending?: boolean
   canMoveUp?: boolean
   canMoveDown?: boolean

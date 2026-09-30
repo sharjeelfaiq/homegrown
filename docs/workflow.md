@@ -87,7 +87,10 @@ The 44px Generate button remains centered below the editor even when its
 disabled reason is shown. On wide screens, that auxiliary text sits beside the
 button; on narrow screens it moves below it. The fixed mascot is dragged by
 the mascot artwork itself, while its subdued side arrows cycle the numbered
-catalog without initiating a drag. Mascot 2 (the Cat sheets) is the default.
+catalog without initiating a drag. Clicking the artwork instead plays the
+mascot's reaction. Its corner grip resizes the mascot between 56 and 176px,
+by drag or arrow keys; that size, like its dragged position, lasts only for
+the browser tab. Mascot 2 (the Cat sheets) is the default.
 To add one, commit `<id>a.webp` (directions) and `<id>b.webp` (reactions) in
 `apps/studio/public/mascots/`; normal Studio commands regenerate and validate
 `src/generated/mascotCatalog.ts`, which must be committed with the pair.

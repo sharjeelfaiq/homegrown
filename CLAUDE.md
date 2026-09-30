@@ -92,8 +92,16 @@ python -m py_compile services/voice-api/main.py
   Voiceovers lower-left corner on wide screens and the viewport lower-left on
   narrow screens; after drag it retains only a clamped in-memory position.
   The mascot artwork is the drag surface. Mark only the side navigation
-  controls with `data-mascot-navigation`, so their clicks cycle mascots without
-  beginning a drag.
+  controls with `data-mascot-navigation` and only the corner resize grip with
+  `data-mascot-resize`, so their clicks cycle or resize without beginning a
+  drag. The wrapper takes pointer capture lazily — only once movement passes
+  the drag threshold — because capturing on pointerdown retargets the pointerup
+  and the mascot's own button never receives the click that plays its reaction.
+  A finished drag swallows exactly one trailing click on the artwork, never a
+  navigation or resize click. The resize grip is keyboard-operable and bounded
+  to 56–176px, defaulting to 80px below 640px and 112px at or above it; like
+  the dragged position, the chosen size is in-memory only and is never
+  persisted.
 - `useOnboardingTour` keeps a static target sequence: header controls, voice
   controls, Script editor, Generate, Voiceovers, then search/filters. Do not
   add mascot, queue-row, error, or other conditional targets; the automatic

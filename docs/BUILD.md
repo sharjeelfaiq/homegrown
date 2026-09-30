@@ -234,7 +234,7 @@ Expect, in order:
    ```
 5. The loader redirects to the app once the model has loaded.
 6. In the Studio, verify Generate is 44px high and centered beneath the editor; check its normal, starting, and submitting labels plus
-   the adjacent blocked-state reason, and use Ctrl/Cmd+Enter when it is ready. Drag the mascot by its artwork, then use its subtle side arrows to cycle numbered mascots without moving it; Mascot 2 (the Cat sheets) should be the default. Confirm every committed mascot has a matching `<id>a.webp` directions sheet and `<id>b.webp` reactions sheet, and that `apps/studio/src/generated/mascotCatalog.ts` is current. In each theme, move the pointer over the enabled
+   the adjacent blocked-state reason, and use Ctrl/Cmd+Enter when it is ready. Drag the mascot by its artwork, then use its subtle side arrows to cycle numbered mascots without moving it; Mascot 2 (the Cat sheets) should be the default. Click the artwork without moving it and confirm the reaction sprites still play, then resize the mascot with its corner grip (drag and arrow keys) and confirm it stays inside the viewport at both bounds. Confirm every committed mascot has a matching `<id>a.webp` directions sheet and `<id>b.webp` reactions sheet, and that `apps/studio/src/generated/mascotCatalog.ts` is current. In each theme, move the pointer over the enabled
    button and confirm the specular highlight stays within the button without moving layout. It must be
    absent while disabled or when reduced motion is enabled.
 7. Verify voice and completed-voiceover deletes: a wrong admin password closes
@@ -264,7 +264,7 @@ generating audio. The shared default is `Homegrown-Admin-8731!`; override it in
 `<install>/backend/.env` before allowing other trusted-LAN users to delete.
 Trusted networks only.
 
-If the loader never appears, the launcher exe is stale — step 5 did not rebuild.
+If the loader never appears, the launcher exe is stale — step 4 did not rebuild.
 
 Stop the app before continuing.
 
@@ -295,9 +295,10 @@ ls -lh dist/Homegrown-1.0.0.exe
 sha256sum dist/Homegrown-1.0.0.exe
 ```
 
-Record that checksum. If you publish this build on the landing page, update the
-download link, the size text **and** the SHA-256 together — a stale checksum is
-worse than none.
+Record that checksum. If you publish this build on the landing page, update its
+download link and the size text beside the button together. The landing page
+deliberately publishes no checksum: a stale one is worse than none, so keep the
+SHA-256 in your release record rather than in `apps/marketing/index.html`.
 
 Final check: run the `.exe` on a machine that has never had this app, extract to
 a folder outside the repo, and run `Homegrown.exe` from there.
@@ -328,10 +329,10 @@ means deleting the folder.
 
 | Symptom | Cause |
 |---|---|
-| `apps/studio/dist is missing` during step 5 | Step 4 was skipped |
-| Loader never appears | Stale launcher exe — re-run step 5 |
+| `apps/studio/dist is missing` during step 4 | Step 3 was skipped |
+| Loader never appears | Stale launcher exe — re-run step 4 |
 | Firewall prompt on first run | Expected when `backend.exe` binds `0.0.0.0:8731`; allow it only on a trusted private network |
 | Delete password | `Homegrown-Admin-8731!` unless `ADMIN_PASSWORD` is set in `backend/.env` |
 | Long-reference warning is missing | Backend predates the `POST /api/estimate` chunking check — rebuild |
-| PyInstaller runs out of disk | `TMP`/`TEMP` not redirected in step 5 |
+| PyInstaller runs out of disk | `TMP`/`TEMP` not redirected in step 4 |
 | `No matching distribution` for torch | `--extra-index-url` header in `requirements.txt` was bypassed |

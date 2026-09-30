@@ -66,9 +66,11 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314151a'/%3E%3Cg fill='%234dd4e8'%3E%3Crect x='8' y='13' width='2.5' height='6' rx='1.25'/%3E%3Crect x='13' y='9' width='2.5' height='14' rx='1.25'/%3E%3Crect x='18' y='11' width='2.5' height='10' rx='1.25'/%3E%3Crect x='23' y='14' width='2.5' height='4' rx='1.25'/%3E%3C/g%3E%3C/svg%3E" />
 
 <!--
-  The download artifact is deliberately described without a size or checksum:
-  both go stale the moment the build changes, and a wrong number here is worse
-  than no number.
+  The download artifact carries its size beside the button, because someone
+  about to start a multi-gigabyte download needs that number before they click.
+  It carries no checksum: a stale one is worse than none, so the SHA-256 stays
+  in the release record (docs/BUILD.md step 9) instead. Re-check the size text
+  whenever the published build changes.
 -->
 
 <!--

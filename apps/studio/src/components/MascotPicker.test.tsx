@@ -5,15 +5,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRef } from 'react'
 import MascotPicker from './MascotPicker'
 
+const boop = vi.fn()
+
 vi.mock('page-mascot', () => ({
-  Mascot: ({ directions, reactions, label }: { directions: string, reactions: string, label: string }) => (
-    <div data-testid="mascot" data-directions={directions} data-reactions={reactions} aria-label={label} />
+  Mascot: ({ directions, reactions, label, size }: { directions: string, reactions: string, label: string, size?: number }) => (
+    // The real component reacts only to a click on its own button, so the mock
+    // keeps that shape: the boop spy stands in for the reaction sprites.
+    <button type="button" onClick={() => boop()} data-testid="mascot" data-directions={directions} data-reactions={reactions} data-size={size} aria-label={label} />
   ),
 }))
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 beforeEach(() => {
+  boop.mockClear()
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: vi.fn(() => ({ matches: false })) })
   HTMLElement.prototype.setPointerCapture = vi.fn()
   HTMLElement.prototype.hasPointerCapture = vi.fn(() => true)
@@ -77,6 +85,80 @@ describe('MascotPicker', () => {
     fireEvent.click(next)
     expect(screen.getByTestId('mascot').getAttribute('data-directions')).toBe('/mascots/3a.webp')
     expect(HTMLElement.prototype.setPointerCapture).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a stationary press bare so the mascot still boops, and swallows the click after a drag', () => {
+    renderPicker()
+    const picker = screen.getByTestId('mascot-picker')
+    const mascot = screen.getByTestId('mascot')
+
+    fireEvent.pointerDown(mascot, { pointerId: 2, button: 0, clientX: 40, clientY: 700 })
+    fireEvent.pointerUp(mascot, { pointerId: 2 })
+    fireEvent.click(mascot)
+    expect(HTMLElement.prototype.setPointerCapture).not.toHaveBeenCalled()
+    expect(picker).toHaveAttribute('data-dragged', 'false')
+    expect(boop).toHaveBeenCalledTimes(1)
+
+    fireEvent.pointerDown(mascot, { pointerId: 3, button: 0, clientX: 40, clientY: 700 })
+    fireEvent.pointerMove(mascot, { pointerId: 3, clientX: 160, clientY: 600 })
+    fireEvent.pointerUp(mascot, { pointerId: 3 })
+    expect(HTMLElement.prototype.setPointerCapture).toHaveBeenCalledWith(3)
+    expect(picker).toHaveAttribute('data-dragged', 'true')
+    fireEvent.click(mascot)
+    expect(boop).toHaveBeenCalledTimes(1)
+
+    // Only the drag's own trailing click is swallowed; the next one boops again.
+    fireEvent.click(mascot)
+    expect(boop).toHaveBeenCalledTimes(2)
+  })
+
+  it('resizes by pointer drag and by keyboard within its bounds, without dragging', () => {
+    renderPicker()
+    const picker = screen.getByTestId('mascot-picker')
+    const handle = screen.getByTestId('mascot-resize')
+    expect(picker).toHaveAttribute('data-size', '80')
+    expect(screen.getByTestId('mascot').getAttribute('data-size')).toBe('80')
+
+    fireEvent.pointerDown(handle, { pointerId: 9, button: 0, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(handle, { pointerId: 9, clientX: 120, clientY: 120 })
+    fireEvent.pointerUp(handle, { pointerId: 9 })
+    expect(picker).toHaveAttribute('data-size', '100')
+    expect(screen.getByTestId('mascot').getAttribute('data-size')).toBe('100')
+    expect(picker).toHaveAttribute('data-dragged', 'false')
+
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    expect(picker).toHaveAttribute('data-size', '108')
+    fireEvent.keyDown(handle, { key: 'ArrowDown' })
+    fireEvent.keyDown(handle, { key: 'ArrowDown' })
+    expect(picker).toHaveAttribute('data-size', '92')
+
+    for (let press = 0; press < 30; press += 1) fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    expect(picker).toHaveAttribute('data-size', '176')
+    expect(handle).toHaveAttribute('aria-valuenow', '176')
+
+    for (let press = 0; press < 30; press += 1) fireEvent.keyDown(handle, { key: 'ArrowDown' })
+    expect(picker).toHaveAttribute('data-size', '56')
+    expect(handle).toHaveAttribute('aria-valuenow', '56')
+
+    // A user-chosen size survives viewport changes; the responsive default no
+    // longer applies once they have resized it.
+    fireEvent.resize(window)
+    expect(picker).toHaveAttribute('data-size', '56')
+  })
+
+  it('re-clamps a dragged position after the mascot grows', () => {
+    renderPicker()
+    const picker = screen.getByTestId('mascot-picker')
+    const handle = screen.getByTestId('mascot-resize')
+    fireEvent.pointerDown(picker, { pointerId: 11, button: 0, clientX: 20, clientY: 740 })
+    fireEvent.pointerMove(picker, { pointerId: 11, clientX: 4000, clientY: 4000 })
+    fireEvent.pointerUp(picker, { pointerId: 11 })
+
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 400, height: 400, top: 0, left: 0, right: 400, bottom: 400, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+
+    expect(Number.parseFloat(picker.style.left)).toBeLessThanOrEqual(window.innerWidth - 400 - 16)
+    expect(Number.parseFloat(picker.style.top)).toBeLessThanOrEqual(window.innerHeight - 400 - 16)
   })
 
   it('clamps a dragged mascot into the viewport, including after resize', () => {
