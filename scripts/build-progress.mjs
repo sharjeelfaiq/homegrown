@@ -20,18 +20,7 @@ export function stageStatus(completed, current, total = TOTAL_STAGES) {
 }
 
 export function stageDescription(stage) {
-  return ({
-    'Cleaning Artifacts': 'Removing old build files',
-    'Checking Prerequisites': 'Checking required tools',
-    'Preparing Python': 'Finding the build environment',
-    'Preparing PyInstaller': 'Checking the app freezer',
-    'Running Validation': 'Running tests and checks',
-    'Stashing Environment': 'Saving local settings safely',
-    'Building Studio': 'Compiling the web app',
-    'Freezing Backend': 'Creating backend.exe',
-    'Building Launcher': 'Creating the desktop launcher',
-    'Packaging Release': 'Staging and packing the release',
-  }[stage] || 'Working on this step');
+  return stage || 'Working on this step';
 }
 
 export function progressPercent(completed, total = TOTAL_STAGES) {

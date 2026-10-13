@@ -26,9 +26,10 @@ const ENV_LOCAL_DEFAULT = '# Intentionally empty. Supported workflows use same-o
 const START = Date.now();
 
 export const STAGES = [
-  'Cleaning Artifacts', 'Checking Prerequisites', 'Preparing Python', 'Preparing PyInstaller',
-  'Running Validation', 'Stashing Environment', 'Building Studio', 'Freezing Backend',
-  'Building Launcher', 'Packaging Release',
+  'Removing old build files', 'Checking required tools', 'Finding the build environment',
+  'Checking the app freezer', 'Running tests and checks', 'Saving local settings safely',
+  'Compiling the web app', 'Creating backend.exe', 'Creating the desktop launcher',
+  'Staging and packing the release',
 ];
 
 class BuildError extends Error { constructor(message, details = {}) { super(message); this.details = details; } }
