@@ -19,6 +19,21 @@ export function stageStatus(completed, current, total = TOTAL_STAGES) {
   });
 }
 
+export function stageDescription(stage) {
+  return ({
+    'Cleaning Artifacts': 'Removing old build files',
+    'Checking Prerequisites': 'Checking required tools',
+    'Preparing Python': 'Finding the build environment',
+    'Preparing PyInstaller': 'Checking the app freezer',
+    'Running Validation': 'Running tests and checks',
+    'Stashing Environment': 'Saving local settings safely',
+    'Building Studio': 'Compiling the web app',
+    'Freezing Backend': 'Creating backend.exe',
+    'Building Launcher': 'Creating the desktop launcher',
+    'Packaging Release': 'Staging and packing the release',
+  }[stage] || 'Working on this step');
+}
+
 export function progressPercent(completed, total = TOTAL_STAGES) {
   return Math.round((Math.max(0, Math.min(completed, total)) / total) * 100);
 }
@@ -33,7 +48,7 @@ export function renderOverview(stages, width = 120) {
   return ['PLAN', ...labels.map((stage, index) => `  • ${String(index + 1).padStart(2, '0')}  ${stage}`)].join('\n');
 }
 
-export function renderProgress({ completed, current, currentStep, nextStep, elapsedSeconds = 0, total = TOTAL_STAGES, interactive = false, spinner = '·', width = 120 }) {
+export function renderProgress({ completed, current, currentStep, currentDescription, nextStep, elapsedSeconds = 0, total = TOTAL_STAGES, interactive = false, spinner = '·', width = 120 }) {
   const percent = progressPercent(completed, total);
   const markers = stageStatus(completed, current, total)
     .map(({ number, state }) => state === 'completed' ? '✓' : state === 'current' ? spinner : '·')
@@ -62,9 +77,10 @@ export function renderProgress({ completed, current, currentStep, nextStep, elap
     'Packaging Release': 'Packaging Release',
   }[name] || name || 'Complete');
   const activeLabel = compactName(currentStep);
+  const description = currentDescription || stageDescription(currentStep);
   const line = compact
-    ? `${formatDuration(elapsedSeconds)}  ${progressBar(completed, total, 20)} ${String(percent).padStart(3)}% ${String(current ?? total).padStart(2, '0')}/${total} ${activeLabel}`
-    : `${formatDuration(elapsedSeconds)}  │  ${markers}  ${progressBar(completed, total)}  ${String(percent).padStart(3)}%  │  ${currentStep || 'Complete'}  │  stage ${current ?? total}/${total}`;
+    ? `${formatDuration(elapsedSeconds)}  ${progressBar(completed, total, 20)} ${String(percent).padStart(3)}% ${String(current ?? total).padStart(2, '0')}/${total} ${description}`
+    : `${formatDuration(elapsedSeconds)}  │  ${markers}  ${progressBar(completed, total)}  ${String(percent).padStart(3)}%  │  ${activeLabel} — ${description}`;
   if (!interactive) return line;
   return `\x1b[2K\r${line}`;
 }

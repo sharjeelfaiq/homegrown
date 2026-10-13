@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import { RollingTail, renderOverview, renderProgress, stripAnsi, TOTAL_STAGES } from './build-progress.mjs';
+import { RollingTail, renderOverview, renderProgress, stageDescription, stripAnsi, TOTAL_STAGES } from './build-progress.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const atRoot = (...parts) => path.join(ROOT, ...parts);
@@ -49,9 +49,9 @@ class Progress {
   nextStep() { return this.current == null ? STAGES[0] : STAGES[this.current] || 'none'; }
   width() { return Math.max(60, process.stdout.columns || 80); }
   overview() { if (this.overviewShown) return; process.stdout.write(`${renderOverview(STAGES, this.width())}\n`); this.overviewShown = true; }
-  draw(spinner = '·') { this.overview(); const text = renderProgress({ completed: this.completed, current: this.current, currentStep: this.current ? STAGES[this.current - 1] : 'Complete', nextStep: this.nextStep(), elapsedSeconds: (Date.now() - this.startedAt) / 1000, interactive: this.interactive, spinner, width: this.width() }); process.stdout.write(text); if (!this.interactive) process.stdout.write('\n'); }
+  draw(spinner = '·') { this.overview(); const currentStep = this.current ? STAGES[this.current - 1] : 'Complete'; const text = renderProgress({ completed: this.completed, current: this.current, currentStep, currentDescription: stageDescription(currentStep), nextStep: this.nextStep(), elapsedSeconds: (Date.now() - this.startedAt) / 1000, interactive: this.interactive, spinner, width: this.width() }); process.stdout.write(text); if (!this.interactive) process.stdout.write('\n'); }
   begin(number) { this.current = number; this.overview(); if (this.interactive) { this.draw(); let i = 0; this.timer = setInterval(() => this.draw(['·', '⠙', '⠹', '⠸', '·'][++i % 5]), 800); } }
-  end(number) { if (this.timer) clearInterval(this.timer); this.timer = null; const duration = (Date.now() - this.startedAt) / 1000; this.ema.push(duration / Math.max(1, number)); this.completed = number; this.current = number; if (this.interactive) { this.draw('✓'); } else { process.stdout.write(`${String(number).padStart(2, '0')}/${TOTAL_STAGES}  ✓  ${STAGES[number - 1]}  (${Math.round((number / TOTAL_STAGES) * 100)}%)\n`); } if (this.interactive && number === TOTAL_STAGES) process.stdout.write('\n'); this.current = number < TOTAL_STAGES ? number + 1 : null; }
+  end(number) { if (this.timer) clearInterval(this.timer); this.timer = null; const duration = (Date.now() - this.startedAt) / 1000; this.ema.push(duration / Math.max(1, number)); this.completed = number; this.current = number; if (this.interactive) { this.draw('✓'); } else { process.stdout.write(`${String(number).padStart(2, '0')}/${TOTAL_STAGES}  ✓  ${STAGES[number - 1]} — ${stageDescription(STAGES[number - 1])}  (${Math.round((number / TOTAL_STAGES) * 100)}%)\n`); } if (this.interactive && number === TOTAL_STAGES) process.stdout.write('\n'); this.current = number < TOTAL_STAGES ? number + 1 : null; }
   fail() { if (this.timer) clearInterval(this.timer); this.timer = null; if (this.interactive) { this.draw('!'); process.stdout.write('\n'); } else if (this.current) process.stdout.write(`${String(this.current).padStart(2, '0')}/${TOTAL_STAGES}  ✗  ${STAGES[this.current - 1]}\n`); }
 }
 
