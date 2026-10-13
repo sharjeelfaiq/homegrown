@@ -16,7 +16,8 @@ test('progress bar and percentage are bounded', () => {
 test('interactive progress uses ANSI line control', () => {
   const output = renderProgress({ completed: 2, current: 3, currentStep: 'Checks', nextStep: 'Stash', elapsedSeconds: 12, etaSeconds: 24, interactive: true });
   assert.match(output, /^\x1b\[2K\r/);
-  assert.match(output, /stage 3\/10/);
+  assert.match(output, /03\/10/);
+  assert.match(output, /Checks/);
   assert.doesNotMatch(output, /ETA/);
 });
 

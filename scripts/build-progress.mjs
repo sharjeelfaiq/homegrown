@@ -37,7 +37,7 @@ export function renderOverview(stages, width = 120) {
   return ['PLAN', ...labels.map((stage, index) => `  • ${String(index + 1).padStart(2, '0')}  ${stage}`)].join('\n');
 }
 
-export function renderProgress({ completed, current, currentStep, currentDescription, nextStep, elapsedSeconds = 0, total = TOTAL_STAGES, interactive = false, spinner = '·', width = 120 }) {
+export function renderProgress({ completed, current, currentStep, currentDescription, nextStep, elapsedSeconds = 0, total = TOTAL_STAGES, interactive = false, spinner = '·', width = 120, redraw = false }) {
   const percent = progressPercent(completed, total);
   const markers = stageStatus(completed, current, total)
     .map(({ number, state }) => state === 'completed' ? '✓' : state === 'current' ? spinner : '·')
@@ -68,10 +68,12 @@ export function renderProgress({ completed, current, currentStep, currentDescrip
   const activeLabel = compactName(currentStep);
   const description = currentDescription || stageDescription(currentStep);
   const line = compact
-    ? `${formatDuration(elapsedSeconds)}  ${progressBar(completed, total, 20)} ${String(percent).padStart(3)}% ${String(current ?? total).padStart(2, '0')}/${total} ${description}`
+    ? `${formatDuration(elapsedSeconds)}  ${progressBar(completed, total, 20)} ${String(percent).padStart(3)}% ${String(current ?? total).padStart(2, '0')}/${total}`
     : `${formatDuration(elapsedSeconds)}  │  ${markers}  ${progressBar(completed, total)}  ${String(percent).padStart(3)}%  │  ${activeLabel} — ${description}`;
   if (!interactive) return line;
-  return `\x1b[2K\r${line}`;
+  if (!compact) return `\x1b[2K\r${line}`;
+  const prefix = redraw ? '\x1b[1A' : '';
+  return `${prefix}\x1b[2K\r${line}\n\x1b[2K\r  ${description}`;
 }
 
 export class RollingTail {
