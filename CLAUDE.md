@@ -20,6 +20,15 @@ cd apps/studio && npm run bones:build
 python -m py_compile services/voice-api/main.py
 ```
 
+`npm run build` is a ten-stage packaging pipeline with a numbered steps
+overview and structured progress dashboard. Interactive terminals get a live
+ANSI progress bar; CI and redirected output get line-oriented progress
+without escape sequences. Detailed child output is written to
+`.tmp/build-logs/build-<timestamp>.log`, while failures show only the failed
+stage and a bounded tail. The build still restores `apps/studio/.env.local`
+on success, failure, or interruption and produces the same self-extracting
+`dist/Homegrown-<version>.exe` artifact.
+
 `npm run dev` starts FastAPI on `127.0.0.1:8000` and Vite on `:5173`, via
 `concurrently` from the root `package.json`. Vite proxies `/api`, `/audio`, and
 `/refs`. The finished-product path is `npm run build` followed by the generated
@@ -82,6 +91,11 @@ python -m py_compile services/voice-api/main.py
   failure mark is intentionally retained for two seconds before restoring the
   Upload icon. Keep the status attributes (`data-status`) and that timing in
   sync with `ScriptBlock.test.tsx`.
+- `VoicePicker.tsx` renders a local, case-insensitive cloned-voice name search
+  input at the top of its open listbox. The query is cleared by `close()`;
+  filtered rows retain the existing selection, rename, preview, download, and
+  delete behavior. Keep Escape available to the document-level menu close
+  handler and keep typing/arrow keys in the search field from selecting rows.
 - Backend startup failures are reported through a fixed, pulsing warning button
   at the lower-left of Studio; its modal shows the relevant message and Retry
   action when available. Do not put a failure banner above the Script editor.

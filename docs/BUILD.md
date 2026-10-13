@@ -10,6 +10,24 @@ that concatenation with a Node stream instead, so it is shell-agnostic.
 
 **Budget:** ~45 minutes and ~10 GB free on the repo's drive.
 
+## Build progress and diagnostics
+
+The scripted build begins with a numbered overview of its ten top-level stages:
+clean outputs, prerequisites,
+Python, PyInstaller, validation, environment stashing, Studio, backend freeze,
+launcher freeze, and staging/packaging/reporting. Interactive terminals show a
+live 40-character progress bar, stage markers, elapsed time, and current stage.
+CI, pipes, and redirected output receive readable line-oriented updates
+without ANSI control sequences. Long-running commands emit no full child log
+to the console; their stdout and stderr are captured in
+`.tmp/build-logs/build-<timestamp>.log`.
+
+On failure, the console reports the failed stage, command, exit code or signal,
+diagnostic log path, and a bounded trailing output tail. The log is useful but
+not required for a successful build. The packaging order and output layout are
+unchanged, and the process-exit restoration of `apps/studio/.env.local` still
+runs after success, failure, Ctrl-C, or SIGTERM.
+
 ---
 
 ## The one command
@@ -237,6 +255,13 @@ Expect, in order:
    the adjacent blocked-state reason, and use Ctrl/Cmd+Enter when it is ready. Drag the mascot by its artwork, then use its subtle side arrows to cycle numbered mascots without moving it; Mascot 2 (the Cat sheets) should be the default. Click the artwork without moving it and confirm the reaction sprites still play, then resize the mascot with its corner grip (drag and arrow keys) and confirm it stays inside the viewport at both bounds. Confirm every committed mascot has a matching `<id>a.webp` directions sheet and `<id>b.webp` reactions sheet, and that `apps/studio/src/generated/mascotCatalog.ts` is current. In each theme, move the pointer over the enabled
    button and confirm the specular highlight stays within the button without moving layout. It must be
    absent while disabled or when reduced motion is enabled.
+   Open the cloned-voice picker and verify the compact **Search voices** field
+   appears at the top. Type a mixed-case substring and confirm only matching
+   voice rows remain; select a result and confirm the trigger updates. Clear the
+   query, close and reopen the picker, and confirm all voices are shown again.
+   Enter a query with no matches and confirm **No matching voices.** appears
+   without changing the selected voice. Press Escape from the search field and
+   confirm the picker closes.
 7. Verify voice and completed-voiceover deletes: a wrong admin password closes
    the modal without deleting; the default password opens a seven-second Undo
    toast; selecting Undo preserves the item, while allowing the timer to expire

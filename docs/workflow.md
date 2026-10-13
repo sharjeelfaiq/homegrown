@@ -69,6 +69,12 @@ preset and its reference audio. An invalid password closes the modal and does
 not schedule a deletion. Preset deletion can make queued jobs using that voice
 fail.
 
+When the picker is open, use the compact **Search voices** field at the top of
+the dropdown to filter cloned voices by name. Filtering is local and
+case-insensitive; click or keyboard-select a matching row as usual. The search
+query is cleared when the picker closes, and an unmatched query shows
+**No matching voices.** without changing the stored voice selection.
+
 During an upload, the control replaces its icon with an animated lifecycle
 mark. It is amber while uploading, green after a successful upload, and red
 after a failed one. The green or red result stays visible for two seconds, then

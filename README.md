@@ -99,6 +99,11 @@ The **Generate** button is centered below the editor and is 44px high. Its
 disabled reason and keyboard-shortcut reminder are auxiliary text, so they do
 not shift the action off the editor's centerline.
 
+The cloned-voice picker includes a compact search field at the top of its
+dropdown. Search filters the available voice names locally, case-insensitively;
+selecting a filtered result uses the same voice selection and preview actions as
+the unfiltered list. The query is cleared when the dropdown closes.
+
 On the first model-ready launch, Studio offers a short, read-only tour of the
 theme/help controls, reusable voice creation, the Script editor, Generate, and
 the Voiceovers search/filter workflow. Press Escape or close it to dismiss it;
@@ -118,6 +123,15 @@ LAN use; deletion uses the default admin password unless `ADMIN_PASSWORD` is
 overridden in the extracted `backend/.env`. Other API actions are not
 authenticated, so never expose it to an untrusted network. The detailed,
 recoverable build procedure is in [docs/BUILD.md](docs/BUILD.md).
+
+The build prints a numbered ten-step overview followed by a compact progress
+dashboard. In an interactive terminal it updates a live progress bar with
+elapsed time and current stage; CI and redirected
+output use ordinary one-line updates with no ANSI escape sequences. Child command output is retained in the timestamped
+`.tmp/build-logs/build-<timestamp>.log` file. Successful output remains
+concise; a failure reports its stage, command, exit status, log path, and a
+bounded trailing diagnostic. The packaging order, artifacts, `.env.local`
+restoration, and final executable path are unchanged.
 
 ## Marketing page
 

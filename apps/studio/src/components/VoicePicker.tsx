@@ -46,6 +46,7 @@ export default function VoicePicker({
   onDelete,
 }: Props) {
   const [open, setOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -73,6 +74,7 @@ export default function VoicePicker({
 
   const close = useCallback(() => {
     setOpen(false)
+    setSearchQuery('')
     // A preview belongs to the open menu. Leaving it playing under a closed
     // popover gives audio with no visible source and no way to stop it.
     stopPreview()
@@ -124,6 +126,11 @@ export default function VoicePicker({
     close()
     triggerRef.current?.focus()
   }
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase()
+  const filteredPresets = normalizedSearchQuery
+    ? presets.filter((preset) => preset.name.toLowerCase().includes(normalizedSearchQuery))
+    : presets
 
   // Arrow keys walk the selectable rows. Inline names and action controls keep
   // their usual Tab behavior and stop their clicks from selecting a row.
@@ -208,7 +215,27 @@ export default function VoicePicker({
             role="listbox"
             onKeyDown={onMenuKeyDown}
           >
-            {presets.map((p) => (
+            <li className="list-none border-b border-hairline px-1.5 pb-1" role="presentation">
+              <input
+                type="search"
+                value={searchQuery}
+                aria-label="Search cloned voices"
+                placeholder="Search voices…"
+                className="h-8 w-full rounded-sm border border-control bg-control-fill px-2 text-[12px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  // Let the document-level Escape handler close the menu, but
+                  // keep typing and arrow keys out of row navigation.
+                  if (event.key !== 'Escape') event.stopPropagation()
+                }}
+                onClick={(event) => event.stopPropagation()}
+              />
+            </li>
+            {filteredPresets.length === 0 ? (
+              <li className="list-none px-2 py-3 text-[12px] text-faint" role="presentation">
+                No matching voices.
+              </li>
+            ) : filteredPresets.map((p) => (
               <li
                 key={p.id}
                 className={`voice-menu-pick flex min-h-9 cursor-pointer items-center gap-1 rounded-sm border-b border-hairline px-1.5 last:border-b-0 hover:bg-surface-hover focus:bg-surface-hover focus:outline-none ${p.id === selectedPresetId ? 'voice-menu-pick-selected' : ''}`}
