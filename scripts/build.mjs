@@ -32,7 +32,6 @@ export const STAGES = [
   'Compiling the web app', 'Creating backend.exe', 'Creating the desktop launcher',
   'Staging and packing the release',
 ];
-export const STAGE_ESTIMATES = [5, 15, 5, 30, 180, 5, 60, 300, 300, 120];
 
 class BuildError extends Error { constructor(message, details = {}) { super(message); this.details = details; } }
 const die = (message, details) => { throw new BuildError(message, details); };
@@ -53,13 +52,13 @@ class Progress {
   // Keep one stable compact layout for the entire run. Re-reading terminal
   // width during a resize would change line lengths and disturb the dashboard.
   width() { return 80; }
-  overview(active = this.current) { if (this.overviewShown) return; const highlighted = this.interactive ? active : null; process.stdout.write(`${renderOverview(STAGES, this.width(), highlighted, STAGE_ESTIMATES)}\n\n`); this.overviewShown = true; }
+  overview(active = this.current) { if (this.overviewShown) return; const highlighted = this.interactive ? active : null; process.stdout.write(`${renderOverview(STAGES, this.width(), highlighted)}\n\n`); this.overviewShown = true; }
   draw(spinner = '·') {
     const currentStep = this.current ? STAGES[this.current - 1] : 'Complete';
     const text = renderProgress({ completed: this.completed, current: this.current, currentStep, currentDescription: stageDescription(currentStep), nextStep: this.nextStep(), elapsedSeconds: (performance.now() - this.startedAt) / 1000, interactive: this.interactive, spinner, width: this.width(), redraw: false });
     if (!this.interactive) { this.overview(); process.stdout.write(`${text}\n`); return; }
     const prefix = this.dashboardShown ? '\x1b[13A\x1b[0J' : '';
-    process.stdout.write(`${prefix}${renderOverview(STAGES, this.width(), this.current, STAGE_ESTIMATES)}\n\n${text}`);
+    process.stdout.write(`${prefix}${renderOverview(STAGES, this.width(), this.current)}\n\n${text}`);
     this.dashboardShown = true;
   }
   begin(number) { this.current = number; if (!this.interactive) this.overview(); if (this.interactive) { this.draw(); let i = 0; this.timer = setInterval(() => this.draw(['·', '⠙', '⠹', '⠸', '·'][++i % 5]), 800); } }

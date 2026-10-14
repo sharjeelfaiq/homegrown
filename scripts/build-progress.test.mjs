@@ -31,12 +31,6 @@ test('overview highlights the active stage in green', () => {
   assert.match(overview, /\x1b\[32m  02\.  Check\x1b\[0m/);
 });
 
-test('overview places estimates before each stage name', () => {
-  const overview = renderOverview(['Clean', 'Check'], 120, null, [5, 120]);
-  assert.match(overview, /01\.  ~5s  Clean/);
-  assert.match(overview, /02\.  ~2m  Check/);
-});
-
 test('interactive progress row is green', () => {
   const output = renderProgress({ completed: 2, current: 3, currentStep: 'Checks', nextStep: 'Stash', interactive: true });
   assert.match(output, /\x1b\[32m.*Checks.*\x1b\[0m/);

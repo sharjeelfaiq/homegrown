@@ -35,17 +35,10 @@ export function progressBar(completed, total = TOTAL_STAGES, width = 40) {
 const ANSI_GREEN = '\x1b[32m';
 const ANSI_RESET = '\x1b[0m';
 
-function formatEstimate(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return '';
-  if (seconds < 60) return `~${seconds}s`;
-  return `~${Math.round(seconds / 60)}m`;
-}
-
-export function renderOverview(stages, width = 120, active = null, estimates = []) {
+export function renderOverview(stages, width = 120, active = null) {
   const labels = stages;
   return ['PLAN', ...labels.map((stage, index) => {
-    const estimate = formatEstimate(estimates[index]);
-    const line = `  ${String(index + 1).padStart(2, '0')}.  ${estimate ? `${estimate}  ` : ''}${stage}`;
+    const line = `  ${String(index + 1).padStart(2, '0')}.  ${stage}`;
     return index + 1 === active ? `${ANSI_GREEN}${line}${ANSI_RESET}` : line;
   })].join('\n');
 }
