@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { RollingTail, renderOverview, renderProgress, stageDescription, stripAnsi, TOTAL_STAGES } from './build-progress.mjs';
@@ -31,13 +32,14 @@ export const STAGES = [
   'Compiling the web app', 'Creating backend.exe', 'Creating the desktop launcher',
   'Staging and packing the release',
 ];
+export const STAGE_ESTIMATES = [5, 15, 5, 30, 180, 5, 60, 300, 300, 120];
 
 class BuildError extends Error { constructor(message, details = {}) { super(message); this.details = details; } }
 const die = (message, details) => { throw new BuildError(message, details); };
 const isFile = (p) => fs.statSync(p, { throwIfNoEntry: false })?.isFile() ?? false;
 const elapsedSeconds = () => (Date.now() - START) / 1000;
 const elapsed = () => { const s = Math.floor(elapsedSeconds()); return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`; };
-const interactive = () => Boolean(process.stdout.isTTY && process.stderr.isTTY && !process.env.CI && !process.env.BUILD_NONINTERACTIVE);
+const interactive = () => Boolean(process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY && !process.env.CI && !process.env.BUILD_NONINTERACTIVE);
 
 class BuildLogger {
   constructor() { fs.mkdirSync(LOG_DIR, { recursive: true }); const stamp = new Date().toISOString().replace(/[.:]/g, '-'); this.path = path.join(LOG_DIR, `build-${stamp}.log`); fs.writeFileSync(this.path, `HOMEGROWN BUILD DIAGNOSTIC LOG\nstarted: ${new Date().toISOString()}\nstages: ${TOTAL_STAGES}\n`); }
@@ -46,15 +48,22 @@ class BuildLogger {
 }
 
 class Progress {
-  constructor() { this.interactive = interactive(); this.completed = 0; this.current = null; this.ema = []; this.startedAt = Date.now(); this.timer = null; this.overviewShown = false; this.dashboardShown = false; }
+  constructor() { this.interactive = interactive(); this.completed = 0; this.current = null; this.ema = []; this.startedAt = performance.now(); this.timer = null; this.overviewShown = false; this.dashboardShown = false; }
   nextStep() { return this.current == null ? STAGES[0] : STAGES[this.current] || 'none'; }
   // Keep one stable compact layout for the entire run. Re-reading terminal
   // width during a resize would change line lengths and disturb the dashboard.
   width() { return 80; }
-  overview() { if (this.overviewShown) return; process.stdout.write(`${renderOverview(STAGES, this.width())}\n\n`); this.overviewShown = true; }
-  draw(spinner = '·') { this.overview(); const currentStep = this.current ? STAGES[this.current - 1] : 'Complete'; const text = renderProgress({ completed: this.completed, current: this.current, currentStep, currentDescription: stageDescription(currentStep), nextStep: this.nextStep(), elapsedSeconds: (Date.now() - this.startedAt) / 1000, interactive: this.interactive, spinner, width: this.width(), redraw: this.dashboardShown }); process.stdout.write(text); this.dashboardShown = this.interactive || this.dashboardShown; if (!this.interactive) process.stdout.write('\n'); }
-  begin(number) { this.current = number; this.overview(); if (this.interactive) { this.draw(); let i = 0; this.timer = setInterval(() => this.draw(['·', '⠙', '⠹', '⠸', '·'][++i % 5]), 800); } }
-  end(number) { if (this.timer) clearInterval(this.timer); this.timer = null; const duration = (Date.now() - this.startedAt) / 1000; this.ema.push(duration / Math.max(1, number)); this.completed = number; this.current = number; if (this.interactive) { this.draw('✓'); } else { process.stdout.write(`${String(number).padStart(2, '0')}/${TOTAL_STAGES}  ✓  ${STAGES[number - 1]} — ${stageDescription(STAGES[number - 1])}  (${Math.round((number / TOTAL_STAGES) * 100)}%)\n`); } if (this.interactive && number === TOTAL_STAGES) process.stdout.write('\n'); this.current = number < TOTAL_STAGES ? number + 1 : null; }
+  overview(active = this.current) { if (this.overviewShown) return; const highlighted = this.interactive ? active : null; process.stdout.write(`${renderOverview(STAGES, this.width(), highlighted, STAGE_ESTIMATES)}\n\n`); this.overviewShown = true; }
+  draw(spinner = '·') {
+    const currentStep = this.current ? STAGES[this.current - 1] : 'Complete';
+    const text = renderProgress({ completed: this.completed, current: this.current, currentStep, currentDescription: stageDescription(currentStep), nextStep: this.nextStep(), elapsedSeconds: (performance.now() - this.startedAt) / 1000, interactive: this.interactive, spinner, width: this.width(), redraw: false });
+    if (!this.interactive) { this.overview(); process.stdout.write(`${text}\n`); return; }
+    const prefix = this.dashboardShown ? '\x1b[13A\x1b[0J' : '';
+    process.stdout.write(`${prefix}${renderOverview(STAGES, this.width(), this.current, STAGE_ESTIMATES)}\n\n${text}`);
+    this.dashboardShown = true;
+  }
+  begin(number) { this.current = number; if (!this.interactive) this.overview(); if (this.interactive) { this.draw(); let i = 0; this.timer = setInterval(() => this.draw(['·', '⠙', '⠹', '⠸', '·'][++i % 5]), 800); } }
+  end(number) { if (this.timer) clearInterval(this.timer); this.timer = null; const duration = (performance.now() - this.startedAt) / 1000; this.ema.push(duration / Math.max(1, number)); this.completed = number; this.current = number; if (this.interactive) { this.draw('✓'); } else { process.stdout.write(`${String(number).padStart(2, '0')}/${TOTAL_STAGES}  ✓  ${STAGES[number - 1]} — ${stageDescription(STAGES[number - 1])}  (${Math.round((number / TOTAL_STAGES) * 100)}%)\n`); } if (this.interactive && number === TOTAL_STAGES) process.stdout.write('\n'); this.current = number < TOTAL_STAGES ? number + 1 : null; }
   fail() { if (this.timer) clearInterval(this.timer); this.timer = null; if (this.interactive) { this.draw('!'); process.stdout.write('\n'); } else if (this.current) process.stdout.write(`${String(this.current).padStart(2, '0')}/${TOTAL_STAGES}  ✗  ${STAGES[this.current - 1]}\n`); }
 }
 

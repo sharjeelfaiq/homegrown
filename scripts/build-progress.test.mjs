@@ -23,7 +23,23 @@ test('interactive progress uses ANSI line control', () => {
 
 test('overview lists every stage in order', () => {
   const overview = renderOverview(['Clean', 'Check', 'Package']);
-  assert.equal(overview, 'PLAN\n  • 01  Clean\n  • 02  Check\n  • 03  Package');
+  assert.equal(overview, 'PLAN\n  01.  Clean\n  02.  Check\n  03.  Package');
+});
+
+test('overview highlights the active stage in green', () => {
+  const overview = renderOverview(['Clean', 'Check', 'Package'], 120, 2);
+  assert.match(overview, /\x1b\[32m  02\.  Check\x1b\[0m/);
+});
+
+test('overview places estimates before each stage name', () => {
+  const overview = renderOverview(['Clean', 'Check'], 120, null, [5, 120]);
+  assert.match(overview, /01\.  ~5s  Clean/);
+  assert.match(overview, /02\.  ~2m  Check/);
+});
+
+test('interactive progress row is green', () => {
+  const output = renderProgress({ completed: 2, current: 3, currentStep: 'Checks', nextStep: 'Stash', interactive: true });
+  assert.match(output, /\x1b\[32m.*Checks.*\x1b\[0m/);
 });
 
 test('non-interactive progress is readable and has no ANSI', () => {

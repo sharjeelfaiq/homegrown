@@ -32,9 +32,22 @@ export function progressBar(completed, total = TOTAL_STAGES, width = 40) {
   return `[${'#'.repeat(filled)}${'-'.repeat(Math.max(0, width - filled))}]`;
 }
 
-export function renderOverview(stages, width = 120) {
+const ANSI_GREEN = '\x1b[32m';
+const ANSI_RESET = '\x1b[0m';
+
+function formatEstimate(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 60) return `~${seconds}s`;
+  return `~${Math.round(seconds / 60)}m`;
+}
+
+export function renderOverview(stages, width = 120, active = null, estimates = []) {
   const labels = stages;
-  return ['PLAN', ...labels.map((stage, index) => `  • ${String(index + 1).padStart(2, '0')}  ${stage}`)].join('\n');
+  return ['PLAN', ...labels.map((stage, index) => {
+    const estimate = formatEstimate(estimates[index]);
+    const line = `  ${String(index + 1).padStart(2, '0')}.  ${estimate ? `${estimate}  ` : ''}${stage}`;
+    return index + 1 === active ? `${ANSI_GREEN}${line}${ANSI_RESET}` : line;
+  })].join('\n');
 }
 
 export function renderProgress({ completed, current, currentStep, currentDescription, nextStep, elapsedSeconds = 0, total = TOTAL_STAGES, interactive = false, spinner = '·', width = 120, redraw = false }) {
@@ -69,11 +82,12 @@ export function renderProgress({ completed, current, currentStep, currentDescrip
   const description = currentDescription || stageDescription(currentStep);
   const line = compact
     ? `${formatDuration(elapsedSeconds)}  ${progressBar(completed, total, 20)} ${String(percent).padStart(3)}% ${String(current ?? total).padStart(2, '0')}/${total}`
-    : `${formatDuration(elapsedSeconds)}  │  ${markers}  ${progressBar(completed, total)}  ${String(percent).padStart(3)}%  │  ${activeLabel} — ${description}`;
+    : `${formatDuration(elapsedSeconds)}  │  ${markers}  ${progressBar(completed, total)}  ${String(percent).padStart(3)}%  │  ${String(current ?? total).padStart(2, '0')}/${total}  ${activeLabel} — ${description}`;
   if (!interactive) return line;
-  if (!compact) return `\x1b[2K\r${line}`;
+  const greenLine = `${ANSI_GREEN}${line}${ANSI_RESET}`;
+  if (!compact) return `\x1b[2K\r${greenLine}`;
   const prefix = redraw ? '\x1b[1A' : '';
-  return `${prefix}\x1b[2K\r${line}\n\x1b[2K\r  ${description}`;
+  return `${prefix}\x1b[2K\r${greenLine}\n\x1b[2K\r  ${description}`;
 }
 
 export class RollingTail {
