@@ -124,11 +124,15 @@ overridden in the extracted `backend/.env`. Other API actions are not
 authenticated, so never expose it to an untrusted network. The detailed,
 recoverable build procedure is in [docs/BUILD.md](docs/BUILD.md).
 
-The build prints a numbered ten-step overview followed by a compact progress
-dashboard. In an interactive terminal it updates a live progress bar with
-elapsed time and current stage; CI and redirected
-output use ordinary one-line updates with no ANSI escape sequences. Child command output is retained in the timestamped
-`.tmp/build-logs/build-<timestamp>.log` file. Successful output remains
+The build prints a numbered ten-stage overview without a separate `PLAN`
+heading. Each row begins with its stage-specific timing, such as
+`(00:00s) 01. Removing old build files` using the measured baseline, then the
+current-run duration replaces it after completion. If no baseline is available,
+the row shows `(measuring)`. In an interactive
+terminal it updates a live progress bar with elapsed time and current stage; CI
+and redirected output use ordinary one-line updates with no ANSI escape
+sequences. Child command output and machine-readable stage timing records are
+retained in the timestamped `.tmp/build-logs/build-<timestamp>.log` file. Successful output remains
 concise; a failure reports its stage, command, exit status, log path, and a
 bounded trailing diagnostic. The packaging order, artifacts, `.env.local`
 restoration, and final executable path are unchanged.

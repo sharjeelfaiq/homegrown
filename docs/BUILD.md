@@ -12,15 +12,23 @@ that concatenation with a Node stream instead, so it is shell-agnostic.
 
 ## Build progress and diagnostics
 
-The scripted build begins with a numbered overview of its ten top-level stages:
+The scripted build begins with a numbered overview of its ten top-level stages
+and no separate `PLAN` heading:
 clean outputs, prerequisites,
 Python, PyInstaller, validation, environment stashing, Studio, backend freeze,
 launcher freeze, and staging/packaging/reporting. Interactive terminals show a
 live 40-character progress bar, stage markers, elapsed time, and current stage.
+Each overview row starts with a stage-specific ETA from the latest measured
+baseline (for example `(17:42m)` for backend freezing and `(31:42m)` for
+packaging). The current run replaces that baseline with its actual duration
+after the stage completes. A stage shows `(measuring)` only when no baseline is
+available.
 CI, pipes, and redirected output receive readable line-oriented updates
 without ANSI control sequences. Long-running commands emit no full child log
 to the console; their stdout and stderr are captured in
-`.tmp/build-logs/build-<timestamp>.log`.
+`.tmp/build-logs/build-<timestamp>.log`, which also records stage starts,
+pre-stage timing markers, completion durations, cumulative elapsed times, and a
+final machine-readable timing summary.
 
 On failure, the console reports the failed stage, command, exit code or signal,
 diagnostic log path, and a bounded trailing output tail. The log is useful but

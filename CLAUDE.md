@@ -20,12 +20,16 @@ cd apps/studio && npm run bones:build
 python -m py_compile services/voice-api/main.py
 ```
 
-`npm run build` is a ten-stage packaging pipeline with a numbered steps
-overview and structured progress dashboard. Interactive terminals get a live
+`npm run build` is a ten-stage packaging pipeline with a numbered overview
+(without a `PLAN` heading); each row shows a measured baseline ETA (for example
+`(17:42m)` for backend freezing) until the current run replaces it with its
+actual duration. A stage shows `(measuring)` only when no baseline exists.
+Interactive terminals get a live
 ANSI progress bar; CI and redirected output get line-oriented progress
 without escape sequences. Detailed child output is written to
-`.tmp/build-logs/build-<timestamp>.log`, while failures show only the failed
-stage and a bounded tail. The build still restores `apps/studio/.env.local`
+`.tmp/build-logs/build-<timestamp>.log`, including stage start/completion,
+cumulative elapsed times, and a final machine-readable timing summary. Failures
+show only the failed stage and a bounded tail. The build still restores `apps/studio/.env.local`
 on success, failure, or interruption and produces the same self-extracting
 `dist/Homegrown-<version>.exe` artifact.
 

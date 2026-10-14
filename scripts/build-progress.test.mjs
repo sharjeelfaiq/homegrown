@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RollingTail, progressBar, progressPercent, renderOverview, renderProgress, stageStatus } from './build-progress.mjs';
+import { DEFAULT_STAGE_ETAS, RollingTail, formatDuration, progressBar, progressPercent, renderOverview, renderProgress, stageStatus } from './build-progress.mjs';
 
 test('stage numbering and remaining steps', () => {
   assert.deepEqual(stageStatus(2, 3, 10).slice(0, 4).map((stage) => stage.state), ['completed', 'completed', 'current', 'pending']);
@@ -23,12 +23,35 @@ test('interactive progress uses ANSI line control', () => {
 
 test('overview lists every stage in order', () => {
   const overview = renderOverview(['Clean', 'Check', 'Package']);
-  assert.equal(overview, 'PLAN\n  01.  Clean\n  02.  Check\n  03.  Package');
+  assert.equal(overview, '  (measuring) 01. Clean\n  (measuring) 02. Check\n  (measuring) 03. Package');
 });
 
 test('overview highlights the active stage in green', () => {
   const overview = renderOverview(['Clean', 'Check', 'Package'], 120, 2);
-  assert.match(overview, /\x1b\[32m  02\.  Check\x1b\[0m/);
+  assert.match(overview, /\x1b\[32m  \(measuring\) 02\. Check\x1b\[0m/);
+});
+
+test('overview places measured duration before each stage name', () => {
+  const overview = renderOverview(['Clean', 'Check', 'Package'], 120, null, [
+    { durationSeconds: 1.4 },
+    { durationSeconds: 61 },
+    null,
+  ]);
+  assert.match(overview, /\(00:01s\) 01\. Clean/);
+  assert.match(overview, /\(01:01m\) 02\. Check/);
+  assert.match(overview, /\(measuring\) 03\. Package/);
+  assert.equal(formatDuration(1.4), '00:01s');
+});
+
+test('overview supports baseline stage-specific ETAs before first-run measurements', () => {
+  const overview = renderOverview(['Validate', 'Backend', 'Package'], 120, null, [
+    { etaSeconds: DEFAULT_STAGE_ETAS[4] },
+    { etaSeconds: DEFAULT_STAGE_ETAS[7] },
+    { etaSeconds: DEFAULT_STAGE_ETAS[9] },
+  ]);
+  assert.match(overview, /\(00:07s\) 01\. Validate/);
+  assert.match(overview, /\(17:42m\) 02\. Backend/);
+  assert.match(overview, /\(31:42m\) 03\. Package/);
 });
 
 test('interactive progress row is green', () => {

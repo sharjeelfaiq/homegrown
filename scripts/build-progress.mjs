@@ -2,6 +2,14 @@ const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 
 export const TOTAL_STAGES = 10;
 
+// Baseline measured by the successful third build on 2026-10-14. These are
+// used only before the current run has measured a stage; current-run timings
+// always take precedence in the overview and summary.
+export const DEFAULT_STAGE_ETAS = [
+  0.0176597, 0.2952146, 0.0003896, 0.2049711, 6.5972247,
+  0.0003075, 14.0956665, 1062.2195449, 31.3754633, 1902.2743388,
+];
+
 export function formatDuration(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return 'calculating...';
   const whole = Math.round(seconds);
@@ -35,12 +43,19 @@ export function progressBar(completed, total = TOTAL_STAGES, width = 40) {
 const ANSI_GREEN = '\x1b[32m';
 const ANSI_RESET = '\x1b[0m';
 
-export function renderOverview(stages, width = 120, active = null) {
-  const labels = stages;
-  return ['PLAN', ...labels.map((stage, index) => {
-    const line = `  ${String(index + 1).padStart(2, '0')}.  ${stage}`;
-    return index + 1 === active ? `${ANSI_GREEN}${line}${ANSI_RESET}` : line;
-  })].join('\n');
+export function renderOverview(stages, width = 120, active = null, timings = []) {
+  const labels = stages.map((stage) => typeof stage === 'string' ? stage : stage?.name || 'Working on this step');
+  return labels.map((stage, index) => renderOverviewLine(stage, index, width, active, timings[index])).join('\n');
+}
+
+export function renderOverviewLine(stage, index, width = 120, active = null, timing = undefined) {
+  const duration = typeof timing === 'number' ? timing : timing?.durationSeconds ?? timing?.etaSeconds ?? timing?.duration;
+  const eta = Number.isFinite(duration) ? formatDuration(duration) : 'measuring';
+  const prefix = `  (${eta}) ${String(index + 1).padStart(2, '0')}. `;
+  const available = Math.max(1, width - prefix.length);
+  const label = stage.length > available ? `${stage.slice(0, Math.max(1, available - 1))}…` : stage;
+  const line = `${prefix}${label}`;
+  return index + 1 === active ? `${ANSI_GREEN}${line}${ANSI_RESET}` : line;
 }
 
 export function renderProgress({ completed, current, currentStep, currentDescription, nextStep, elapsedSeconds = 0, total = TOTAL_STAGES, interactive = false, spinner = '·', width = 120, redraw = false }) {

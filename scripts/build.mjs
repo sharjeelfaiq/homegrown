@@ -8,7 +8,7 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import { RollingTail, renderOverview, renderProgress, stageDescription, stripAnsi, TOTAL_STAGES } from './build-progress.mjs';
+import { DEFAULT_STAGE_ETAS, RollingTail, formatDuration, renderOverview, renderOverviewLine, renderProgress, stageDescription, stripAnsi, TOTAL_STAGES } from './build-progress.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const atRoot = (...parts) => path.join(ROOT, ...parts);
@@ -24,7 +24,7 @@ const SEVENZIP = 'C:\\Program Files\\7-Zip\\7z.exe';
 const SFX = 'C:\\Program Files\\7-Zip\\7z.sfx';
 const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const ENV_LOCAL_DEFAULT = '# Intentionally empty. Supported workflows use same-origin API paths.';
-const START = Date.now();
+const START = performance.now();
 
 export const STAGES = [
   'Removing old build files', 'Checking required tools', 'Finding the build environment',
@@ -36,7 +36,7 @@ export const STAGES = [
 class BuildError extends Error { constructor(message, details = {}) { super(message); this.details = details; } }
 const die = (message, details) => { throw new BuildError(message, details); };
 const isFile = (p) => fs.statSync(p, { throwIfNoEntry: false })?.isFile() ?? false;
-const elapsedSeconds = () => (Date.now() - START) / 1000;
+const elapsedSeconds = () => (performance.now() - START) / 1000;
 const elapsed = () => { const s = Math.floor(elapsedSeconds()); return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`; };
 const interactive = () => Boolean(process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY && !process.env.CI && !process.env.BUILD_NONINTERACTIVE);
 
@@ -47,23 +47,93 @@ class BuildLogger {
 }
 
 class Progress {
-  constructor() { this.interactive = interactive(); this.completed = 0; this.current = null; this.ema = []; this.startedAt = performance.now(); this.timer = null; this.overviewShown = false; this.dashboardShown = false; }
+  constructor(buildLogger) {
+    this.logger = buildLogger;
+    this.interactive = interactive();
+    this.completed = 0;
+    this.current = null;
+    this.startedAt = performance.now();
+    this.timer = null;
+    this.overviewShown = false;
+    this.dashboardShown = false;
+    this.activeStageRendered = null;
+    this.nonInteractiveProgressWidth = 0;
+    this.timings = Array.from({ length: TOTAL_STAGES }, (_, index) => ({ durationSeconds: null, etaSeconds: DEFAULT_STAGE_ETAS[index] }));
+  }
   nextStep() { return this.current == null ? STAGES[0] : STAGES[this.current] || 'none'; }
-  // Keep one stable compact layout for the entire run. Re-reading terminal
-  // width during a resize would change line lengths and disturb the dashboard.
-  width() { return 80; }
-  overview(active = this.current) { if (this.overviewShown) return; const highlighted = this.interactive ? active : null; process.stdout.write(`${renderOverview(STAGES, this.width(), highlighted)}\n\n`); this.overviewShown = true; }
+  width() { return Math.max(40, Math.min(120, process.stdout.columns || 80)); }
+  overview(active = this.current) { if (this.overviewShown) return; const highlighted = this.interactive ? active : null; process.stdout.write(`${renderOverview(STAGES, this.width(), highlighted, this.timings)}\n\n`); this.overviewShown = true; }
+  refreshActiveStage() {
+    if (!this.interactive || !this.dashboardShown || this.activeStageRendered === this.current) return;
+    const width = this.width();
+    const progressRows = width < 105 ? 2 : 1;
+    const bottomToStage = (stage) => TOTAL_STAGES + 1 + progressRows - 1 - (stage - 1);
+    const update = (stage, active) => `\x1b[s\x1b[${bottomToStage(stage)}A\x1b[2K\r${renderOverviewLine(STAGES[stage - 1], stage - 1, width, active, this.timings[stage - 1])}\x1b[u`;
+    let output = '';
+    if (this.activeStageRendered) output += update(this.activeStageRendered, null);
+    if (this.current) output += update(this.current, this.current);
+    process.stdout.write(output);
+    this.activeStageRendered = this.current;
+  }
   draw(spinner = '·') {
     const currentStep = this.current ? STAGES[this.current - 1] : 'Complete';
     const text = renderProgress({ completed: this.completed, current: this.current, currentStep, currentDescription: stageDescription(currentStep), nextStep: this.nextStep(), elapsedSeconds: (performance.now() - this.startedAt) / 1000, interactive: this.interactive, spinner, width: this.width(), redraw: false });
-    if (!this.interactive) { this.overview(); process.stdout.write(`${text}\n`); return; }
-    const prefix = this.dashboardShown ? '\x1b[13A\x1b[0J' : '';
-    process.stdout.write(`${prefix}${renderOverview(STAGES, this.width(), this.current)}\n\n${text}`);
+    if (!this.interactive) {
+      this.overview();
+      this.nonInteractiveProgressWidth = Math.max(this.nonInteractiveProgressWidth, text.length);
+      process.stdout.write(`\r${text.padEnd(this.nonInteractiveProgressWidth)}`);
+      return;
+    }
+    this.refreshActiveStage();
+    const prefix = this.dashboardShown
+      ? (this.width() < 105 ? '\x1b[1A' : '\x1b[2K\r')
+      : `${renderOverview(STAGES, this.width(), this.current, this.timings)}\n\n`;
+    process.stdout.write(`${prefix}${text}`);
     this.dashboardShown = true;
+    this.activeStageRendered = this.current;
   }
-  begin(number) { this.current = number; if (!this.interactive) this.overview(); if (this.interactive) { this.draw(); let i = 0; this.timer = setInterval(() => this.draw(['·', '⠙', '⠹', '⠸', '·'][++i % 5]), 800); } }
-  end(number) { if (this.timer) clearInterval(this.timer); this.timer = null; const duration = (performance.now() - this.startedAt) / 1000; this.ema.push(duration / Math.max(1, number)); this.completed = number; this.current = number; if (this.interactive) { this.draw('✓'); } else { process.stdout.write(`${String(number).padStart(2, '0')}/${TOTAL_STAGES}  ✓  ${STAGES[number - 1]} — ${stageDescription(STAGES[number - 1])}  (${Math.round((number / TOTAL_STAGES) * 100)}%)\n`); } if (this.interactive && number === TOTAL_STAGES) process.stdout.write('\n'); this.current = number < TOTAL_STAGES ? number + 1 : null; }
-  fail() { if (this.timer) clearInterval(this.timer); this.timer = null; if (this.interactive) { this.draw('!'); process.stdout.write('\n'); } else if (this.current) process.stdout.write(`${String(this.current).padStart(2, '0')}/${TOTAL_STAGES}  ✗  ${STAGES[this.current - 1]}\n`); }
+  begin(number) {
+    this.current = number;
+    const timing = this.timings[number - 1];
+    timing.startedAt = performance.now();
+    timing.startedAtIso = new Date().toISOString();
+    const hasMeasuredDuration = Number.isFinite(timing.durationSeconds);
+    const preStage = hasMeasuredDuration ? formatDuration(timing.durationSeconds) : formatDuration(timing.etaSeconds);
+    this.logger?.event(JSON.stringify({ event: 'stage-start', stage: number, stageName: STAGES[number - 1], preStageEta: preStage, etaSource: hasMeasuredDuration ? 'measured' : 'baseline', cumulativeElapsedSeconds: (timing.startedAt - this.startedAt) / 1000 }));
+    if (!this.interactive) { this.overview(); this.draw(); }
+    if (this.interactive) { this.draw(); let i = 0; this.timer = setInterval(() => this.draw(['·', '⠙', '⠹', '⠸', '·'][++i % 5]), 800); }
+  }
+  end(number) {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    const timing = this.timings[number - 1];
+    const completedAt = performance.now();
+    timing.completedAt = completedAt;
+    timing.completedAtIso = new Date().toISOString();
+    timing.durationSeconds = (completedAt - timing.startedAt) / 1000;
+    timing.cumulativeElapsedSeconds = (completedAt - this.startedAt) / 1000;
+    this.logger?.event(JSON.stringify({ event: 'stage-complete', stage: number, stageName: STAGES[number - 1], durationSeconds: timing.durationSeconds, cumulativeElapsedSeconds: timing.cumulativeElapsedSeconds }));
+    this.completed = number;
+    this.current = number;
+    this.draw('✓');
+    if (number === TOTAL_STAGES) process.stdout.write('\n');
+    this.current = number < TOTAL_STAGES ? number + 1 : null;
+  }
+  fail() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    if (this.current) {
+      const timing = this.timings[this.current - 1];
+      const failedAt = performance.now();
+      timing.durationSeconds = (failedAt - timing.startedAt) / 1000;
+      timing.cumulativeElapsedSeconds = (failedAt - this.startedAt) / 1000;
+      timing.completedAt = failedAt;
+      timing.completedAtIso = new Date().toISOString();
+      this.logger?.event(JSON.stringify({ event: 'stage-failed', stage: this.current, stageName: STAGES[this.current - 1], durationSeconds: timing.durationSeconds, cumulativeElapsedSeconds: timing.cumulativeElapsedSeconds }));
+    }
+    if (this.interactive) { this.draw('!'); process.stdout.write('\n'); } else if (this.current) { this.draw('!'); process.stdout.write('\n'); }
+  }
+  summary() { return this.timings.map((timing, index) => ({ stage: index + 1, stageName: STAGES[index], startedAt: timing.startedAtIso ?? null, completedAt: timing.completedAtIso ?? null, durationSeconds: timing.durationSeconds, cumulativeElapsedSeconds: timing.cumulativeElapsedSeconds ?? null, preStageEta: formatDuration(Number.isFinite(timing.durationSeconds) ? timing.durationSeconds : timing.etaSeconds), etaSource: Number.isFinite(timing.durationSeconds) ? 'measured' : 'baseline' })); }
 }
 
 let logger;
@@ -105,7 +175,14 @@ function restoreEnvLocal() {
   if (isFile(ENV_STASH)) { fs.mkdirSync(path.dirname(ENV_LOCAL), { recursive: true }); fs.renameSync(ENV_STASH, ENV_LOCAL); }
   else if (!isFile(ENV_LOCAL)) { fs.mkdirSync(path.dirname(ENV_LOCAL), { recursive: true }); fs.writeFileSync(ENV_LOCAL, `${ENV_LOCAL_DEFAULT}\n`); }
 }
-function registerExitHandlers() { process.on('exit', restoreEnvLocal); for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => process.exit(130)); }
+function registerExitHandlers() {
+  process.on('exit', restoreEnvLocal);
+  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+    progress?.fail();
+    if (logger && progress) logger.event(`TIMING_SUMMARY ${JSON.stringify(progress.summary())}`);
+    process.exit(130);
+  });
+}
 async function stage(number, action) {
   progress.begin(number);
   try { await action(); progress.end(number); }
@@ -117,7 +194,7 @@ async function stage(number, action) {
 }
 
 async function main() {
-  logger = new BuildLogger(); progress = new Progress(); registerExitHandlers();
+  logger = new BuildLogger(); progress = new Progress(logger); registerExitHandlers();
   await stage(1, async () => { for (const dir of ['dist', 'services/voice-api/dist', 'services/voice-api/build', 'apps/studio/dist', 'desktop/launcher/dist', 'desktop/launcher/build']) fs.rmSync(atRoot(...dir.split('/')), { recursive: true, force: true }); });
   await stage(2, async () => {
     if (!await run('python', ['--version'], { allowFailure: true })) die('python is not on PATH.');
@@ -148,10 +225,10 @@ async function main() {
     const archive = path.join(DIST_DIR, 'app.7z'); fs.rmSync(archive, { force: true }); fs.rmSync(OUTPUT, { force: true }); await run(SEVENZIP, ['a', '-t7z', '-m0=lzma2', '-mx5', '-mmt=on', 'app.7z', 'Homegrown'], { cwd: DIST_DIR });
     fs.copyFileSync(SFX, OUTPUT); await pipeline(fs.createReadStream(archive), fs.createWriteStream(OUTPUT, { flags: 'a' })); fs.rmSync(archive, { force: true }); if (!isFile(OUTPUT)) die(`packing produced no ${path.relative(ROOT, OUTPUT)}`);
   });
-  const bytes = fs.statSync(OUTPUT).size; const hash = crypto.createHash('sha256'); await pipeline(fs.createReadStream(OUTPUT), hash); process.stdout.write(`\n${OUTPUT}\nsize    ${(bytes / 1024 ** 3).toFixed(1)}G\nsha256  ${hash.digest('hex')}\nbuilt   ${elapsed()}\n`);
+  const bytes = fs.statSync(OUTPUT).size; const hash = crypto.createHash('sha256'); await pipeline(fs.createReadStream(OUTPUT), hash); const timingSummary = progress.summary(); logger.event(`TIMING_SUMMARY ${JSON.stringify(timingSummary)}`); process.stdout.write(`\n${OUTPUT}\nsize    ${(bytes / 1024 ** 3).toFixed(1)}G\nsha256  ${hash.digest('hex')}\nbuilt   ${elapsed()}\ntimings ${JSON.stringify(timingSummary)}\n`);
 }
 
 const isDirect = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isDirect) main().catch((error) => { progress?.fail(); const details = error?.details || {}; process.stderr.write(`\nBUILD FAILED: ${error instanceof BuildError ? error.message : error?.stack ?? String(error)}\n`); if (details.stage) process.stderr.write(`stage: ${details.stage}/${TOTAL_STAGES} ${details.stageName}\n`); if (details.command) process.stderr.write(`command: ${details.command}\n`); if (details.code != null || details.signal) process.stderr.write(`exit: ${details.code ?? details.signal}\n`); if (logger) process.stderr.write(`log: ${path.relative(ROOT, logger.path)}\n`); const tail = stripAnsi(details.tail || '').trim(); if (tail) process.stderr.write(`last output:\n${tail}\n`); process.exitCode = 1; });
+if (isDirect) main().catch((error) => { const details = error?.details || {}; if (!details.stage) progress?.fail(); if (logger && progress) logger.event(`TIMING_SUMMARY ${JSON.stringify(progress.summary())}`); process.stderr.write(`\nBUILD FAILED: ${error instanceof BuildError ? error.message : error?.stack ?? String(error)}\n`); if (details.stage) process.stderr.write(`stage: ${details.stage}/${TOTAL_STAGES} ${details.stageName}\n`); if (details.command) process.stderr.write(`command: ${details.command}\n`); if (details.code != null || details.signal) process.stderr.write(`exit: ${details.code ?? details.signal}\n`); if (logger) process.stderr.write(`log: ${path.relative(ROOT, logger.path)}\n`); const tail = stripAnsi(details.tail || '').trim(); if (tail) process.stderr.write(`last output:\n${tail}\n`); process.exitCode = 1; });
 
 export { BuildError, Progress, run };
