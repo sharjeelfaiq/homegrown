@@ -821,6 +821,18 @@ body {
   position: relative;
 }
 
+.script-editor-input {
+  position: relative;
+  min-height: 0;
+}
+
+.script-word-count {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  pointer-events: none;
+}
+
 .script-editor-frame {
   position: absolute;
   z-index: 1;
@@ -842,33 +854,25 @@ body {
   outline: none;
 }
 
-/* Voice is a setting of the script, so it belongs beside the count in the
-   editor footer rather than competing with the Script rule or shortcut. */
+/* The saved voices dropdown stays at the left of the editor footer. */
 .script-voice-setting {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 8px;
-  border-left: 1px solid var(--line);
-  padding-left: 12px;
 }
 
-.script-voice-label {
+.clone-voice-control {
+  display: flex;
   flex: none;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  align-items: center;
+  margin-left: auto;
 }
 
-/* The menu opens below the editor, not below the trigger: extending it across
-   the Upload slot leaves a deliberate 12px inset from the editor's right
-   edge. At phone widths the normal trigger alignment keeps it in bounds. */
-@media (min-width: 501px) {
-  .script-editor-footer .script-voice-menu {
-    right: -42px;
-  }
+/* The picker now sits at the footer's left edge, so its menu aligns there too. */
+.script-editor-footer .script-voice-menu {
+  right: auto;
+  left: 0;
 }
 
 /* The picker keeps its readable fixed width; only the setting row wraps when
@@ -881,12 +885,6 @@ body {
 
   .script-voice-setting {
     flex-wrap: wrap;
-    padding-left: 0;
-    border-left: 0;
-  }
-
-  .script-editor-footer .script-voice-menu {
-    right: 0;
   }
 }
 

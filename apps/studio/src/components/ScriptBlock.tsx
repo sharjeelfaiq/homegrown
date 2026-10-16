@@ -128,25 +128,26 @@ export default function ScriptBlock({
     <div className="script-editor grid h-[clamp(272px,36svh,372px)] min-h-[clamp(272px,36svh,372px)] max-h-[clamp(272px,36svh,372px)] grid-rows-[minmax(0,1fr)_auto] overflow-visible rounded-md border border-transparent bg-surface-card" data-tour="script-editor">
       {/* The stable 272–372px editor range leaves a predictable writing area
           while the grid reserves a separate footer row for its controls. */}
-      <textarea
-        ref={textareaRef}
-        className="block h-full min-h-0 w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-3 text-[15px]/[1.7] outline-none placeholder:text-faint"
-        placeholder="Write what the voice should say…"
-        value={text}
-        onChange={(e) => onTextChange(e.target.value)}
-        // The visible cap lives on the Script heading, not in here: a cap
-        // inside the box overlapped the first line of text (measured: cap
-        // 11-29px, line one 15-40.5px, and a long line reaches under it).
-        aria-keyshortcuts="/"
-      />
+      <div className="script-editor-input">
+        <textarea
+          ref={textareaRef}
+          className="block h-full min-h-0 w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-8 text-[15px]/[1.7] outline-none placeholder:text-faint"
+          placeholder="Write what the voice should say…"
+          value={text}
+          onChange={(e) => onTextChange(e.target.value)}
+          // The visible cap lives on the Script heading, not in here: a cap
+          // inside the box overlapped the first line of text (measured: cap
+          // 11-29px, line one 15-40.5px, and a long line reaches under it).
+          aria-keyshortcuts="/"
+        />
+        <span className={`script-word-count mono text-[11px] whitespace-nowrap ${overLimit ? 'text-danger' : 'text-faint'}`}>
+          {words.toLocaleString()} word{words === 1 ? '' : 's'}
+        </span>
+      </div>
 
 
       <footer className="script-editor-footer">
-        <span className={`mono text-[11px] whitespace-nowrap ${overLimit ? 'text-danger' : 'text-faint'}`}>
-          {words.toLocaleString()} word{words === 1 ? '' : 's'}
-        </span>
         <div className="script-voice-setting" data-tour="voice-controls">
-          <span className="script-voice-label">Voice</span>
           <div data-tour="voice-picker">
             <VoicePicker
               presets={presets}
@@ -157,6 +158,8 @@ export default function ScriptBlock({
               onDelete={onDeleteVoice}
             />
           </div>
+        </div>
+        <div className="clone-voice-control">
           <input
             ref={voiceUploadRef}
             type="file"
@@ -171,26 +174,27 @@ export default function ScriptBlock({
           />
           <button
             type="button"
-            className="icon-btn size-8 flex-none border border-control bg-control-fill text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
-            aria-label={creatingVoice ? 'Uploading voice' : 'Upload a voice'}
+            className="clone-voice-button flex h-8 flex-none items-center gap-1.5 rounded-sm border border-control bg-control-fill px-2.5 text-[11px] text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
+            aria-label={creatingVoice ? 'Cloning voice' : 'Clone voice'}
             aria-busy={creatingVoice}
             disabled={creatingVoice}
             data-tour="add-voice"
-            title={creatingVoice ? 'Uploading voice' : 'Upload a voice'}
+            title={creatingVoice ? 'Cloning voice' : 'Clone voice'}
             onClick={() => voiceUploadRef.current?.click()}
           >
             {visibleUploadStatus === 'running' || visibleUploadStatus === 'done' || visibleUploadStatus === 'failed' ? (
               <StatusMark
                 status={visibleUploadStatus}
-                size={16}
+                size={14}
                 strokeWidth={2.2}
                 color="var(--progress)"
                 doneColor="var(--green)"
                 errorColor="var(--danger)"
               />
             ) : (
-              <UploadIcon size={15} />
+              <UploadIcon size={14} />
             )}
+            <span>Clone Voice</span>
           </button>
         </div>
       </footer>
