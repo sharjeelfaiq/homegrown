@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
-    "test": "npm --prefix apps/studio run test",
+    "test": "npm --prefix apps/studio run test && npm run test:backend",
+    "test:backend": "python -m unittest discover -s services/voice-api -p test_*.py",
     "lint": "npm --prefix apps/studio run lint",
     "bones:build": "npm --prefix apps/studio run bones:build"
   },

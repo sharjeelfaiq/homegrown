@@ -9,12 +9,12 @@ This document describes the checked-in application. User-facing usage is in
 # Development from the repository root
 npm run dev
 
-# Frontend verification
-cd apps/studio && npm run test && npm run lint && npm run build
-cd ../..
+# All automated tests (Studio tests followed by backend unit tests; no builds)
+npm run test
 
-# Backend unit tests
-.venv/Scripts/python.exe -m unittest discover -s services/voice-api -p 'test_*.py'
+# Frontend lint and production build (production build is separate from tests)
+cd apps/studio && npm run lint && npm run build
+cd ../..
 
 # Regenerate checked-in loading skeletons after changing their fixtures or layout
 # (start Vite on 127.0.0.1:5173 first)

@@ -95,6 +95,10 @@ To add a mascot, place a numbered pair in `apps/studio/public/mascots/`:
 regenerates `apps/studio/src/generated/mascotCatalog.ts`. Commit the two assets
 and that generated catalog together.
 
+Run `npm run test` for the Studio and backend unit suites. Backend tests use
+Python's `unittest` runner and never build or freeze the backend. The separate
+`npm run build` command packages the Windows application.
+
 The Script editor is 300–400px high, with its height adapting to viewport size.
 The **Generate** button is centered below the editor and is 44px high. It stays
 disabled until the script contains non-whitespace text, an available voice and
