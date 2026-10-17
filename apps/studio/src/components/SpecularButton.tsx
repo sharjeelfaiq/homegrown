@@ -1,7 +1,10 @@
 import { Mesh, Program, Renderer, Triangle } from 'ogl'
 import {
   type ButtonHTMLAttributes,
+  type MutableRefObject,
   type ReactNode,
+  forwardRef,
+  useCallback,
   useEffect,
   useRef,
 } from 'react'
@@ -67,15 +70,21 @@ function tokenColour(host: HTMLElement, token: string, fallback: Rgb): Rgb {
  * pointer-local rim highlight. CSS owns the button's fill, size, focus and
  * disabled state so it remains useful if WebGL is unavailable.
  */
-export default function SpecularButton({
+const SpecularButton = forwardRef<HTMLButtonElement, SpecularButtonProps>(function SpecularButton({
   children,
   className = '',
   disabled = false,
   reducedMotion = false,
   ...buttonProps
-}: SpecularButtonProps) {
+}, forwardedRef) {
   const buttonRef = useRef<HTMLButtonElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+
+  const setButtonRef = useCallback((node: HTMLButtonElement | null) => {
+    buttonRef.current = node
+    if (typeof forwardedRef === 'function') forwardedRef(node)
+    else if (forwardedRef) (forwardedRef as MutableRefObject<HTMLButtonElement | null>).current = node
+  }, [forwardedRef])
 
   useEffect(() => {
     const button = buttonRef.current
@@ -195,7 +204,7 @@ export default function SpecularButton({
   return (
     <button
       {...buttonProps}
-      ref={buttonRef}
+      ref={setButtonRef}
       disabled={disabled}
       className={`specular-button ${className}`}
     >
@@ -203,4 +212,6 @@ export default function SpecularButton({
       <span className="specular-button__content">{children}</span>
     </button>
   )
-}
+})
+
+export default SpecularButton

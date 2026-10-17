@@ -20,7 +20,9 @@ describe('GenerateButton', () => {
     const auxiliary = container.querySelector('.generate-action-auxiliary')
     expect(layout).toHaveClass('grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]')
     expect(layout?.children).toHaveLength(3)
-    expect(screen.getByRole('button', { name: 'Generate' }).parentElement).toContainElement(auxiliary as HTMLElement | null)
+    const centerColumn = layout?.children[1]
+    expect(centerColumn).toContainElement(screen.getByRole('button', { name: 'Generate' }))
+    expect(centerColumn).toContainElement(auxiliary as HTMLElement | null)
     expect(auxiliary).toHaveTextContent('Choose a voice first')
     expect(auxiliary).toHaveClass('wide:absolute')
   })

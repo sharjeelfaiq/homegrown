@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
 import { mediaUrl, presetDownloadUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
-import { CheckIcon, DownloadIcon, PauseIcon, PlayIcon, TrashIcon } from './Icons'
+import { Check as CheckIcon, Download as DownloadIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon } from 'lucide-react'
 import AdminPasswordModal from './AdminPasswordModal'
 import InlineName from './InlineName'
+import { AppTooltip } from './Tooltip'
+import { DropdownMenu } from './DropdownMenu'
 
 interface Props {
   presets: Preset[]
@@ -80,26 +81,6 @@ export default function VoicePicker({
     stopPreview()
   }, [stopPreview])
 
-  // Click-outside and Escape. pointerdown rather than click, so the menu closes
-  // on press the way a native select does.
-  useEffect(() => {
-    if (!open) return
-    function onPointerDown(e: PointerEvent) {
-      if (!rootRef.current?.contains(e.target as Node)) close()
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return
-      close()
-      triggerRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open, close])
-
   // Deletion resolves in the parent, so a row can vanish from under an open
   // menu. Without this, a stale confirm row survives and a preview keeps
   // playing audio the backend no longer serves.
@@ -164,58 +145,43 @@ export default function VoicePicker({
   // instruction. Long names truncate inside the stable field rather than
   // changing the composer alignment.
   return (
-    <div
-      className="relative w-[168px] flex-none"
-      ref={rootRef}
-    >
+    <div className="relative w-[168px] flex-none" ref={rootRef}>
       {/* aria-label OVERRIDES the button's text content when computing its
           accessible name, so a bare "Voice" meant a screen reader announced
           "Voice, collapsed" and never said WHICH voice was selected --
           verified against the accessibility tree, which reported the name as
           exactly "Voice" while the button visibly read "Steven Seagal
           Humiliated Bruce Lee on St". The selection has to be in the label. */}
-      <button
-        type="button"
-        ref={triggerRef}
-        className={`select voice-picker-trigger flex w-full items-center gap-1.5 text-left ${selected ? 'is-selected' : ''}`}
-        aria-label={selected ? `Voice: ${selected.name}` : 'Choose a voice'}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => (open ? close() : setOpen(true))}
-      >
-        {/* title, because the field is deliberately a fixed 168px (see above)
+      <DropdownMenu.Root open={open} onOpenChange={(nextOpen) => nextOpen ? setOpen(true) : close()}>
+      <AppTooltip content={selected?.name ?? 'Choose a voice'}>
+        <DropdownMenu.Trigger
+          ref={triggerRef}
+          className={`select voice-picker-trigger flex w-full items-center gap-1.5 text-left ${selected ? 'is-selected' : ''}`}
+          aria-label={selected ? `Voice: ${selected.name}${generating ? ', generating' : ''}` : 'Choose a voice'}
+        >
+        {/* The tooltip, because the field is deliberately a fixed 168px (see above)
             and a long name is genuinely cut -- measured at 126px visible of
             258px, i.e. under half. Widening it is not the fix; that was tried
             and read as a search bar. Hover reveals the rest instead. */}
         <span
           className="overflow-hidden text-ellipsis whitespace-nowrap"
-          title={selected ? selected.name : undefined}
         >
           {selected ? selected.name : 'Choose a voice…'}
         </span>
-        {generating && (
+          {generating && (
           <span
             className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`}
-            title={`${selected?.name} is generating`}
             aria-hidden="true"
           />
-        )}
-      </button>
+          )}
+        </DropdownMenu.Trigger>
+      </AppTooltip>
 
-      {/* Origin top: the menu hangs directly below the control, so it should
-          read as unfolding from it rather than arriving from nowhere. */}
-      <AnimatePresence>
-        {open && (
-          <motion.ul
-            initial={reduced ? false : { opacity: 0, scale: 0.98, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={reduced ? undefined : { opacity: 0, scale: 0.98, y: -4 }}
-            transition={{ duration: reduced ? 0 : 0.14, ease: [0.2, 0, 0, 1] }}
-            className="script-voice-menu absolute top-[calc(100%+6px)] right-[-42px] z-50 m-0 w-[min(302px,calc(100vw-48px))] max-h-[280px] list-none origin-top overflow-y-auto rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu)"
-            role="listbox"
-            onKeyDown={onMenuKeyDown}
-          >
-            <li className="list-none border-b border-hairline px-1.5 pb-1" role="presentation">
+      <DropdownMenu.Portal>
+        <DropdownMenu.Positioner side="bottom" align="start" sideOffset={6} className="dropdown-menu-positioner">
+          <DropdownMenu.Popup className="dropdown-menu-content voice-picker-dropdown" role="presentation">
+          <ul className="voice-picker-list" role="listbox" onKeyDown={onMenuKeyDown}>
+            <li className="list-none border-b border-hairline px-1.5 pt-1 pb-1" role="presentation">
               <input
                 type="search"
                 value={searchQuery}
@@ -224,9 +190,8 @@ export default function VoicePicker({
                 className="h-8 w-full rounded-sm border border-control bg-control-fill px-2 text-[12px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
                 onChange={(event) => setSearchQuery(event.target.value)}
                 onKeyDown={(event) => {
-                  // Let the document-level Escape handler close the menu, but
-                  // keep typing and arrow keys out of row navigation.
-                  if (event.key !== 'Escape') event.stopPropagation()
+                  // Keep typing and arrow keys out of row navigation.
+                  event.stopPropagation()
                 }}
                 onClick={(event) => event.stopPropagation()}
               />
@@ -256,7 +221,6 @@ export default function VoicePicker({
                   <span
                     className={`voice-menu-selection ${p.id === selectedPresetId ? 'is-selected' : ''}`}
                     aria-hidden="true"
-                    title={p.id === selectedPresetId ? 'Selected voice' : 'Select this voice'}
                   >
                     {p.id === selectedPresetId && <CheckIcon size={10} />}
                   </span>
@@ -278,7 +242,6 @@ export default function VoicePicker({
                   {runningPresetIds.has(p.id) && (
                     <span
                       className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`}
-                      title={`${p.name} is generating`}
                       aria-hidden="true"
                     />
                   )}
@@ -289,34 +252,41 @@ export default function VoicePicker({
                   onClick={(event) => event.stopPropagation()}
                   onKeyDown={(event) => event.stopPropagation()}
                 >
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    aria-label={
-                      previewingId === p.id ? `Stop preview of ${p.name}` : `Preview ${p.name}`
-                    }
-                    onClick={() => togglePreview(p)}
-                  >
-                    {previewingId === p.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
-                  </button>
-                  <a
-                    href={presetDownloadUrl(p.id)}
-                    download
-                    className="icon-btn"
-                    aria-label={`Download ${p.name} reference clip`}
-                    title="Download reference clip"
-                  >
-                    <DownloadIcon size={13} />
-                  </a>
-                  <button type="button" className="icon-btn icon-btn-danger" aria-label={`Delete ${p.name}`} title={`Delete ${p.name}`} onClick={() => { stopPreview(); setDeletePreset(p) }}>
-                    <TrashIcon size={13} />
-                  </button>
+                  <AppTooltip content={previewingId === p.id ? 'Stop preview' : 'Preview voice'}>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label={
+                        previewingId === p.id ? `Stop preview of ${p.name}` : `Preview ${p.name}`
+                      }
+                      onClick={() => togglePreview(p)}
+                    >
+                      {previewingId === p.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
+                    </button>
+                  </AppTooltip>
+                  <AppTooltip content="Download reference clip">
+                    <a
+                      href={presetDownloadUrl(p.id)}
+                      download
+                      className="icon-btn"
+                      aria-label={`Download ${p.name} reference clip`}
+                    >
+                      <DownloadIcon size={13} />
+                    </a>
+                  </AppTooltip>
+                  <AppTooltip content="Delete voice">
+                    <button type="button" className="icon-btn icon-btn-danger" aria-label={`Delete ${p.name}`} onClick={() => { stopPreview(); setDeletePreset(p) }}>
+                      <TrashIcon size={13} />
+                    </button>
+                  </AppTooltip>
                 </span>
               </li>
             ))}
-          </motion.ul>
-        )}
-      </AnimatePresence>
+          </ul>
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
+      </DropdownMenu.Portal>
+      </DropdownMenu.Root>
 
       <AdminPasswordModal
         open={deletePreset !== null}

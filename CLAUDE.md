@@ -90,16 +90,25 @@ on success, failure, or interruption and produces the same self-extracting
   picker can escape the card. Its visible border is a final non-interactive
   overlay child, painted above the opaque footer; keep that element after the
   textarea and footer so every corner remains continuous when focused.
+- The Script editor footer's script-language selector uses the shared
+  Base UI menu-backed dropdown, populated from `GET /api/languages` (the loaded
+  checkpoint's own `codec_language_id`, read once when the model reports
+  ready). Empty list hides the control. Generation requires a non-empty script,
+  an available voice, an explicitly selected script language, and a ready
+  model. The language choice is in-memory only — do not persist it or reset it
+  when the voice changes. `POST /api/generate` validates `language` against the
+  same table and returns 400 otherwise, so an unsupported value is a refused
+  request rather than a failed job.
 - Inline voice upload uses the ReactBits-style `StatusMark`: amber while
   running, green after success, and red after failure. The final success or
   failure mark is intentionally retained for two seconds before restoring the
   Upload icon. Keep the status attributes (`data-status`) and that timing in
   sync with `ScriptBlock.test.tsx`.
 - `VoicePicker.tsx` renders a local, case-insensitive cloned-voice name search
-  input at the top of its open listbox. The query is cleared by `close()`;
+  input at the top of its Base UI menu popup. The query is cleared by `close()`;
   filtered rows retain the existing selection, rename, preview, download, and
-  delete behavior. Keep Escape available to the document-level menu close
-  handler and keep typing/arrow keys in the search field from selecting rows.
+  delete behavior. Keep typing and arrow keys in the search field from
+  selecting rows.
 - Backend startup failures are reported through a fixed, pulsing warning button
   at the lower-left of Studio; its modal shows the relevant message and Retry
   action when available. Do not put a failure banner above the Script editor.
@@ -145,9 +154,16 @@ on success, failure, or interruption and produces the same self-extracting
   toast. Keep this distinction in sync across the UI and API.
   A running job checks for cancellation between streamed audio pieces (about
   one second), so it may stop partway through a script chunk.
-- The context toolbar below voiceover search/filters is permanently reserved:
-  selection actions live there, never in a floating dock. One selected row
+- The context toolbar below voiceover search contains the voiceover count on
+  the left and compact Voice, Duration, Status, and calendar date filters on
+  the right when no rows are selected. It wraps on narrow screens without
+  horizontal scrolling. Selection actions live in this reserved toolbar,
+  never in a floating dock. One selected row
   downloads directly; multiple selected rows use the history ZIP endpoint.
+- Shared dropdown selectors, the theme menu, and voiceover action menus use
+  `@base-ui/react/menu` via `DropdownMenu.tsx`; tooltips use the shared Base UI
+  tooltip wrapper. Interface glyphs come from `lucide-react`. The animated
+  status ring and undo countdown ring are bespoke visuals, not icon glyphs.
 - A voiceover display name is local-only; a voice preset rename uses
   `PATCH /api/presets/{id}`. Do not merge these stores.
 

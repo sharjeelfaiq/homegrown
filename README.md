@@ -95,14 +95,27 @@ To add a mascot, place a numbered pair in `apps/studio/public/mascots/`:
 regenerates `apps/studio/src/generated/mascotCatalog.ts`. Commit the two assets
 and that generated catalog together.
 
-The **Generate** button is centered below the editor and is 44px high. Its
-disabled reason and keyboard-shortcut reminder are auxiliary text, so they do
-not shift the action off the editor's centerline.
+The **Generate** button is centered below the editor and is 44px high. It stays
+disabled until the script contains non-whitespace text, an available voice and
+a script language are selected, the model is ready, and no submission or
+startup is in progress. Its disabled reason and keyboard-shortcut reminder are
+auxiliary text, so they do not shift the action off the editor's centerline.
+The voice and script-language selectors use the shared Base UI menu-backed
+dropdowns; the Clone Voice action sits beside the voice selector.
+The language control keeps a fixed 190px width so voice-name changes do not
+shift the editor footer.
 
 The cloned-voice picker includes a compact search field at the top of its
 dropdown. Search filters the available voice names locally, case-insensitively;
 selecting a filtered result uses the same voice selection and preview actions as
 the unfiltered list. The query is cleared when the dropdown closes.
+
+In the Voiceovers section, the count stays on the left of the quick-filter row.
+Voice, Duration, and Status selectors and a calendar button for date filtering
+sit on the right. The row wraps on narrow screens instead of scrolling
+horizontally. Menus share the Base UI dropdown primitives, tooltips use the
+shared Base UI tooltip, and interface icons use `lucide-react`. Animated
+status and undo countdown rings remain custom visuals.
 
 On the first model-ready launch, Studio offers a short, read-only tour of the
 theme/help controls, reusable voice creation, the Script editor, Generate, and

@@ -53,16 +53,26 @@ fresh launch.
 
 ## Create and manage voices
 
-Choose **Upload a voice** in the Script editor footer or drop an audio file
+Choose **Clone Voice** in the Script editor footer or drop an audio file
 anywhere into the Studio. Uploads up to 30 minutes are accepted; clips longer
 than 40 seconds are shortened to the first 40 seconds of speech. A
 10–20-second, dry, close-mic recording is a useful starting point. The voice
 name starts from the filename, language is detected, and faster-whisper
-transcribes the reference. There is no language selector.
+transcribes the reference. There is no language selector on upload.
 
-The Script editor footer holds the word count, current voice picker, and
-Upload control. Open the picker to select a voice, click its name to rename it,
-or use its **Play**, download, and **Delete** actions. Clicking delete opens
+The Script editor footer holds the word count, voice picker, Clone Voice
+button, and script-language control. The language control begins at
+**Select language…**; generation requires choosing an explicit language, even
+though the backend can fall back to the voice's stamped language. Choosing one
+of the loaded model's languages reads the script in that language with the same
+cloned voice. The choice stays until you change it and is not saved across
+reloads. The list comes from the loaded model, so a language it does not speak
+is never offered and is refused if requested. Reading a script in a language
+the voice was not cloned from usually keeps the speaker's accent — check the
+first voiceover before committing to a long one. The language dropdown keeps
+a fixed 190px width to prevent footer shifts. Open the picker to select a
+voice, click its name to rename it, or use its **Play**, download, and **Delete**
+actions. Clicking delete opens
 the admin-password modal. After a valid password, a seven-second **Undo** toast
 appears; Undo cancels the pending delete. If it expires, the server deletes the
 preset and its reference audio. An invalid password closes the modal and does
@@ -86,9 +96,12 @@ are the original uploaded audio.
 
 ## Generate and cancel voiceovers
 
-Write up to 60,000 characters in the Script editor, choose a voice in its
-footer, then select **Generate**. Press `/` to focus the editor or
-Ctrl/Cmd+Enter to generate when the form is ready.
+Write up to 60,000 characters in the Script editor, choose a voice and script
+language in its footer, then select **Generate**. The button is enabled only
+when the script has non-whitespace text, an available voice and language are
+selected, the model is ready, and no submission or startup is in progress.
+Press `/` to focus the editor or Ctrl/Cmd+Enter to generate when the form is
+ready.
 The 44px Generate button remains centered below the editor even when its
 disabled reason is shown. On wide screens, that auxiliary text sits beside the
 button; on narrow screens it moves below it. The fixed mascot is dragged by
@@ -122,9 +135,15 @@ can fail the running job and queued jobs; restart the backend to recover.
 
 Completed voiceovers are newest-first and paginated. Search matches canonical
 voice names across the full history; browser-local display-name overrides only
-match loaded pages. Filters narrow by voice, date, duration, and search text.
+match loaded pages. The count appears on the left of the filter row; Voice,
+Duration, and Status selectors plus a calendar date filter sit on the right.
+The row wraps on narrow screens without horizontal scrolling. Search and filters
+narrow the history.
 The search query, page size, and display-name overrides are stored in this
 browser; they are not server-side account data.
+
+Dropdown menus and selectors share the Base UI menu primitives. Tooltips use
+the shared Base UI tooltip component, and interface icons use `lucide-react`.
 
 Each completed row has a direct download button beside its three-dot menu. The
 menu contains **Delete**. Selecting one or more rows exposes batch Download,

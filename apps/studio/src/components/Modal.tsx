@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { AppTooltip } from './Tooltip'
+import { X } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 
@@ -130,9 +132,11 @@ export default function Modal({ open, title, onClose, children }: Props) {
               >
                 {title}
               </h2>
-              <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
-                ✕
-              </button>
+              <AppTooltip content="Close dialog">
+                <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+                  <X size={16} aria-hidden="true" />
+                </button>
+              </AppTooltip>
             </header>
             {/* `modal-body` is a JS hook, not a style hook -- it has no CSS
                 rule and check_orphan_css.py will list it under "missing

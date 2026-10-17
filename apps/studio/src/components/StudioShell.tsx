@@ -8,7 +8,7 @@ import GenerateButton from './GenerateButton'
 import MascotPicker from './MascotPicker'
 import { MAX_SCRIPT_CHARS, UNDO_MS } from '../constants'
 import { presetNameFromFile } from '../format'
-import { AlertIcon, CheckIcon, HelpIcon, TrashIcon } from './Icons'
+import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Trash2 as TrashIcon } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useJobToasts } from '../hooks/useJobToasts'
@@ -34,6 +34,7 @@ import {
   verifyAdminPassword,
   getHealth,
   getQueueScript,
+  listLanguages,
   listPresets,
   renamePreset,
   startGenerate,
@@ -45,6 +46,7 @@ import {
 import { historyQueryClient, invalidateHistory } from '../historyQuery'
 import { Skeleton } from 'boneyard-js/react'
 import { StudioStartupFixture } from './BoneyardFixtures'
+import { AppTooltip } from './Tooltip'
 
 /** Sent only so the backend has something if language detection comes back
  * empty or names a language this model cannot speak. */
@@ -94,9 +96,19 @@ export default function StudioShell() {
   // there is nothing left to lose by leaving, so the browser's generic
   // "Leave site?" dialog would be noise guarding something already safe.
   const [script, setScript] = usePersistedDraft('homegrown-script-draft')
-  // Only the new-voice form writes this now: it is the language stamped onto a
-  // voice at creation. Generation reads the chosen voice's own language instead
-  // (see handleGenerate), so the two can no longer disagree.
+  // The new-voice form writes the language stamped onto a voice at creation.
+  // Generation reads that by default, so the two cannot silently disagree --
+  // but the Script editor can now override it per job, which is the only way
+  // to read a script in a language the voice was not cloned from.
+  //
+  // Deliberately NOT persisted and NOT reset when the voice changes: it is a
+  // property of the script being written, and clearing it on a voice swap
+  // would silently send the job back to the voice's language.
+  const [languageOverride, setLanguageOverride] = useState<string | null>(null)
+  // Empty until the model is loaded. /api/languages reads the loaded
+  // checkpoint's own language table, so this cannot be a client-side constant;
+  // a 503 or a failed request leaves it empty and hides the control.
+  const [languages, setLanguages] = useState<string[]>([])
 
   const [historyFilters, setHistoryFilters] = useState<VoiceoverFilterState>(restoreVoiceoverFilters)
   const [pendingNew, setPendingNew] = useState(0)
@@ -158,6 +170,13 @@ export default function StudioShell() {
         if (cancelled || bootFailedRef.current) return
         setModelStatus('ready')
         setWakeMessage(null)
+        // Only now: /api/languages is 503 until the model is loaded, and the
+        // answer is a property of the loaded checkpoint, so it is read once
+        // here rather than polled. A failure leaves the list empty, which
+        // hides the control and keeps the previous voice-language behavior.
+        listLanguages()
+          .then((r) => { if (!cancelled) setLanguages(r.languages) })
+          .catch(() => {})
         // The backend runs on CPU when no usable GPU was found. It still works,
         // but generation is orders of magnitude slower -- say so up front rather
         // than letting the first job look like it hung.
@@ -445,7 +464,13 @@ export default function StudioShell() {
     try {
       // `scriptReady` above proves this is a current preset, rather than just
       // a stale id that would surface the backend's internal preset error.
-      await startGenerate({ presetId: selectedVoice.id, text: script, language: selectedVoice.language })
+      await startGenerate({
+        presetId: selectedVoice.id,
+        text: script,
+        // The editor's choice wins; absent one, the voice's own language.
+        // LANGUAGE_FALLBACK only covers a voice stamped with nothing at all.
+        language: languageOverride ?? selectedVoice.language ?? LANGUAGE_FALLBACK,
+      })
       setScript('')
       refreshQueue()
     } catch (e) {
@@ -464,7 +489,7 @@ export default function StudioShell() {
     }
   }
 
-  const canGenerate = modelStatus === 'ready' && scriptReady && !submitting && !warmingUp
+  const canGenerate = modelStatus === 'ready' && scriptReady && selectedVoice != null && languageOverride != null && !submitting && !warmingUp
 
   // Say what is missing rather than presenting a mute grey slab -- but only
   // for prerequisites the user has to go and fix elsewhere. An empty script is
@@ -479,6 +504,8 @@ export default function StudioShell() {
           ? 'Add a voice first'
           : selectedVoice == null
             ? 'Pick a voice'
+            : languageOverride == null
+              ? 'Select a language'
             : script.length > MAX_SCRIPT_CHARS
               ? 'Script is too long'
               : null
@@ -569,15 +596,16 @@ export default function StudioShell() {
         </h1>
         <div className="absolute inset-y-0 right-(--gutter) z-150 flex items-center gap-1" data-tour="header-controls">
           <ThemeSwitch />
-          <button
-            type="button"
-            className="icon-btn focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-audio"
-            aria-label="Replay studio tour"
-            title="Replay tour"
-            onClick={() => startTour({ force: true })}
-          >
-            <HelpIcon />
-          </button>
+          <AppTooltip content="Replay tour">
+            <button
+              type="button"
+              className="icon-btn focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-audio"
+              aria-label="Replay studio tour"
+              onClick={() => startTour({ force: true })}
+            >
+              <HelpIcon size={16} />
+            </button>
+          </AppTooltip>
         </div>
       </div>
 
@@ -633,6 +661,10 @@ export default function StudioShell() {
             voicesLoading={modelStatus === 'checking'}
             creatingVoice={creatingPreset}
             onAddVoice={handleAddVoice}
+            languages={languages}
+            language={languageOverride}
+            onLanguageChange={setLanguageOverride}
+            voiceLanguage={selectedVoice?.language ?? null}
           />
 
           {/* The voice's own reference clip decides chunk size, so a long
@@ -682,15 +714,16 @@ export default function StudioShell() {
       </main>
 
       {modelStatus === 'down' && (
-        <button
-          type="button"
-          className="backend-warning-button animate-pulse-soft"
-          aria-label="Backend warning. Open details and retry."
-          title="Backend warning"
-          onClick={() => setBackendWarningOpen(true)}
-        >
-          <AlertIcon size={23} />
-        </button>
+        <AppTooltip content="Backend warning. Open details and retry.">
+          <button
+            type="button"
+            className="backend-warning-button animate-pulse-soft"
+            aria-label="Backend warning. Open details and retry."
+            onClick={() => setBackendWarningOpen(true)}
+          >
+            <AlertIcon size={23} />
+          </button>
+        </AppTooltip>
       )}
 
       <Modal

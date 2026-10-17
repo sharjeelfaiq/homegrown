@@ -1,8 +1,9 @@
 import { useEffect, useState, type RefObject } from 'react'
 import { useAudioActivity } from '../AudioActivityContext'
 import { getPeaks, proceduralPeaks } from '../audio/waveformPeaks'
-import { PauseIcon, PlayIcon } from './Icons'
+import { Pause as PauseIcon, Play as PlayIcon } from 'lucide-react'
 import WaveRibbon from './WaveRibbon'
+import { AppTooltip } from './Tooltip'
 
 interface Props {
   src: string
@@ -92,14 +93,16 @@ export default function VoiceoverPlayer({
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      <button
-        type="button"
-        className="icon-btn size-6 flex-none border-none bg-transparent text-muted hover:text-audio"
-        aria-label={playing ? `Pause ${label}` : `Play ${label}`}
-        onClick={toggle}
-      >
-        {playing ? <PauseIcon size={16} /> : <PlayIcon size={16} />}
-      </button>
+      <AppTooltip content={playing ? 'Pause voiceover' : 'Play voiceover'}>
+        <button
+          type="button"
+          className="icon-btn size-6 flex-none border-none bg-transparent text-muted hover:text-audio"
+          aria-label={playing ? `Pause ${label}` : `Play ${label}`}
+          onClick={toggle}
+        >
+          {playing ? <PauseIcon size={16} /> : <PlayIcon size={16} />}
+        </button>
+      </AppTooltip>
       <WaveRibbon
         peaks={peaks}
         audioRef={audioRef}

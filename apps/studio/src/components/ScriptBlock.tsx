@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { getEstimate, type Estimate, type Preset } from '../api'
 import { MAX_SCRIPT_CHARS } from '../constants'
 import VoicePicker from './VoicePicker'
-import { UploadIcon } from './Icons'
+import DropdownSelect from './DropdownSelect'
+import { Upload as UploadIcon } from 'lucide-react'
 import StatusMark, { type StatusMarkStatus } from './StatusMark'
 
 interface Props {
@@ -21,6 +22,16 @@ interface Props {
   voicesLoading: boolean
   creatingVoice: boolean
   onAddVoice: (file: File) => Promise<'done' | 'failed'>
+  /** What the model speaks, from /api/languages. Empty until the model is
+   * loaded (or if that request failed), and the control is hidden then --
+   * generation falls back to the voice's own language exactly as before. */
+  languages: string[]
+  /** null means "whatever the selected voice was created in". */
+  language: string | null
+  onLanguageChange: (language: string | null) => void
+  /** The selected voice's language, retained for consumers that provide a
+   * contextual language hint alongside the explicit script language. */
+  voiceLanguage?: string | null
 }
 
 export default function ScriptBlock({
@@ -36,6 +47,9 @@ export default function ScriptBlock({
   voicesLoading,
   creatingVoice,
   onAddVoice,
+  languages,
+  language,
+  onLanguageChange,
 }: Props) {
   const overLimit = text.length > MAX_SCRIPT_CHARS
   const voiceUploadRef = useRef<HTMLInputElement>(null)
@@ -148,54 +162,73 @@ export default function ScriptBlock({
 
       <footer className="script-editor-footer">
         <div className="script-voice-setting" data-tour="voice-controls">
-          <div data-tour="voice-picker">
-            <VoicePicker
-              presets={presets}
-              selectedPresetId={presetId}
-              onSelect={onSelectVoice}
-              onRename={onRenameVoice}
-              loading={voicesLoading}
-              onDelete={onDeleteVoice}
-            />
+          <div className="script-voice-control">
+            <span className="script-control-label">Voice</span>
+            <div className="script-voice-choice">
+              <div data-tour="voice-picker">
+                <VoicePicker
+                  presets={presets}
+                  selectedPresetId={presetId}
+                  onSelect={onSelectVoice}
+                  onRename={onRenameVoice}
+                  loading={voicesLoading}
+                  onDelete={onDeleteVoice}
+                />
+              </div>
+              <div className="clone-voice-control">
+                <input
+                  ref={voiceUploadRef}
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  disabled={creatingVoice}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    event.target.value = ''
+                    if (file) void handleVoiceFile(file)
+                  }}
+                />
+                <button
+                  type="button"
+                  className="clone-voice-button flex h-8 flex-none items-center gap-1.5 rounded-sm px-2 text-[11px] text-muted hover:bg-control-fill-hover hover:text-audio"
+                  aria-label={creatingVoice ? 'Cloning voice' : 'Clone voice'}
+                  aria-busy={creatingVoice}
+                  disabled={creatingVoice}
+                  data-tour="add-voice"
+                  onClick={() => voiceUploadRef.current?.click()}
+                >
+                  {visibleUploadStatus === 'running' || visibleUploadStatus === 'done' || visibleUploadStatus === 'failed' ? (
+                    <StatusMark
+                      status={visibleUploadStatus}
+                      size={14}
+                      strokeWidth={2.2}
+                      color="var(--progress)"
+                      doneColor="var(--green)"
+                      errorColor="var(--danger)"
+                    />
+                  ) : (
+                    <UploadIcon size={14} />
+                  )}
+                  <span>{creatingVoice ? 'Cloning…' : 'Clone voice'}</span>
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="clone-voice-control">
-          <input
-            ref={voiceUploadRef}
-            type="file"
-            accept="audio/*"
-            className="hidden"
-            disabled={creatingVoice}
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (file) void handleVoiceFile(file)
-            }}
-          />
-          <button
-            type="button"
-            className="clone-voice-button flex h-8 flex-none items-center gap-1.5 rounded-sm border border-control bg-control-fill px-2.5 text-[11px] text-muted hover:border-audio-line hover:bg-control-fill-hover hover:text-audio"
-            aria-label={creatingVoice ? 'Cloning voice' : 'Clone voice'}
-            aria-busy={creatingVoice}
-            disabled={creatingVoice}
-            data-tour="add-voice"
-            title={creatingVoice ? 'Cloning voice' : 'Clone voice'}
-            onClick={() => voiceUploadRef.current?.click()}
-          >
-            {visibleUploadStatus === 'running' || visibleUploadStatus === 'done' || visibleUploadStatus === 'failed' ? (
-              <StatusMark
-                status={visibleUploadStatus}
-                size={14}
-                strokeWidth={2.2}
-                color="var(--progress)"
-                doneColor="var(--green)"
-                errorColor="var(--danger)"
+          {/* The script language is separate from the language used to clone
+              the voice. */}
+          {languages.length > 0 && (
+            <label className="script-language-control">
+              <span className="script-control-label">Language</span>
+              <DropdownSelect
+                className="language-select h-8 w-[190px] min-w-[190px] max-w-[190px] rounded-sm border border-control bg-control-fill px-1.5 text-[11px] text-muted outline-none hover:border-audio-line focus:border-audio-line"
+                value={language ?? ''}
+                ariaLabel="Script language"
+                placeholder="Select language…"
+                options={[{ value: '', label: 'Select language…' }, ...languages.map((name) => ({ value: name, label: name }))]}
+                onValueChange={(next) => onLanguageChange(next || null)}
               />
-            ) : (
-              <UploadIcon size={14} />
-            )}
-            <span>Clone Voice</span>
-          </button>
+            </label>
+          )}
         </div>
       </footer>
       <span className="script-editor-frame" aria-hidden="true" />

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from 'react'
 import { Mascot } from 'page-mascot'
-import { ArrowLeftIcon, ArrowRightIcon } from './Icons'
+import { ArrowLeft as ArrowLeftIcon, ArrowRight as ArrowRightIcon, MoveDownRight } from 'lucide-react'
+import { AppTooltip } from './Tooltip'
 import { DEFAULT_MASCOT_ID, MASCOTS } from '../generated/mascotCatalog'
 
 type Position = { x: number, y: number }
@@ -213,37 +214,40 @@ export default function MascotPicker({ anchorRef }: Props) {
       onClickCapture={onClickCapture}
     >
       <span id="mascot-drag-instructions" className="sr-only">Drag the mascot to move it. Drag or arrow-key its corner handle to resize it. Its position and size are kept until you close this tab.</span>
-      <button type="button" data-mascot-navigation className="mascot-nav" aria-label={`Show previous mascot; current mascot is ${selected.label}`} title="Previous mascot" onClick={() => move(-1)}>
-        <ArrowLeftIcon size={12} />
-      </button>
+      <AppTooltip content="Previous mascot">
+        <button type="button" data-mascot-navigation className="mascot-nav" aria-label={`Show previous mascot; current mascot is ${selected.label}`} onClick={() => move(-1)}>
+          <ArrowLeftIcon size={12} />
+        </button>
+      </AppTooltip>
       <span className="relative block shrink-0" style={{ width: size, height: size }}>
         <Mascot directions={selected.directions} reactions={selected.reactions} size={size} label={`${selected.label} Studio mascot`} />
-        <button
-          type="button"
-          data-mascot-resize
-          data-testid="mascot-resize"
-          className="mascot-resize absolute right-0 bottom-0"
-          role="slider"
-          aria-label={`Resize the ${selected.label} Studio mascot`}
-          aria-valuemin={MIN_SIZE}
-          aria-valuemax={MAX_SIZE}
-          aria-valuenow={size}
-          aria-valuetext={`${size} pixels`}
-          title="Drag or use arrow keys to resize the mascot"
-          onPointerDown={onResizePointerDown}
-          onPointerMove={onResizePointerMove}
-          onPointerUp={onResizePointerUp}
-          onPointerCancel={onResizePointerUp}
-          onKeyDown={onResizeKeyDown}
-        >
-          <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true" focusable="false">
-            <path d="M9 1v8H1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
+        <AppTooltip content="Drag or use arrow keys to resize the mascot">
+          <button
+            type="button"
+            data-mascot-resize
+            data-testid="mascot-resize"
+            className="mascot-resize absolute right-0 bottom-0"
+            role="slider"
+            aria-label={`Resize the ${selected.label} Studio mascot`}
+            aria-valuemin={MIN_SIZE}
+            aria-valuemax={MAX_SIZE}
+            aria-valuenow={size}
+            aria-valuetext={`${size} pixels`}
+            onPointerDown={onResizePointerDown}
+            onPointerMove={onResizePointerMove}
+            onPointerUp={onResizePointerUp}
+            onPointerCancel={onResizePointerUp}
+            onKeyDown={onResizeKeyDown}
+          >
+            <MoveDownRight size={10} aria-hidden="true" focusable="false" />
+          </button>
+        </AppTooltip>
       </span>
-      <button type="button" data-mascot-navigation className="mascot-nav" aria-label={`Show next mascot; current mascot is ${selected.label}`} title="Next mascot" onClick={() => move(1)}>
-        <ArrowRightIcon size={12} />
-      </button>
+      <AppTooltip content="Next mascot">
+        <button type="button" data-mascot-navigation className="mascot-nav" aria-label={`Show next mascot; current mascot is ${selected.label}`} onClick={() => move(1)}>
+          <ArrowRightIcon size={12} />
+        </button>
+      </AppTooltip>
     </div>
   )
 }

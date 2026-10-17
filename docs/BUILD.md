@@ -269,7 +269,21 @@ Expect, in order:
    query, close and reopen the picker, and confirm all voices are shown again.
    Enter a query with no matches and confirm **No matching voices.** appears
    without changing the selected voice. Press Escape from the search field and
-   confirm the picker closes.
+   confirm the picker closes. Confirm the Script editor exposes the Base UI
+   voice selector, Clone Voice action, and script-language dropdown. With an
+   empty script, no voice, or no selected language, Generate must remain
+   disabled; enter text and select both a voice and language, then confirm it
+   enables only after the model is ready. Open each dropdown by mouse and
+   keyboard and confirm its options are readable and selection updates the
+   trigger.
+   In Voiceovers, confirm the count stays on the left and Voice, Duration,
+   Status, and the calendar date-filter button align to the right, with the
+   calendar at the end. Verify the date menu offers Any time, Today, Last 7
+   days, and Last 30 days. At a narrow viewport, confirm the row wraps instead
+   of introducing horizontal scrolling. Confirm the Clear filters button is
+   absent. Hover and keyboard-focus icon controls and confirm tooltips appear;
+   check that menus, tooltips, and icons retain their theme-aware styling in
+   each theme.
 7. Verify voice and completed-voiceover deletes: a wrong admin password closes
    the modal without deleting; the default password opens a seven-second Undo
    toast; selecting Undo preserves the item, while allowing the timer to expire

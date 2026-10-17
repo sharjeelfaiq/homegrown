@@ -1240,6 +1240,25 @@ _WHISPER_TO_MODEL_LANGUAGE = {
 }
 
 
+def _canonical_language(name: str) -> Optional[str]:
+    """`name` in the model's own spelling, or None if it does not speak it.
+
+    /api/generate now carries a per-request language -- the Script editor can
+    override the one stamped on the voice -- so an unsupported value has to be
+    rejected here. Without this it reaches the wrapper and surfaces as a
+    mid-generation NotImplementedError on a chunk, i.e. a failed job rather
+    than a refused request.
+
+    Case-insensitive because codec_language_id is keyed in lower case while
+    /api/languages publishes the capitalized names the client sends back.
+    """
+    if _tts is None:
+        return None
+    supported = _tts.model.model.config.talker_config.codec_language_id
+    key = (name or "").strip().lower()
+    return key.capitalize() if key in supported else None
+
+
 def _model_language_name(whisper_code: str) -> Optional[str]:
     """Whisper's language code as a name this model recognises, or None."""
     name = _WHISPER_TO_MODEL_LANGUAGE.get(whisper_code.lower())
@@ -1834,6 +1853,13 @@ def generate(req: GenerateRequest, user_id: str = Depends(get_current_user)) -> 
         raise HTTPException(400, f"Unknown style '{req.style}'")
     if stability not in STABILITY_PARAMS:
         raise HTTPException(400, f"Unknown stability '{req.stability}'")
+    language = _canonical_language(req.language)
+    if language is None:
+        raise HTTPException(
+            400,
+            f"This model does not speak '{req.language}'. "
+            "GET /api/languages lists the ones it does.",
+        )
 
     budget = _seq_budget(preset)
     if budget.max_new_tokens < MIN_GEN_FRAMES:
@@ -1852,7 +1878,7 @@ def generate(req: GenerateRequest, user_id: str = Depends(get_current_user)) -> 
         "preset_id": preset["id"],
         "preset_name": preset["name"],
         "text": text,
-        "language": req.language,
+        "language": language,
         "style": style,
         "stability": stability,
         "chunks": chunks,

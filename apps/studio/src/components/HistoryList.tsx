@@ -21,14 +21,18 @@ import { toast } from 'sonner'
 import { usePersistedDraft } from '../hooks/usePersistedDraft'
 import { usePersistedRecord } from '../hooks/usePersistedRecord'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
+import { DropdownMenu } from './DropdownMenu'
+import DropdownSelect from './DropdownSelect'
+import { AppTooltip } from './Tooltip'
 import { UNDO_MS } from '../constants'
 import InlineName from './InlineName'
 import VoiceoverPlayer from './VoiceoverPlayer'
 import UndoCountdown from './UndoCountdown'
-import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrossIcon, DownloadIcon, MoreIcon, PlayIcon, TrashIcon, WandIcon } from './Icons'
+import { ArrowDown as ArrowDownIcon, ArrowUp as ArrowUpIcon, Check as CheckIcon, ChevronLeft, ChevronRight, X as CrossIcon, Download as DownloadIcon, Ellipsis as MoreIcon, Play as PlayIcon, Trash2 as TrashIcon, WandSparkles as WandIcon } from 'lucide-react'
 import { MOD_ARIA, MOD_KEY } from '../keys'
 import Kbd from './Kbd'
-import VoiceoverFilters, { type VoiceoverFilterState } from './VoiceoverFilters'
+import type { VoiceoverFilterState } from './VoiceoverFilters'
+import VoiceoverQuickFilters from './VoiceoverQuickFilters'
 import AdminPasswordModal from './AdminPasswordModal'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from '../historyPageSize'
 import { fetchHistoryPage, historyQueryKey, normalizeHistoryRequest } from '../historyQuery'
@@ -187,17 +191,17 @@ function RowHead({
       />
 
       <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-3">
-        <span className="mono min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-right text-[11px] text-faint" title={`Voice: ${voiceName}`}>
-          {voiceName}
-        </span>
+        <AppTooltip content={`Voice: ${voiceName}`}>
+          <span className="mono min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-right text-[11px] text-faint">
+            {voiceName}
+          </span>
+        </AppTooltip>
         {timestamp !== undefined && (
-          <time
-            className="result-stamp mono"
-            dateTime={new Date(timestamp * 1000).toISOString()}
-            title={timestampTitle}
-          >
-            {formatTimeOfDay(timestamp)}
-          </time>
+          <AppTooltip content={timestampTitle ?? formatTimestampFull(timestamp)}>
+            <time className="result-stamp mono" dateTime={new Date(timestamp * 1000).toISOString()}>
+              {formatTimeOfDay(timestamp)}
+            </time>
+          </AppTooltip>
         )}
       </div>
     </div>
@@ -532,10 +536,16 @@ function PendingRow({
           className="icon-btn size-6 flex-none border-none bg-transparent text-muted"
           disabled
           aria-label="Not ready to play yet"
-          title="Not ready to play yet"
         >
           <PlayIcon size={16} />
         </button>
+        <AppTooltip content={
+          failed
+            ? reason
+            : queued
+              ? 'Queued — starts when the current voiceover finishes'
+              : chunkLabel
+        }>
         <div
           className={['result-bar', showTicks && 'has-ticks'].filter(Boolean).join(' ')}
           role="progressbar"
@@ -550,13 +560,6 @@ function PendingRow({
                 : total
                   ? `Generating chunk ${Math.min(done + 1, total)} of ${total}`
                   : 'Generating'
-          }
-          title={
-            failed
-              ? reason
-              : queued
-                ? 'Queued — starts when the current voiceover finishes'
-                : chunkLabel
           }
           style={{ '--chunks': total || 1 } as CSSProperties}
         >
@@ -576,6 +579,7 @@ function PendingRow({
             {running && !reduced && <span className="absolute inset-0 animate-sheen bg-[linear-gradient(90deg,transparent,var(--sheen),transparent)]" aria-hidden="true" />}
           </motion.div>
         </div>
+        </AppTooltip>
         </div>}
 
         {/* This slot keeps the progress track aligned with a finished row's
@@ -594,26 +598,28 @@ function PendingRow({
 
         {queued && (
           <div className="order-first flex flex-none items-center gap-0.5" aria-label="Reorder queued generation">
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Move queued generation up"
-              title="Move up"
-              disabled={!canMoveUp || reordering || cancelPending}
-              onClick={onMoveUp}
-            >
-              <ArrowUpIcon size={15} />
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Move queued generation down"
-              title="Move down"
-              disabled={!canMoveDown || reordering || cancelPending}
-              onClick={onMoveDown}
-            >
-              <ArrowDownIcon size={15} />
-            </button>
+            <AppTooltip content="Move up">
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Move queued generation up"
+                disabled={!canMoveUp || reordering || cancelPending}
+                onClick={onMoveUp}
+              >
+                <ArrowUpIcon size={15} />
+              </button>
+            </AppTooltip>
+            <AppTooltip content="Move down">
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Move queued generation down"
+                disabled={!canMoveDown || reordering || cancelPending}
+                onClick={onMoveDown}
+              >
+                <ArrowDownIcon size={15} />
+              </button>
+            </AppTooltip>
           </div>
         )}
 
@@ -633,27 +639,29 @@ function PendingRow({
           )}
           {!failed && confirmingCancel ? (
             <>
-              <button
-                type="button"
-                className="icon-btn icon-btn-danger"
-                aria-label="Confirm cancellation"
-                title="Cancel generation"
-                onClick={() => {
-                  setConfirmingCancel(false)
-                  onCancel()
-                }}
-              >
-                <CheckIcon size={15} />
-              </button>
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Keep generation running"
-                title="Keep generating"
-                onClick={() => setConfirmingCancel(false)}
-              >
-                <CrossIcon size={15} />
-              </button>
+              <AppTooltip content="Cancel generation">
+                <button
+                  type="button"
+                  className="icon-btn icon-btn-danger"
+                  aria-label="Confirm cancellation"
+                  onClick={() => {
+                    setConfirmingCancel(false)
+                    onCancel()
+                  }}
+                >
+                  <CheckIcon size={15} />
+                </button>
+              </AppTooltip>
+              <AppTooltip content="Keep generating">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Keep generation running"
+                  onClick={() => setConfirmingCancel(false)}
+                >
+                  <CrossIcon size={15} />
+                </button>
+              </AppTooltip>
             </>
           ) : (
             <button
@@ -670,25 +678,24 @@ function PendingRow({
 
       {!failed && (
         <div className="flex min-h-7 min-w-0 items-center gap-3">
-          <button
-            type="button"
-            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
-            title={job.text_preview}
-            aria-label={`Reuse the script queued for ${nameControl.name || nameControl.placeholder || 'this voiceover'}`}
-            onClick={onReuse}
-          >
-            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-              {truncate(job.text_preview)}
-            </span>
-            <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
-          </button>
-          <time
-            className="result-stamp mono"
-            dateTime={new Date(job.submitted_at * 1000).toISOString()}
-            title={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}
-          >
-            {formatTimeOfDay(job.submitted_at)}
-          </time>
+          <AppTooltip content={job.text_preview}>
+            <button
+              type="button"
+              className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
+              aria-label={`Reuse the script queued for ${nameControl.name || nameControl.placeholder || 'this voiceover'}`}
+              onClick={onReuse}
+            >
+              <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                {truncate(job.text_preview)}
+              </span>
+              <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
+            </button>
+          </AppTooltip>
+          <AppTooltip content={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}>
+            <time className="result-stamp mono" dateTime={new Date(job.submitted_at * 1000).toISOString()}>
+              {formatTimeOfDay(job.submitted_at)}
+            </time>
+          </AppTooltip>
         </div>
       )}
 
@@ -729,25 +736,8 @@ function VoiceoverRow({
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
   const created = timeAgo(entry.created_at)
   const reduced = usePrefersReducedMotion()
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const close = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', escape)
-    return () => {
-      document.removeEventListener('mousedown', close)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [menuOpen])
 
   function isInteractiveTarget(event: ReactMouseEvent | ReactKeyboardEvent) {
     const target = event.target as HTMLElement
@@ -815,43 +805,50 @@ function VoiceoverRow({
 
         <TransportTime audioRef={audioRef} fallbackDurationS={entry.duration_s} />
 
-        <div className="result-actions flex flex-none items-center gap-0.5" ref={menuRef}>
-          <a href={downloadHref} download className="icon-btn" aria-label={`Download ${name}`} title="Download voiceover" onClick={() => toast('Download started')}>
-            <DownloadIcon size={14} />
-          </a>
+        <div className="result-actions flex flex-none items-center gap-0.5">
+          <AppTooltip content="Download voiceover">
+            <a href={downloadHref} download className="icon-btn" aria-label={`Download ${name}`} onClick={() => toast('Download started')}>
+              <DownloadIcon size={14} />
+            </a>
+          </AppTooltip>
           <div className="row-overflow-action relative flex flex-none opacity-70 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
-            <button type="button" className="icon-btn" aria-label={`More actions for ${name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="More actions" onClick={() => setMenuOpen((open) => !open)}>
-              <MoreIcon size={15} />
-            </button>
-          {menuOpen && (
-              <div className={`voiceover-actions-menu absolute right-0 z-150 min-w-40 rounded-md border border-control bg-surface-card p-1 shadow-(--shadow-menu) ${menuPlacement === 'down' ? 'top-full mt-1' : 'bottom-full mb-1'}`} role="menu">
-                <button type="button" className="voiceover-action-item voiceover-action-danger" role="menuitem" onClick={() => { setMenuOpen(false); onDelete() }}><TrashIcon size={14} />Delete</button>
-              </div>
-          )}
+            <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenu.Trigger className="icon-btn" aria-label={`More actions for ${name}`}>
+                <MoreIcon size={15} />
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Positioner side={menuPlacement === 'down' ? 'bottom' : 'top'} align="end" sideOffset={4} className="dropdown-menu-positioner">
+                  <DropdownMenu.Popup className="dropdown-menu-content min-w-40">
+                    <DropdownMenu.Item className="dropdown-menu-item dropdown-menu-item-danger" onClick={onDelete}>
+                      <TrashIcon size={14} />Delete
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Popup>
+                </DropdownMenu.Positioner>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </div>
         </div>
       </div>
 
       <div className="flex min-h-7 min-w-0 items-center gap-3">
-        <button
-          type="button"
-          className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
-          title={entry.text}
-          aria-label={`Reuse the script of ${name}`}
-          onClick={onRequeue}
-        >
-          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-            {truncate(entry.text)}
-          </span>
-          <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
-        </button>
-        <time
-          className="result-stamp mono"
-          dateTime={new Date(entry.created_at * 1000).toISOString()}
-          title={`Generated ${formatTimestampFull(entry.created_at)}`}
-        >
-          {formatTimeOfDay(entry.created_at)}
-        </time>
+        <AppTooltip content={entry.text}>
+          <button
+            type="button"
+            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
+            aria-label={`Reuse the script of ${name}`}
+            onClick={onRequeue}
+          >
+            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+              {truncate(entry.text)}
+            </span>
+            <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
+          </button>
+        </AppTooltip>
+        <AppTooltip content={`Generated ${formatTimestampFull(entry.created_at)}`}>
+          <time className="result-stamp mono" dateTime={new Date(entry.created_at * 1000).toISOString()}>
+            {formatTimeOfDay(entry.created_at)}
+          </time>
+        </AppTooltip>
       </div>
 
       </div>
@@ -1032,7 +1029,6 @@ export default function HistoryList({
 
   const setDraft = (next: string) => setPersistedDraft(next.slice(0, MAX_SEARCH_CHARS))
   const searching = draft.trim() !== ''
-  const filtersApplied = filters.status !== 'all' || filters.presetId !== undefined || filters.createdFrom !== undefined || filters.createdTo !== undefined || filters.durationMin !== undefined || filters.durationMax !== undefined
   const showingHistory = filters.status === 'all' || filters.status === 'completed'
 
   // Completed rows are a single bounded server page. Canonical voice-name
@@ -1595,7 +1591,6 @@ export default function HistoryList({
             ref={searchRef}
             type="search"
             aria-keyshortcuts={`${MOD_ARIA}+F`}
-            title={`Search voiceovers (${MOD_KEY}+F)`}
             className={`voiceover-search peer h-10 w-full rounded-sm border border-control bg-surface-raised ${draft === '' ? 'pr-16' : 'pr-3'} pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line coarse:pr-3`}
             placeholder="Search by the name of voiceover or voice..."
             aria-label="Search by the name of voiceover or voice"
@@ -1628,30 +1623,26 @@ export default function HistoryList({
             </Kbd>
           )}
           </div>
-          <VoiceoverFilters presets={presets} history={history} value={filters} onChange={onFiltersChange} />
           </div>
         </div>
       {/* Always reserve this neutral action band so selection never moves rows. */}
-      <div className="history-context-toolbar flex shrink-0 items-center gap-2 overflow-x-auto text-[11px] text-muted" role={selectedCount > 0 ? 'toolbar' : undefined} aria-label={selectedCount > 0 ? 'Actions for selected voiceovers' : undefined}>
+      <div className="history-context-toolbar flex shrink-0 flex-wrap items-center gap-2 overflow-x-hidden text-[11px] text-muted" role={selectedCount > 0 ? 'toolbar' : undefined} aria-label={selectedCount > 0 ? 'Actions for selected voiceovers' : undefined}>
         {selectedCount > 0 && (
           <>
             <span className="shrink-0" role="status">{selectedCount} selected</span>
-            <button type="button" className="icon-btn shrink-0" disabled={zipping} onClick={handleDownloadSelected} aria-label={zipping ? 'Preparing download' : 'Download selected voiceovers'} title={zipping ? 'Preparing download' : 'Download selected voiceovers'}><DownloadIcon size={15} /></button>
-            <button type="button" className="icon-btn icon-btn-danger shrink-0" onClick={handleDeleteSelected} aria-label="Delete selected voiceovers" title="Delete selected voiceovers"><TrashIcon size={15} /></button>
+            <AppTooltip content={zipping ? 'Preparing download' : 'Download selected voiceovers'}>
+              <button type="button" className="icon-btn shrink-0" disabled={zipping} onClick={handleDownloadSelected} aria-label={zipping ? 'Preparing download' : 'Download selected voiceovers'}><DownloadIcon size={15} /></button>
+            </AppTooltip>
+            <AppTooltip content="Delete selected voiceovers">
+              <button type="button" className="icon-btn icon-btn-danger shrink-0" onClick={handleDeleteSelected} aria-label="Delete selected voiceovers"><TrashIcon size={15} /></button>
+            </AppTooltip>
           </>
         )}
         {selectedCount === 0 && (
           <span className="shrink-0" role="status" aria-label={`${visibleTotal} voiceovers`}>All voiceovers · {visibleTotal}</span>
         )}
-        {filtersApplied && (
-          <button
-            type="button"
-            className="ghost-btn ml-auto h-7 shrink-0 px-2 text-[11px]"
-            onClick={() => onFiltersChange({ status: 'all' })}
-            aria-label="Clear voiceover filters"
-          >
-            Clear filters
-          </button>
+        {selectedCount === 0 && (
+          <VoiceoverQuickFilters className="ml-auto" presets={presets} history={history} value={filters} onChange={onFiltersChange} />
         )}
       </div>
       {/* Surfaced instead of scrolling the list out from under a reader. */}
@@ -1798,37 +1789,23 @@ export default function HistoryList({
               pixel as the rows above it. */}
           {(history.length > 0 || total > 0) && (
           <div className="voiceover-pager">
-            {/* A native <select>, not the @utility select used by VoicePicker:
-                that one draws its caret with ::after, which a form control does
-                not render. color-scheme is per-theme (tokens.css), so the
-                browser's own caret and option popup already follow the theme.
-
-                The keydown guard is the same one the search field carries.
-                useHotkeys' isTyping() already covers SELECT, so "/" is safe --
-                but Escape is NOT gated by it, and without this an Escape aimed
-                at closing the native option popup would also clear the
-                composer's state behind this column. */}
             {/* Deliberately the smaller half of the footer: this is a setting
                 you touch once, next to the page buttons you touch constantly. */}
             <label className="flex items-center gap-1.5 text-[10px] text-faint">
               <span className="mono uppercase tracking-[0.08em]">Per page</span>
-              <select
+              <DropdownSelect
                 className="h-7 rounded-sm border border-control bg-surface-raised px-1.5 text-[11px] text-ink outline-none focus:border-audio-line"
-                value={pageSize}
-                aria-label="Voiceovers per page"
-                onKeyDown={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  const next = Number(e.target.value) as HistoryPageSize
+                value={String(pageSize)}
+                ariaLabel="Voiceovers per page"
+                options={PAGE_SIZE_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}
+                onValueChange={(value) => {
+                  const next = Number(value) as HistoryPageSize
                   const size = (PAGE_SIZE_OPTIONS as readonly number[]).includes(next) ? next : DEFAULT_PAGE_SIZE
                   setPageSize(size)
                   writeHistoryPageSize(size)
                   listRef.current?.scrollTo({ top: 0 })
                 }}
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>{size}</option>
-                ))}
-              </select>
+              />
             </label>
             <nav
               aria-label="Voiceover pages"
@@ -1846,14 +1823,16 @@ export default function HistoryList({
                   slides with the selected page. */}
               <ul className="voiceover-pager-list">
                 <li className="voiceover-pager-prev">
-                  <button
-                    type="button"
-                    aria-label="Previous page"
-                    disabled={page === 0}
-                    onClick={() => goToPage(page - 1)}
-                  >
-                    ‹
-                  </button>
+                  <AppTooltip content="Previous page">
+                    <button
+                      type="button"
+                      aria-label="Previous page"
+                      disabled={page === 0}
+                      onClick={() => goToPage(page - 1)}
+                    >
+                      <ChevronLeft size={14} aria-hidden="true" />
+                    </button>
+                  </AppTooltip>
                 </li>
                 {pageControls(page, pageCount).map((control) => (
                     <li key={control} className={['voiceover-pager-page', control === page ? 'is-active' : ''].filter(Boolean).join(' ')}>
@@ -1868,14 +1847,16 @@ export default function HistoryList({
                     </li>
                 ))}
                 <li className="voiceover-pager-next">
-                  <button
-                    type="button"
-                    aria-label="Next page"
-                    disabled={page >= pageCount - 1}
-                    onClick={() => goToPage(page + 1)}
-                  >
-                    ›
-                  </button>
+                  <AppTooltip content="Next page">
+                    <button
+                      type="button"
+                      aria-label="Next page"
+                      disabled={page >= pageCount - 1}
+                      onClick={() => goToPage(page + 1)}
+                    >
+                      <ChevronRight size={14} aria-hidden="true" />
+                    </button>
+                  </AppTooltip>
                 </li>
               </ul>
             </nav>

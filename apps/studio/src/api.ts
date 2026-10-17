@@ -161,6 +161,17 @@ export function getHealth(): Promise<HealthResponse> {
   return fetch(apiUrl('/api/health')).then(parseOrThrow<HealthResponse>)
 }
 
+/** The languages this checkpoint actually speaks, in its own spelling.
+ *
+ * Read from the loaded model's `codec_language_id`, not a list hard-coded
+ * anywhere -- swapping MODEL_PATH for a checkpoint with different language
+ * coverage changes this answer with no client change. 503 until the model is
+ * loaded, which is why the caller waits for health rather than firing on mount.
+ */
+export function listLanguages(): Promise<{ languages: string[] }> {
+  return fetch(apiUrl('/api/languages')).then(parseOrThrow<{ languages: string[] }>)
+}
+
 export function listPresets(): Promise<{ presets: Preset[] }> {
   return authFetch(apiUrl('/api/presets')).then(parseOrThrow<{ presets: Preset[] }>)
 }

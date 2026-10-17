@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFlushOnHide } from '../hooks/useFlushOnHide'
-import { PencilIcon } from './Icons'
+import { Pencil as PencilIcon } from 'lucide-react'
+import { AppTooltip } from './Tooltip'
 
 interface Props {
   /** The name to show when not being edited. */
@@ -108,7 +109,6 @@ export default function InlineName({
         type="button"
         className="inline-name-pencil"
         aria-label={`Edit ${ariaLabel}`}
-        title="Edit name"
         tabIndex={-1}
         onMouseDown={(event) => {
           // Keep the input focused; otherwise clicking the affordance would
@@ -119,45 +119,46 @@ export default function InlineName({
       >
         <PencilIcon size={12} />
       </button>
-      <input
-        ref={inputRef}
-        type="text"
-        className={className}
-      spellCheck={false}
-      size={Math.max(minChars, shown.length + 1)}
-      aria-label={ariaLabel}
-      title={title}
-      placeholder={placeholder}
-      value={shown}
-      onFocus={() => {
-        setDraft(value)
-        skipBlurCommit.current = false
-        flushed.current = false
-        setEditing(true)
-      }}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        setEditing(false)
-        if (skipBlurCommit.current) {
-          skipBlurCommit.current = false
-          return
-        }
-        onCommit(draft.trim())
-      }}
-      onKeyDown={(e) => {
-        e.stopPropagation()
-        if (e.key === 'Enter') {
-          onCommit(draft.trim())
-          skipBlurCommit.current = true
-          e.currentTarget.blur()
-        }
-        if (e.key === 'Escape') {
-          skipBlurCommit.current = true
-          setDraft(value)
-          e.currentTarget.blur()
-        }
-      }}
-      />
+      <AppTooltip content={title ?? 'Click to edit name'}>
+        <input
+          ref={inputRef}
+          type="text"
+          className={className}
+          spellCheck={false}
+          size={Math.max(minChars, shown.length + 1)}
+          aria-label={ariaLabel}
+          placeholder={placeholder}
+          value={shown}
+          onFocus={() => {
+            setDraft(value)
+            skipBlurCommit.current = false
+            flushed.current = false
+            setEditing(true)
+          }}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            setEditing(false)
+            if (skipBlurCommit.current) {
+              skipBlurCommit.current = false
+              return
+            }
+            onCommit(draft.trim())
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') {
+              onCommit(draft.trim())
+              skipBlurCommit.current = true
+              e.currentTarget.blur()
+            }
+            if (e.key === 'Escape') {
+              skipBlurCommit.current = true
+              setDraft(value)
+              e.currentTarget.blur()
+            }
+          }}
+        />
+      </AppTooltip>
     </span>
   )
 }

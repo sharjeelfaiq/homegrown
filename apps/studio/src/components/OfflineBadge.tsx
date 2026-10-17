@@ -1,4 +1,4 @@
-import { AlertIcon } from './Icons'
+import { CircleAlert as AlertIcon } from 'lucide-react'
 
 /** The persistent "something is wrong" marker, in the manner of the Next.js dev
  * overlay indicator: a small fixed badge in the corner that never goes away
@@ -26,7 +26,6 @@ export default function OfflineBadge({ onOpen }: { onOpen: () => void }) {
       // is FOR, since a screen-reader user arriving at it out of context gets
       // no help from one word.
       aria-label="Homegrown cannot reach its backend. Open the details."
-      title="Homegrown cannot reach its backend"
     >
       <span className="flex size-4 flex-none items-center justify-center text-danger">
         <AlertIcon size={15} />

@@ -1,6 +1,7 @@
-import { useId, useRef, useState, type ReactNode } from 'react'
-import { AnimatePresence, motion, useMotionValue, useSpring, useTransform, type SpringOptions } from 'framer-motion'
+import { useRef, type ReactNode } from 'react'
+import { motion, useMotionValue, useSpring, useTransform, type SpringOptions } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
+import { AppTooltip } from './Tooltip'
 import './Dock.css'
 
 export interface DockItemData {
@@ -35,8 +36,6 @@ function DockItem({ item, index, mouseX, spring }: {
   mouseX: ReturnType<typeof useMotionValue<number>>
   spring: SpringOptions
 }) {
-  const tooltipId = useId()
-  const [tooltipVisible, setTooltipVisible] = useState(false)
   const center = index * (ITEM_SIZE + ITEM_GAP) + ITEM_SIZE / 2
   const rawSize = useTransform(
     mouseX,
@@ -47,44 +46,19 @@ function DockItem({ item, index, mouseX, spring }: {
   const size = useSpring(rawSize, spring)
   const reducedMotion = usePrefersReducedMotion()
 
-  const showTooltip = () => setTooltipVisible(true)
-  const hideTooltip = () => setTooltipVisible(false)
-
   return (
-    <motion.button
-      type="button"
-      className={['dock-item', item.className].filter(Boolean).join(' ')}
-      style={reducedMotion ? { width: ITEM_SIZE, height: ITEM_SIZE } : { width: size, height: size }}
-      aria-label={item.label}
-      aria-describedby={tooltipVisible ? tooltipId : undefined}
-      disabled={item.disabled}
-      onClick={item.onClick}
-      onMouseEnter={showTooltip}
-      onMouseLeave={hideTooltip}
-      onFocus={showTooltip}
-      onBlur={hideTooltip}
-    >
-      {item.icon}
-      {reducedMotion ? (
-        tooltipVisible && <span id={tooltipId} className="dock-tooltip" role="tooltip">{item.label}</span>
-      ) : (
-        <AnimatePresence>
-          {tooltipVisible && (
-            <motion.span
-              id={tooltipId}
-              className="dock-tooltip"
-              role="tooltip"
-              initial={{ opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 3 }}
-              transition={{ duration: 0.12 }}
-            >
-              {item.label}
-            </motion.span>
-          )}
-        </AnimatePresence>
-      )}
-    </motion.button>
+    <AppTooltip content={item.label} side="top">
+      <motion.button
+        type="button"
+        className={['dock-item', item.className].filter(Boolean).join(' ')}
+        style={reducedMotion ? { width: ITEM_SIZE, height: ITEM_SIZE } : { width: size, height: size }}
+        aria-label={item.label}
+        disabled={item.disabled}
+        onClick={item.onClick}
+      >
+        {item.icon}
+      </motion.button>
+    </AppTooltip>
   )
 }
 

@@ -16,6 +16,7 @@ import { GenerationActivityProvider } from './GenerationActivityContext.tsx'
 import { ThemeProvider } from './ThemeContext.tsx'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { historyQueryClient } from './historyQuery.ts'
+import { TooltipProvider } from './components/Tooltip.tsx'
 
 // ThemeProvider is outermost, and outside BrowserRouter: the theme is
 // route-independent, and it is consumed from the header (ThemeSwitch), from
@@ -23,16 +24,18 @@ import { historyQueryClient } from './historyQuery.ts'
 // Modal, which portals to document.body outside #root entirely.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider>
-      <QueryClientProvider client={historyQueryClient}>
-      <BrowserRouter>
-        <AudioActivityProvider>
-          <GenerationActivityProvider>
-            <App />
-          </GenerationActivityProvider>
-        </AudioActivityProvider>
-      </BrowserRouter>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <TooltipProvider delay={500} closeDelay={100}>
+      <ThemeProvider>
+        <QueryClientProvider client={historyQueryClient}>
+          <BrowserRouter>
+            <AudioActivityProvider>
+              <GenerationActivityProvider>
+                <App />
+              </GenerationActivityProvider>
+            </AudioActivityProvider>
+          </BrowserRouter>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </TooltipProvider>
   </StrictMode>,
 )
