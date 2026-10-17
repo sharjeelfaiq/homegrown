@@ -139,8 +139,8 @@ export default function ScriptBlock({
   return (
     // The card owns the focus treatment so the textarea and its footer read as
     // one editor; the theme-aware hairline is defined in index.css.
-    <div className="script-editor grid h-[clamp(272px,36svh,372px)] min-h-[clamp(272px,36svh,372px)] max-h-[clamp(272px,36svh,372px)] grid-rows-[minmax(0,1fr)_auto] overflow-visible rounded-md border border-transparent bg-surface-card" data-tour="script-editor">
-      {/* The stable 272–372px editor range leaves a predictable writing area
+    <div className="script-editor grid h-[clamp(300px,39svh,400px)] min-h-[clamp(300px,39svh,400px)] max-h-[clamp(300px,39svh,400px)] grid-rows-[minmax(0,1fr)_auto] overflow-visible rounded-md border border-transparent bg-surface-card" data-tour="script-editor">
+      {/* The stable 300–400px editor range leaves a predictable writing area
           while the grid reserves a separate footer row for its controls. */}
       <div className="script-editor-input">
         <textarea
@@ -221,10 +221,11 @@ export default function ScriptBlock({
               <span className="script-control-label">Language</span>
               <DropdownSelect
                 className="w-[190px] min-w-[190px] max-w-[190px]"
+                contentClassName="standard-options-popup"
                 value={language ?? ''}
                 ariaLabel="Script language"
-                placeholder="Select language…"
-                options={[{ value: '', label: 'Select language…' }, ...languages.map((name) => ({ value: name, label: name }))]}
+                placeholder="Select language"
+                options={[{ value: '', label: 'Select language' }, ...languages.map((name) => ({ value: name, label: name }))]}
                 onValueChange={(next) => onLanguageChange(next || null)}
               />
             </label>

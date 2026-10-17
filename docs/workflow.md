@@ -60,9 +60,11 @@ than 40 seconds are shortened to the first 40 seconds of speech. A
 name starts from the filename, language is detected, and faster-whisper
 transcribes the reference. There is no language selector on upload.
 
-The Script editor footer holds the word count, voice picker, Clone Voice
-button, and script-language control. The language control begins at
-**Select language…**; generation requires choosing an explicit language, even
+The Script editor uses a responsive height of `clamp(300px, 39svh, 400px)`.
+Its footer holds the word count, voice picker, Clone Voice button, and
+script-language control. An empty voice picker reads **Select
+voice**; the language control begins at **Select language**. Generation
+requires choosing an explicit language, even
 though the backend can fall back to the voice's stamped language. Choosing one
 of the loaded model's languages reads the script in that language with the same
 cloned voice. The choice stays until you change it and is not saved across
@@ -70,9 +72,11 @@ reloads. The list comes from the loaded model, so a language it does not speak
 is never offered and is refused if requested. Reading a script in a language
 the voice was not cloned from usually keeps the speaker's accent — check the
 first voiceover before committing to a long one. The language dropdown keeps
-a fixed 190px width to prevent footer shifts. Open the picker to select a
-voice, click its name to rename it, or use its **Play**, download, and **Delete**
-actions. Clicking delete opens
+a fixed 190px width to prevent footer shifts. Open the picker and click a voice
+name to select it; the picker stays open. Voice names are read-only by default.
+Click the pencil icon button to edit a name; it hides during editing and returns
+when editing ends. Use the row's **Play**,
+download, and **Delete** actions. Clicking delete opens
 the admin-password modal. After a valid password, a seven-second **Undo** toast
 appears; Undo cancels the pending delete. If it expires, the server deletes the
 preset and its reference audio. An invalid password closes the modal and does
@@ -81,8 +85,9 @@ fail.
 
 When the picker is open, use the compact **Search voices** field at the top of
 the dropdown to filter cloned voices by name. Filtering is local and
-case-insensitive; click or keyboard-select a matching row as usual. The search
-query is cleared when the picker closes, and an unmatched query shows
+case-insensitive; click a matching name to select it without closing the
+picker. The pencil button enters rename mode. The search query is cleared when
+the picker closes, and an unmatched query shows
 **No matching voices.** without changing the stored voice selection.
 
 During an upload, the control replaces its icon with an animated lifecycle
@@ -137,9 +142,10 @@ Completed voiceovers are newest-first and paginated. Search matches canonical
 voice names across the full history; browser-local display-name overrides only
 match loaded pages. The left heading shows the total count until rows are
 selected, then shows the selected count (using **1 voiceover** for one).
-Voice, Duration, and Status selectors plus a calendar date filter sit on the
-right when nothing is selected. The row wraps on narrow screens without
-horizontal scrolling. Search and filters narrow the history.
+When nothing is selected, the quick filters default to **Select voice**,
+**Select duration**, **Select status**, and **Select date range**. They sit on
+the right. The row wraps on narrow screens without horizontal scrolling.
+Search and filters narrow the history.
 The search query, page size, and display-name overrides are stored in this
 browser; they are not server-side account data.
 

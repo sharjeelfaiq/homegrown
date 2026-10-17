@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import type { HistoryEntry, Preset } from '../api'
 import DropdownSelect from './DropdownSelect'
-import { CalendarDays, Check as CheckIcon } from 'lucide-react'
-import { DropdownMenu } from './DropdownMenu'
+import { CalendarDays } from 'lucide-react'
+import { Dropdown } from './Dropdown'
 import { AppTooltip } from './Tooltip'
 import type { VoiceoverFilterState, VoiceoverStatus } from './VoiceoverFilters'
 
@@ -61,31 +61,26 @@ export default function VoiceoverQuickFilters({ presets, history, value, onChang
   }
 
   return (
-    <div className={`flex w-[284px] max-w-full min-w-0 flex-none items-center gap-1 ${className}`} aria-label="Quick voiceover filters">
-      <DropdownSelect className="dropdown-select-compact w-[80px] min-w-0 flex-[0_1_80px]" value={value.presetId ?? ''} ariaLabel="Filter by voice" options={[{ value: '', label: 'Voice' }, ...voices.map(([id, label]) => ({ value: id, label }))]} onValueChange={(presetId) => onChange({ ...value, presetId: presetId || undefined })} />
-      <DropdownSelect className="dropdown-select-compact w-[80px] min-w-0 flex-[0_1_80px]" value={quickDurationMode(value)} ariaLabel="Filter by duration" options={[{ value: 'all', label: 'Duration' }, { value: 'short', label: 'Short (<30s)' }, { value: 'medium', label: 'Medium (30–120s)' }, { value: 'long', label: 'Long (>120s)' }, { value: 'custom', label: 'Custom range…' }]} onValueChange={changeDuration} />
-      <DropdownSelect className="dropdown-select-compact w-[80px] min-w-0 flex-[0_1_80px]" value={value.status} ariaLabel="Filter by generation status" options={[{ value: 'all', label: 'Status' }, { value: 'completed', label: 'Completed' }, { value: 'active', label: 'Generating / Queued' }, { value: 'failed', label: 'Failed' }]} onValueChange={(status) => onChange({ ...value, status: status as VoiceoverStatus })} />
-      <DropdownMenu.Root>
-        <AppTooltip content={`Date: ${{ all: 'Any time', today: 'Today', '7d': 'Last 7 days', '30d': 'Last 30 days', custom: 'Custom range' }[quickDateMode(value)]}`}>
-          <DropdownMenu.Trigger className="icon-btn ml-auto size-7 shrink-0" aria-label="Filter by date range">
+    <div className={`flex w-[384px] max-w-full min-w-0 flex-none flex-nowrap items-center justify-end gap-[2px] ${className}`} aria-label="Quick voiceover filters">
+      <DropdownSelect className="quick-filter-select-trigger w-[116px] min-w-0 flex-[0_1_116px]" contentClassName="standard-options-popup" value={value.presetId ?? ''} ariaLabel="Filter by voice" placeholder="Select voice" options={[{ value: '', label: 'Select voice' }, ...voices.map(([id, label]) => ({ value: id, label }))]} onValueChange={(presetId) => onChange({ ...value, presetId: presetId || undefined })} />
+      <DropdownSelect className="quick-filter-select-trigger w-[116px] min-w-0 flex-[0_1_116px]" contentClassName="standard-options-popup" value={quickDurationMode(value)} ariaLabel="Filter by duration" placeholder="Select duration" options={[{ value: 'all', label: 'Select duration' }, { value: 'short', label: 'Short (<30s)' }, { value: 'medium', label: 'Medium (30–120s)' }, { value: 'long', label: 'Long (>120s)' }, { value: 'custom', label: 'Custom range…' }]} onValueChange={changeDuration} />
+      <DropdownSelect className="quick-filter-select-trigger w-[116px] min-w-0 flex-[0_1_116px]" contentClassName="standard-options-popup" value={value.status} ariaLabel="Filter by status" placeholder="Select status" options={[{ value: 'all', label: 'Select status' }, { value: 'completed', label: 'Completed' }, { value: 'active', label: 'Generating / Queued' }, { value: 'failed', label: 'Failed' }]} onValueChange={(status) => onChange({ ...value, status: status as VoiceoverStatus })} />
+      <Dropdown.Root>
+        <AppTooltip content={`Date: ${{ all: 'Select date range', today: 'Today', '7d': 'Last 7 days', '30d': 'Last 30 days', custom: 'Custom range' }[quickDateMode(value)]}`}>
+          <Dropdown.Trigger className="icon-btn size-7 shrink-0" aria-label="Filter by date range">
             <CalendarDays size={15} aria-hidden="true" />
-          </DropdownMenu.Trigger>
+          </Dropdown.Trigger>
         </AppTooltip>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Positioner side="bottom" align="end" sideOffset={4} className="dropdown-menu-positioner">
-            <DropdownMenu.Popup className="dropdown-menu-content">
-              <DropdownMenu.RadioGroup value={quickDateMode(value)} onValueChange={changeDate}>
-                {[['all', 'Any time'], ['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days']].map(([mode, label]) => (
-                  <DropdownMenu.RadioItem key={mode} value={mode} className="dropdown-menu-radio-item dropdown-select-item">
-                    <DropdownMenu.RadioItemIndicator className="dropdown-menu-indicator"><CheckIcon size={12} /></DropdownMenu.RadioItemIndicator>
+        <Dropdown.Content side="bottom" align="end" sideOffset={4} className="standard-options-popup">
+              <Dropdown.RadioGroup value={quickDateMode(value)} onValueChange={changeDate}>
+                  {[['all', 'Select date range'], ['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days']].map(([mode, label]) => (
+                  <Dropdown.RadioItem key={mode} value={mode} className="dropdown-menu-radio-item dropdown-select-item">
                     {label}
-                  </DropdownMenu.RadioItem>
+                  </Dropdown.RadioItem>
                 ))}
-              </DropdownMenu.RadioGroup>
-            </DropdownMenu.Popup>
-          </DropdownMenu.Positioner>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+              </Dropdown.RadioGroup>
+        </Dropdown.Content>
+      </Dropdown.Root>
     </div>
   )
 }

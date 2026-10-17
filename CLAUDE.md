@@ -11,6 +11,10 @@ npm run dev
 
 # Frontend verification
 cd apps/studio && npm run test && npm run lint && npm run build
+cd ../..
+
+# Backend unit tests
+.venv/Scripts/python.exe -m unittest discover -s services/voice-api -p 'test_*.py'
 
 # Regenerate checked-in loading skeletons after changing their fixtures or layout
 # (start Vite on 127.0.0.1:5173 first)
@@ -89,11 +93,17 @@ on success, failure, or interruption and produces the same self-extracting
 - The Script editor keeps an overflow-visible, rounded card frame so the voice
   picker can escape the card. Its visible border is a final non-interactive
   overlay child, painted above the opaque footer; keep that element after the
-  textarea and footer so every corner remains continuous when focused.
+  textarea and footer so every corner remains continuous when focused. The
+  editor height uses `clamp(300px, 39svh, 400px)`; keep the input grid row
+  flexible so the footer stays visible.
 - The Script editor footer's script-language selector uses the shared
   Base UI menu-backed dropdown, populated from `GET /api/languages` (the loaded
   checkpoint's own `codec_language_id`, read once when the model reports
-  ready). Empty list hides the control. Generation requires a non-empty script,
+  ready). Its unselected option is **Select language**; empty list hides the
+  control. Selection dropdowns must provide a field-specific `Select {label}`
+  placeholder/default option. Keep meaningful, persisted settings (such as
+  page size or System theme) selected instead of replacing them with prompts.
+  Generation requires a non-empty script,
   an available voice, an explicitly selected script language, and a ready
   model. The language choice is in-memory only — do not persist it or reset it
   when the voice changes. `POST /api/generate` validates `language` against the
@@ -106,9 +116,11 @@ on success, failure, or interruption and produces the same self-extracting
   sync with `ScriptBlock.test.tsx`.
 - `VoicePicker.tsx` renders a local, case-insensitive cloned-voice name search
   input at the top of its Base UI menu popup. The query is cleared by `close()`;
-  filtered rows retain the existing selection, rename, preview, download, and
-  delete behavior. Keep typing and arrow keys in the search field from
-  selecting rows.
+  clicking a read-only voice name selects it without closing the picker. Names
+  become editable only through the pencil icon button, which hides while the
+  name is being edited and returns when editing ends. Rows retain preview,
+  download, and delete actions. Keep typing and arrow keys in the search field
+  from selecting rows.
 - Backend startup failures are reported through a fixed, pulsing warning button
   at the lower-left of Studio; its modal shows the relevant message and Retry
   action when available. Do not put a failure banner above the Script editor.
@@ -162,10 +174,12 @@ on success, failure, or interruption and produces the same self-extracting
   Selection actions live in this reserved toolbar, never in a floating dock.
   One selected row downloads directly; multiple selected rows use the history
   ZIP endpoint.
-- Shared dropdown selectors, the theme menu, and voiceover action menus use
-  `@base-ui/react/menu` via `DropdownMenu.tsx`. Selection dropdowns share their
-  raised surface, border, type, focus, and hover style through
-  `.dropdown-select-trigger`; compact filters only change their dimensions.
+- Dropdown selectors, the theme menu, and voiceover action menus use
+  `@base-ui/react/menu` through the shared `Dropdown.tsx` wrapper. Selection
+  dropdowns share their raised surface, border, type, focus, and hover style
+  through `.dropdown-select-trigger`; quick-filter triggers are shorter and
+  use smaller text. The language and quick-filter option windows share the
+  `standard-options-popup` style and 144px width (bounded by the viewport).
   Tooltips use the shared Base UI tooltip wrapper. Interface glyphs come from
   `lucide-react`. The animated status ring and undo countdown ring are bespoke
   visuals, not icon glyphs.

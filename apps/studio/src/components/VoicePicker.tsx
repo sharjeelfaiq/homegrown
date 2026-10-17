@@ -4,11 +4,11 @@ import { mediaUrl, presetDownloadUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
-import { Check as CheckIcon, ChevronDown, Download as DownloadIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon } from 'lucide-react'
+import { ChevronDown, Download as DownloadIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon } from 'lucide-react'
 import AdminPasswordModal from './AdminPasswordModal'
 import InlineName from './InlineName'
 import { AppTooltip } from './Tooltip'
-import { DropdownMenu } from './DropdownMenu'
+import { Dropdown } from './Dropdown'
 
 interface Props {
   presets: Preset[]
@@ -51,7 +51,6 @@ export default function VoicePicker({
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
-  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const { setActiveAudio, releaseAudio } = useAudioActivity()
   const { runningPresetIds } = useGenerationActivity()
@@ -104,8 +103,6 @@ export default function VoicePicker({
 
   function selectPreset(id: string) {
     onSelect(id)
-    close()
-    triggerRef.current?.focus()
   }
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase()
@@ -152,19 +149,18 @@ export default function VoicePicker({
           verified against the accessibility tree, which reported the name as
           exactly "Voice" while the button visibly read "Steven Seagal
           Humiliated Bruce Lee on St". The selection has to be in the label. */}
-      <DropdownMenu.Root open={open} onOpenChange={(nextOpen) => nextOpen ? setOpen(true) : close()}>
-      <AppTooltip content={selected?.name ?? 'Choose a voice'}>
-        <DropdownMenu.Trigger
-          ref={triggerRef}
+      <Dropdown.Root open={open} onOpenChange={(nextOpen) => nextOpen ? setOpen(true) : close()}>
+      <AppTooltip content={selected?.name ?? 'Select voice'}>
+        <Dropdown.Trigger
           className={`dropdown-select-trigger voice-picker-trigger w-full ${selected ? 'is-selected' : ''}`}
-          aria-label={selected ? `Voice: ${selected.name}${generating ? ', generating' : ''}` : 'Choose a voice'}
+          aria-label={selected ? `Voice: ${selected.name}${generating ? ', generating' : ''}` : 'Select voice'}
         >
         {/* The tooltip, because the field is deliberately a fixed 168px (see above)
             and a long name is genuinely cut -- measured at 126px visible of
             258px, i.e. under half. Widening it is not the fix; that was tried
             and read as a search bar. Hover reveals the rest instead. */}
         <span className="min-w-0 flex-1 truncate">
-          {selected ? selected.name : 'Choose a voice…'}
+          {selected ? selected.name : 'Select voice'}
         </span>
           {generating && (
           <span
@@ -173,12 +169,10 @@ export default function VoicePicker({
           />
           )}
           <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted" />
-        </DropdownMenu.Trigger>
+        </Dropdown.Trigger>
       </AppTooltip>
 
-      <DropdownMenu.Portal>
-        <DropdownMenu.Positioner side="bottom" align="start" sideOffset={6} className="dropdown-menu-positioner">
-          <DropdownMenu.Popup className="dropdown-menu-content voice-picker-dropdown" role="presentation">
+      <Dropdown.Content side="bottom" align="start" sideOffset={6} className="voice-picker-dropdown" role="presentation">
           <ul className="voice-picker-list" role="listbox" onKeyDown={onMenuKeyDown}>
             <li className="list-none border-b border-hairline px-1.5 pt-1 pb-1" role="presentation">
               <input
@@ -186,7 +180,7 @@ export default function VoicePicker({
                 value={searchQuery}
                 aria-label="Search cloned voices"
                 placeholder="Search voices…"
-                className="h-8 w-full rounded-sm border border-control bg-control-fill px-2 text-[12px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+                className="h-8 w-full rounded-sm border border-control bg-control-fill px-2 text-[12px] text-ink outline-none placeholder:text-faint focus:border-control focus:ring-0 focus:outline-none"
                 onChange={(event) => setSearchQuery(event.target.value)}
                 onKeyDown={(event) => {
                   // Keep typing and arrow keys out of row navigation.
@@ -202,7 +196,7 @@ export default function VoicePicker({
             ) : filteredPresets.map((p) => (
               <li
                 key={p.id}
-                className={`voice-menu-pick flex min-h-9 cursor-pointer items-center gap-1 rounded-sm border-b border-hairline px-1.5 last:border-b-0 hover:bg-surface-hover focus:bg-surface-hover focus:outline-none ${p.id === selectedPresetId ? 'voice-menu-pick-selected' : ''}`}
+                className={`voice-menu-pick flex min-h-9 items-center gap-1 rounded-sm border-b border-hairline px-1.5 last:border-b-0 hover:bg-surface-hover focus:bg-surface-hover focus:outline-none ${p.id === selectedPresetId ? 'voice-menu-pick-selected' : ''}`}
                 role="option"
                 tabIndex={0}
                 aria-selected={p.id === selectedPresetId}
@@ -218,24 +212,24 @@ export default function VoicePicker({
               >
                 <span className="flex min-w-0 flex-1 items-center">
                   <span
-                    className={`voice-menu-selection ${p.id === selectedPresetId ? 'is-selected' : ''}`}
-                    aria-hidden="true"
-                  >
-                    {p.id === selectedPresetId && <CheckIcon size={10} />}
-                  </span>
-                  <span
                     className="min-w-0 flex-1"
-                    onClick={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      if (event.target instanceof HTMLInputElement && event.target.readOnly) {
+                        selectPreset(p.id)
+                      }
+                    }}
                     onKeyDown={(event) => event.stopPropagation()}
                   >
                     <InlineName
                       value={p.name}
                       placeholder="Name this voice"
                       ariaLabel={`Name of voice ${p.name}`}
-                      title="Click to rename"
+                      title="Use the pencil to edit voice name"
                       onCommit={(next, opts) => onRename(p.id, next, opts)}
                       minChars={1}
                       className="result-name voice-picker-name"
+                      editOnPencil
                     />
                   </span>
                   {runningPresetIds.has(p.id) && (
@@ -282,10 +276,8 @@ export default function VoicePicker({
               </li>
             ))}
           </ul>
-          </DropdownMenu.Popup>
-        </DropdownMenu.Positioner>
-      </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      </Dropdown.Content>
+      </Dropdown.Root>
 
       <AdminPasswordModal
         open={deletePreset !== null}

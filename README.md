@@ -95,6 +95,7 @@ To add a mascot, place a numbered pair in `apps/studio/public/mascots/`:
 regenerates `apps/studio/src/generated/mascotCatalog.ts`. Commit the two assets
 and that generated catalog together.
 
+The Script editor is 300–400px high, with its height adapting to viewport size.
 The **Generate** button is centered below the editor and is 44px high. It stays
 disabled until the script contains non-whitespace text, an available voice and
 a script language are selected, the model is ready, and no submission or
@@ -102,21 +103,28 @@ startup is in progress. Its disabled reason and keyboard-shortcut reminder are
 auxiliary text, so they do not shift the action off the editor's centerline.
 The voice, script-language, filter, and page-size selectors use one shared
 Base UI menu-backed dropdown style; the Clone Voice action sits beside the
-voice selector. Compact filters retain a shorter height while sharing the
-same border, surface, typography, focus, and hover treatment.
-The language control keeps a fixed 190px width so voice-name changes do not
-shift the editor footer.
+voice selector. Compact Voice, Duration, and Status filters use the shared
+dropdown surface and option-window styling; their triggers are slightly shorter
+and use smaller text than the script-language selector.
+Unselected dropdown inputs use **Select {field label}** as their default
+option (for example, **Select language**); fields with an existing setting
+continue to show that setting. The language control keeps a fixed 190px width
+so voice-name changes do not shift the editor footer.
 
 The cloned-voice picker includes a compact search field at the top of its
-dropdown. Search filters the available voice names locally, case-insensitively;
-selecting a filtered result uses the same voice selection and preview actions as
-the unfiltered list. The query is cleared when the dropdown closes.
+dropdown. Search filters the available voice names locally, case-insensitively.
+Clicking a voice name selects it without closing the picker; names are read-only
+until the pencil button is clicked. The pencil hides while a name is being
+edited and returns when editing ends. Preview, download, and delete actions
+remain available on each row. The query is cleared when the dropdown closes.
 
-In the Voiceovers section, the left heading shows the total voiceover count
+With no voice selected, the voice picker reads **Select voice**. In the
+Voiceovers section, the left heading shows the total voiceover count
 until rows are selected, then shows the selected count (with singular grammar
-for one voiceover). When no rows are selected, Voice, Duration, and Status
-selectors and a calendar button for date filtering sit on the right. The row
-wraps on narrow screens instead of scrolling horizontally. Menus share the Base UI dropdown primitives, tooltips use the
+for one voiceover). When no rows are selected, **Select voice**, **Select
+duration**, **Select status**, and the **Select date range** calendar filter
+sit on the right. The row wraps on narrow screens instead of scrolling
+horizontally. Menus share the Base UI dropdown primitives, tooltips use the
 shared Base UI tooltip, and interface icons use `lucide-react`. Animated
 status and undo countdown rings remain custom visuals.
 

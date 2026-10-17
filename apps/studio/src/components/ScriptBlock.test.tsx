@@ -103,10 +103,10 @@ describe('ScriptBlock language control', () => {
 
   it('shows the language placeholder and offers every model language', async () => {
     const { trigger } = renderLanguage({ voiceLanguage: 'German' })
-    expect(trigger).toHaveTextContent('Select language…')
+    expect(trigger).toHaveTextContent('Select language')
     fireEvent.click(trigger!)
     const options = (await screen.findAllByRole('menuitemradio')).map((item) => item.textContent?.trim())
-    expect(options).toEqual(['Select language…', ...LANGUAGES])
+    expect(options).toEqual(['Select language', ...LANGUAGES])
   })
 
   it('reports a language pick and reports null when returned to the placeholder', async () => {
@@ -114,7 +114,7 @@ describe('ScriptBlock language control', () => {
     fireEvent.click(trigger!)
     fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Japanese' }))
     expect(onLanguageChange).toHaveBeenCalledWith('Japanese')
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Select language…' }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Select language' }))
     expect(onLanguageChange).toHaveBeenLastCalledWith(null)
   })
 

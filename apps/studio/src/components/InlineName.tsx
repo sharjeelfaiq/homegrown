@@ -24,6 +24,8 @@ interface Props {
   /** Smallest `size` the field will shrink to, in characters. */
   minChars?: number
   className?: string
+  /** Keep the value read-only until the pencil button is pressed. */
+  editOnPencil?: boolean
 }
 
 /** A name that is also its own rename field.
@@ -73,6 +75,7 @@ export default function InlineName({
   onCommit,
   minChars = 8,
   className = 'result-name',
+  editOnPencil = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState(value)
@@ -83,6 +86,12 @@ export default function InlineName({
   useEffect(() => {
     if (!editing) setDraft(value)
   }, [value, editing])
+
+  useEffect(() => {
+    if (!editing || !editOnPencil) return
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [editing, editOnPencil])
 
   // Committed by the flush already, so the blur that follows must not repeat
   // it -- a reload triggers pagehide AND visibilitychange, and an unmount runs
@@ -105,24 +114,32 @@ export default function InlineName({
 
   return (
     <span className="inline-name-shell">
-      <button
-        type="button"
-        className="inline-name-pencil"
-        aria-label={`Edit ${ariaLabel}`}
-        tabIndex={-1}
-        onMouseDown={(event) => {
-          // Keep the input focused; otherwise clicking the affordance would
-          // commit the draft before the edit interaction begins.
-          event.preventDefault()
-          inputRef.current?.focus()
-        }}
-      >
-        <PencilIcon size={12} />
-      </button>
+      {!editing && (
+        <AppTooltip content={title ?? 'Edit name'}>
+          <button
+            type="button"
+            className="inline-name-pencil"
+            aria-label={`Edit ${ariaLabel}`}
+            tabIndex={editOnPencil ? 0 : -1}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              if (editOnPencil) {
+                setDraft(value)
+                setEditing(true)
+              } else {
+                inputRef.current?.focus()
+              }
+            }}
+          >
+            <PencilIcon size={12} />
+          </button>
+        </AppTooltip>
+      )}
       <AppTooltip content={title ?? 'Click to edit name'}>
         <input
           ref={inputRef}
           type="text"
+          readOnly={editOnPencil && !editing}
           className={className}
           spellCheck={false}
           size={Math.max(minChars, shown.length + 1)}
@@ -133,11 +150,12 @@ export default function InlineName({
             setDraft(value)
             skipBlurCommit.current = false
             flushed.current = false
-            setEditing(true)
+            if (!editOnPencil) setEditing(true)
           }}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={() => {
             setEditing(false)
+            if (editOnPencil && !editing) return
             if (skipBlurCommit.current) {
               skipBlurCommit.current = false
               return

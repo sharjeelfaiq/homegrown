@@ -569,6 +569,13 @@ body {
   font-size: 10px;
 }
 
+.dropdown-select-trigger.quick-filter-select-trigger {
+  height: 29px;
+  padding-right: 7px;
+  padding-left: 7px;
+  font-size: 10.5px;
+}
+
 /* The selected voice remains a subtle readiness cue within the shared
    dropdown style. */
 .dropdown-select-trigger.voice-picker-trigger.is-selected {
@@ -1002,9 +1009,23 @@ body {
   height: 18px;
   padding: 0;
   color: var(--text-faint);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
   pointer-events: auto;
   opacity: 1;
-  transition: opacity var(--fast) var(--ease), color var(--fast) var(--ease);
+  cursor: pointer;
+  transition: opacity var(--fast) var(--ease), color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--line-focus);
+    outline-offset: 1px;
+  }
 
   .inline-name-shell:focus-within & {
     opacity: 0;
@@ -1032,34 +1053,24 @@ body {
 .voice-menu-pick .voice-picker-name {
   width: 100%;
   max-width: none;
-  /* result-name reserves 24px for InlineName's pencil. Picker rows hide
-     that affordance, so reclaim it before narrowing the menu by the same
-     amount; voice names retain their readable content width. */
-  padding-left: 6px;
+  padding-left: 24px;
+  cursor: default;
 }
 
-/* The name remains editable on click. Picker rows have a dedicated Select
-   action, so the pencil would be redundant visual noise here. */
+.voice-menu-pick .voice-picker-name:not(:read-only) {
+  cursor: text;
+}
+
 .voice-menu-pick .inline-name-pencil {
-  display: none;
-}
-
-.voice-menu-selection {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 13px;
-  height: 13px;
-  margin-right: 5px;
-  border: 1px solid var(--control-edge);
-  border-radius: 999px;
-  color: var(--bg-card);
-  vertical-align: -1px;
 }
 
-.voice-menu-selection.is-selected {
-  border-color: var(--accent-2);
-  background: var(--accent-2);
+.voice-menu-pick {
+  cursor: default;
+}
+
+.voice-menu-pick .inline-name-shell:focus-within .inline-name-pencil {
+  opacity: 1;
 }
 
 /* Selection stays visible while the menu is open, rather than relying on the
@@ -1100,16 +1111,41 @@ body {
   min-width: var(--anchor-width);
 }
 
+.dropdown-menu-content.standard-options-popup {
+  width: min(144px, calc(100vw - 16px));
+  min-width: min(144px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+}
+
+.standard-options-popup .dropdown-select-item {
+  padding-right: 7px;
+  padding-left: 7px;
+  white-space: normal;
+}
+
+.standard-options-popup .dropdown-menu-radio-item,
+.standard-options-popup .dropdown-menu-radio-item.dropdown-select-item {
+  font-size: 12px;
+  white-space: normal;
+}
+
+.dropdown-select-item.is-selected,
+.dropdown-menu-radio-item[data-checked] {
+  color: var(--text-primary);
+  background: var(--accent-2-soft);
+  font-weight: 600;
+}
+
+.standard-options-popup .dropdown-select-item.is-selected {
+  box-shadow: inset 2px 0 var(--accent-2-line);
+}
+
 .dropdown-menu-radio-item.dropdown-select-item {
   min-height: 32px;
   align-items: center;
   padding-top: 5px;
   padding-bottom: 5px;
   white-space: nowrap;
-}
-
-.dropdown-select-item .dropdown-menu-indicator {
-  top: 10px;
 }
 
 .voice-picker-dropdown {
@@ -1169,19 +1205,8 @@ body {
 .dropdown-menu-radio-item {
   min-height: 36px;
   align-items: flex-start;
-  padding-left: 30px;
+  padding-left: 9px;
   white-space: normal;
-}
-
-.dropdown-menu-indicator {
-  position: absolute;
-  top: 9px;
-  left: 10px;
-  display: grid;
-  width: 12px;
-  height: 12px;
-  place-items: center;
-  color: var(--audio);
 }
 
 .dropdown-menu-label {

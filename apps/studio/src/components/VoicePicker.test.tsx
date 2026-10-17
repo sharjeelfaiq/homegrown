@@ -52,14 +52,14 @@ describe('VoicePicker search', () => {
     renderPicker()
     expect(screen.queryByRole('searchbox', { name: 'Search cloned voices' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Choose a voice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select voice' }))
     expect(screen.getByRole('searchbox', { name: 'Search cloned voices' })).toBeInTheDocument()
   })
 
   it('filters voices case-insensitively and keeps matching rows selectable', () => {
     const onSelect = vi.fn()
     renderPicker(onSelect)
-    fireEvent.click(screen.getByRole('button', { name: 'Choose a voice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select voice' }))
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search cloned voices' }), { target: { value: 'BRU' } })
     expect(screen.getByRole('option', { name: /Bruno/ })).toBeInTheDocument()
@@ -71,13 +71,13 @@ describe('VoicePicker search', () => {
 
   it('shows a no-results message and clears the query when reopened', () => {
     renderPicker()
-    fireEvent.click(screen.getByRole('button', { name: 'Choose a voice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select voice' }))
     const search = screen.getByRole('searchbox', { name: 'Search cloned voices' })
     fireEvent.change(search, { target: { value: 'missing' } })
     expect(screen.getByText('No matching voices.')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Choose a voice' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Choose a voice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select voice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select voice' }))
     expect(screen.getByRole('searchbox', { name: 'Search cloned voices' })).toHaveValue('')
     expect(screen.getByRole('option', { name: /Ada/ })).toBeInTheDocument()
   })

@@ -131,20 +131,20 @@ python scripts/check_desktop_port.py
 # 6. desktop/launcher/_splash.py must be current with its splash sources.
 python scripts/build_splash.py --check
 
-# Studio types, unit tests, and lint
-cd apps/studio && npm install && npm run test && npm run lint && cd ../..
+# Studio catalog generation, unit tests, and lint
+cd apps/studio && npm run test && npm run lint && cd ../..
 ```
 
-`npm run lint` currently reports existing `react(only-export-components)`
-Fast Refresh warnings in context/provider modules, `VoiceoverFilters.tsx`,
+`npm run lint` currently reports `react(only-export-components)` Fast Refresh
+warnings in context/provider modules, `Dropdown.tsx`, `VoiceoverFilters.tsx`,
 and `HistoryList.tsx`, plus a `react-hooks(exhaustive-deps)` warning in
-`HistoryList.tsx`. Treat new lint errors or warnings beyond those existing
-findings as a build issue.
+`HistoryList.tsx`. Treat new lint errors or warnings beyond those findings as a
+build issue.
 
-`npm run build` runs the TypeScript project build and Vite production build
-(`tsc -b && vite build`); section 3 runs it.
-`npm run test` runs the Vitest suite, including history-query normalization,
-cache-key isolation, and sliding history-pager-window checks.
+The Studio `test` script first regenerates the mascot catalog, runs its Node test
+for catalog generation, then runs the Vitest suite. `lint` regenerates the
+catalog and runs Oxlint. The Studio production build also runs TypeScript project
+checks before Vite (`tsc -b && vite build`); section 3 runs it.
 
 When a loading fixture or its surrounding responsive layout changes, also
 regenerate the checked-in Boneyard assets before committing. In one terminal
@@ -280,8 +280,8 @@ Expect, in order:
    is selected, then shows the selected count. Check the singular **1
    voiceover** and plural **n voiceovers** forms. With no selection, confirm
    Voice, Duration, Status, and the calendar date-filter button align to the
-   right, with the calendar at the end. Verify the date menu offers Any time,
-   Today, Last 7 days, and Last 30 days. At a narrow viewport, confirm the row
+   right, with the calendar at the end. Verify the date menu starts at
+   **Select date range** and offers Today, Last 7 days, and Last 30 days. At a narrow viewport, confirm the row
    wraps instead of introducing horizontal scrolling. Confirm the Clear
    filters button is absent. Hover and keyboard-focus icon controls and confirm
    tooltips appear;

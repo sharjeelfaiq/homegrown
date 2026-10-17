@@ -21,7 +21,7 @@ import { toast } from 'sonner'
 import { usePersistedDraft } from '../hooks/usePersistedDraft'
 import { usePersistedRecord } from '../hooks/usePersistedRecord'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
-import { DropdownMenu } from './DropdownMenu'
+import { Dropdown } from './Dropdown'
 import DropdownSelect from './DropdownSelect'
 import { AppTooltip } from './Tooltip'
 import { UNDO_MS } from '../constants'
@@ -813,20 +813,16 @@ function VoiceoverRow({
             </a>
           </AppTooltip>
           <div className="row-overflow-action relative flex flex-none opacity-70 transition-opacity duration-(--fast) ease-(--ease) group-hover/row:opacity-100 group-focus-within/row:opacity-100">
-            <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenu.Trigger className="icon-btn" aria-label={`More actions for ${name}`}>
+            <Dropdown.Root open={menuOpen} onOpenChange={setMenuOpen}>
+              <Dropdown.Trigger className="icon-btn" aria-label={`More actions for ${name}`}>
                 <MoreIcon size={15} />
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Positioner side={menuPlacement === 'down' ? 'bottom' : 'top'} align="end" sideOffset={4} className="dropdown-menu-positioner">
-                  <DropdownMenu.Popup className="dropdown-menu-content min-w-40">
-                    <DropdownMenu.Item className="dropdown-menu-item dropdown-menu-item-danger" onClick={onDelete}>
+              </Dropdown.Trigger>
+              <Dropdown.Content side={menuPlacement === 'down' ? 'bottom' : 'top'} align="end" sideOffset={4} className="min-w-40">
+                    <Dropdown.Item className="dropdown-menu-item dropdown-menu-item-danger" onClick={onDelete}>
                       <TrashIcon size={14} />Delete
-                    </DropdownMenu.Item>
-                  </DropdownMenu.Popup>
-                </DropdownMenu.Positioner>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
+                    </Dropdown.Item>
+              </Dropdown.Content>
+            </Dropdown.Root>
           </div>
         </div>
       </div>
@@ -1796,6 +1792,7 @@ export default function HistoryList({
                 className="dropdown-select-compact px-1.5"
                 value={String(pageSize)}
                 ariaLabel="Voiceovers per page"
+                placeholder="Select page size"
                 options={PAGE_SIZE_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}
                 onValueChange={(value) => {
                   const next = Number(value) as HistoryPageSize

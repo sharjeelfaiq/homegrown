@@ -496,11 +496,9 @@ export default function StudioShell() {
   // not one of those: the cursor is already in the box, so the button just
   // reads "Generate" and stays disabled.
   const blockedReason =
-    canGenerate || submitting || warmingUp
+    canGenerate || submitting || warmingUp || modelStatus !== 'ready'
       ? null
-      : modelStatus !== 'ready'
-        ? 'Waiting for the voice model'
-        : presets.length === 0
+      : presets.length === 0
           ? 'Add a voice first'
           : selectedVoice == null
             ? 'Pick a voice'
