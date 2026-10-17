@@ -857,13 +857,6 @@ body {
   gap: 4px;
 }
 
-.script-control-label {
-  color: var(--text-faint);
-  font-size: 10px;
-  line-height: 1;
-  letter-spacing: 0.03em;
-}
-
 .clone-voice-control {
   display: flex;
   flex: none;

@@ -163,7 +163,6 @@ export default function ScriptBlock({
       <footer className="script-editor-footer">
         <div className="script-voice-setting" data-tour="voice-controls">
           <div className="script-voice-control">
-            <span className="script-control-label">Voice</span>
             <div className="script-voice-choice">
               <div data-tour="voice-picker">
                 <VoicePicker
@@ -218,7 +217,6 @@ export default function ScriptBlock({
               the voice. */}
           {languages.length > 0 && (
             <label className="script-language-control">
-              <span className="script-control-label">Language</span>
               <DropdownSelect
                 className="w-[190px] min-w-[190px] max-w-[190px]"
                 contentClassName="standard-options-popup"
