@@ -770,14 +770,14 @@ body {
    native scrollbar. */
 .script-editor-footer {
   display: flex;
-  height: 62px;
-  min-height: 62px;
+  height: 56px;
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   border-top: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-nav) 72%, var(--bg-card));
-  padding: 7px 12px 7px 18px;
+  padding: 5px 12px 5px 18px;
   /* The footer owns an opaque fill. Match the card's INNER corner radius so
      that fill cannot square off (and visually clip) the focus border at the
      editor's lower corners. The menu still escapes because the card remains
@@ -1113,13 +1113,11 @@ body {
 .standard-options-popup .dropdown-select-item {
   padding-right: 7px;
   padding-left: 7px;
-  white-space: normal;
 }
 
 .standard-options-popup .dropdown-menu-radio-item,
 .standard-options-popup .dropdown-menu-radio-item.dropdown-select-item {
   font-size: 12px;
-  white-space: normal;
 }
 
 .dropdown-select-item.is-selected,
@@ -1131,6 +1129,14 @@ body {
 
 .standard-options-popup .dropdown-select-item.is-selected {
   box-shadow: inset 2px 0 var(--accent-2-line);
+}
+
+.dropdown-select-popup .dropdown-menu-radio-item.dropdown-select-item,
+.standard-options-popup .dropdown-menu-radio-item.dropdown-select-item {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dropdown-menu-radio-item.dropdown-select-item {
