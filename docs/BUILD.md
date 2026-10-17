@@ -276,12 +276,15 @@ Expect, in order:
    enables only after the model is ready. Open each dropdown by mouse and
    keyboard and confirm its options are readable and selection updates the
    trigger.
-   In Voiceovers, confirm the count stays on the left and Voice, Duration,
-   Status, and the calendar date-filter button align to the right, with the
-   calendar at the end. Verify the date menu offers Any time, Today, Last 7
-   days, and Last 30 days. At a narrow viewport, confirm the row wraps instead
-   of introducing horizontal scrolling. Confirm the Clear filters button is
-   absent. Hover and keyboard-focus icon controls and confirm tooltips appear;
+   In Voiceovers, confirm the left heading shows the full count when nothing
+   is selected, then shows the selected count. Check the singular **1
+   voiceover** and plural **n voiceovers** forms. With no selection, confirm
+   Voice, Duration, Status, and the calendar date-filter button align to the
+   right, with the calendar at the end. Verify the date menu offers Any time,
+   Today, Last 7 days, and Last 30 days. At a narrow viewport, confirm the row
+   wraps instead of introducing horizontal scrolling. Confirm the Clear
+   filters button is absent. Hover and keyboard-focus icon controls and confirm
+   tooltips appear;
    check that menus, tooltips, and icons retain their theme-aware styling in
    each theme.
 7. Verify voice and completed-voiceover deletes: a wrong admin password closes

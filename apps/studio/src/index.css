@@ -489,27 +489,6 @@ html {
   background: var(--bg-base);
 }
 
-/* Native option popovers otherwise use the browser's default light palette,
-   even when the app is on a dark theme. `color-scheme: inherit` follows the
-   active theme token on <html>; explicit option colours cover Chromium's
-   popup implementation and keep the text readable in every palette. */
-.history-filter-select {
-  color: var(--text-primary);
-  background-color: var(--bg-raised);
-  color-scheme: inherit;
-}
-
-.history-filter-select option,
-.history-filter-select optgroup {
-  color: var(--text-primary);
-  background-color: var(--bg-raised);
-}
-
-.history-filter-select:focus-visible {
-  outline: 2px solid var(--line-focus);
-  outline-offset: 2px;
-}
-
 body {
   margin: 0;
   font-family: var(--font-body);
@@ -545,78 +524,56 @@ body {
   background: var(--line-focus);
 }
 
-/* The voice picker uses a menu-backed button because native options cannot
-   hold per-voice play and delete controls. */
-@utility select {
-  /* Only so ::after can be placed. Safe for the dropdown: .voice-menu is a
-     SIBLING of this button, absolutely positioned against .voice-field, so
-     its containing block does not move. */
-  position: relative;
+/* Menu-backed selection controls share one trigger treatment. Layout classes
+   may set width, height, or padding, while surface, border, type, and focus
+   remain consistent across the voice, language, and filter dropdowns. */
+.dropdown-select-trigger {
+  display: inline-flex;
+  min-width: 0;
   height: 32px;
-  padding: 0 30px 0 10px;
-  font-size: 13px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 9px;
   color: var(--text-primary);
-  /* A field is raised even at rest -- unlike a button, which is a ghost
-     until hovered. This is the surface inputs sit on elsewhere. */
-  background-color: var(--bg-raised);
   border: 1px solid var(--control-edge);
   border-radius: var(--radius-sm);
-  appearance: none;
+  background: var(--bg-raised);
+  font-size: 12px;
+  line-height: 1.2;
   cursor: pointer;
-  transition: border-color var(--fast) var(--ease);
-
-  &:hover {
-    border-color: var(--control-edge-hover);
-    background-color: var(--control-fill-hover);
-  }
-
-  /* The caret is a MASK, not a background image, so it carries no colour of
-     its own and follows the theme.
-
-     A colour inside a data: URI cannot be a token -- an SVG background is a
-     separate document, and currentColor there resolves against the SVG's own
-     context, not this element's. So the old %23a9adba was a hand-mirror of
-     --text-muted that no theme could reach. Worse, it sat on the same line as
-     the xmlns, which scripts/check_design_tokens.py skips, so nothing would
-     have caught it drifting either. Masking moves the colour out into
-     `background`, where a var() works.
-
-     Absolutely positioned so it does not become a flex item of
-     .voice-trigger. Still a data: URI, still no network request: this app
-     has to render with the machine offline. */
-  &::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    right: 10px;
-    width: 10px;
-    height: 6px;
-    transform: translateY(-50%);
-    background: var(--text-muted);
-    --caret: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='black' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    -webkit-mask: var(--caret) no-repeat center / 10px 6px;
-    mask: var(--caret) no-repeat center / 10px 6px;
-    pointer-events: none;
-  }
+  text-align: left;
+  transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
 
-/* The selected voice is a persistent readiness signal, not merely the last
-   value inside a generic dropdown. Keep the treatment quiet enough that
-   Generate remains primary, while making the current choice scannable. */
-@utility voice-picker-trigger {
-  /* --accent-2-*, NOT --audio-*. `audio` is only a @theme BRIDGE name
-     (--color-audio: var(--accent-2)), so it exists for the `text-audio` /
-     `border-audio-line` utilities and nowhere else -- `var(--audio-line)` in
-     raw CSS is undefined, fails at computed-value time and takes the whole
-     declaration with it, silently. This rule had been dead since it was
-     written: measured in the built app, the selected trigger had no tint and
-     no border colour at all. Same trap as the --progress one recorded in
-     CLAUDE.md; raw CSS here uses layer-1/layer-2 token names only. */
-  &.is-selected {
-    border-color: var(--accent-2-line);
-    background: var(--accent-2-soft);
-    color: var(--text-primary);
-  }
+.dropdown-select-trigger:hover:not(:disabled) {
+  border-color: var(--control-edge-hover);
+  background: var(--control-fill-hover);
+}
+
+.dropdown-select-trigger:focus-visible {
+  border-color: var(--line-focus);
+  outline: 2px solid var(--line-focus);
+  outline-offset: 2px;
+}
+
+.dropdown-select-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dropdown-select-trigger.dropdown-select-compact {
+  height: 28px;
+  padding-right: 6px;
+  padding-left: 6px;
+  font-size: 10px;
+}
+
+/* The selected voice remains a subtle readiness cue within the shared
+   dropdown style. */
+.dropdown-select-trigger.voice-picker-trigger.is-selected {
+  border-color: var(--accent-2-line);
+  background: var(--accent-2-soft);
 }
 
 /* A heading whose trailing hairline fills the rest of the line -- the
@@ -906,26 +863,6 @@ body {
   align-items: center;
 }
 
-/* The script-language control. Same treatment as .history-filter-select and
-   for the same reason: Chromium paints the option popup from its own colours
-   unless they are stated, which is unreadable in half the palettes.
-
-   The width cap matters more here than in the filters panel -- the footer also
-   holds the voice picker and Clone Voice, and "Voice language (Portuguese)" is
-   long enough to push the upload control off a narrow card without it. */
-.language-select {
-  max-width: 190px;
-  color: var(--text-primary);
-  background-color: var(--bg-raised);
-  color-scheme: inherit;
-  text-overflow: ellipsis;
-}
-
-.language-select:focus-visible {
-  outline: 2px solid var(--line-focus);
-  outline-offset: 2px;
-}
-
 /* The picker keeps its readable fixed width; only the setting row wraps when
    a phone is too narrow for its label, picker, and upload control together. */
 @media (max-width: 500px) {
@@ -1157,17 +1094,6 @@ body {
   outline: none;
   transform-origin: var(--transform-origin);
   transition: opacity 120ms ease, transform 120ms ease;
-}
-
-.dropdown-select-trigger {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
 }
 
 .dropdown-select-popup {

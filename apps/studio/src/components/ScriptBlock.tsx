@@ -220,7 +220,7 @@ export default function ScriptBlock({
             <label className="script-language-control">
               <span className="script-control-label">Language</span>
               <DropdownSelect
-                className="language-select h-8 w-[190px] min-w-[190px] max-w-[190px] rounded-sm border border-control bg-control-fill px-1.5 text-[11px] text-muted outline-none hover:border-audio-line focus:border-audio-line"
+                className="w-[190px] min-w-[190px] max-w-[190px]"
                 value={language ?? ''}
                 ariaLabel="Script language"
                 placeholder="Select language…"

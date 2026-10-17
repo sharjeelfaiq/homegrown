@@ -135,10 +135,11 @@ can fail the running job and queued jobs; restart the backend to recover.
 
 Completed voiceovers are newest-first and paginated. Search matches canonical
 voice names across the full history; browser-local display-name overrides only
-match loaded pages. The count appears on the left of the filter row; Voice,
-Duration, and Status selectors plus a calendar date filter sit on the right.
-The row wraps on narrow screens without horizontal scrolling. Search and filters
-narrow the history.
+match loaded pages. The left heading shows the total count until rows are
+selected, then shows the selected count (using **1 voiceover** for one).
+Voice, Duration, and Status selectors plus a calendar date filter sit on the
+right when nothing is selected. The row wraps on narrow screens without
+horizontal scrolling. Search and filters narrow the history.
 The search query, page size, and display-name overrides are stored in this
 browser; they are not server-side account data.
 

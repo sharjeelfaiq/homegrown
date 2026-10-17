@@ -154,16 +154,21 @@ on success, failure, or interruption and produces the same self-extracting
   toast. Keep this distinction in sync across the UI and API.
   A running job checks for cancellation between streamed audio pieces (about
   one second), so it may stop partway through a script chunk.
-- The context toolbar below voiceover search contains the voiceover count on
-  the left and compact Voice, Duration, Status, and calendar date filters on
-  the right when no rows are selected. It wraps on narrow screens without
-  horizontal scrolling. Selection actions live in this reserved toolbar,
-  never in a floating dock. One selected row
-  downloads directly; multiple selected rows use the history ZIP endpoint.
+- The context toolbar below voiceover search always shows a heading on the
+  left: total history count until selection, then selected-row count. Use
+  singular **voiceover** for one and plural **voiceovers** otherwise. Compact
+  Voice, Duration, Status, and calendar date filters sit on the right when no
+  rows are selected. It wraps on narrow screens without horizontal scrolling.
+  Selection actions live in this reserved toolbar, never in a floating dock.
+  One selected row downloads directly; multiple selected rows use the history
+  ZIP endpoint.
 - Shared dropdown selectors, the theme menu, and voiceover action menus use
-  `@base-ui/react/menu` via `DropdownMenu.tsx`; tooltips use the shared Base UI
-  tooltip wrapper. Interface glyphs come from `lucide-react`. The animated
-  status ring and undo countdown ring are bespoke visuals, not icon glyphs.
+  `@base-ui/react/menu` via `DropdownMenu.tsx`. Selection dropdowns share their
+  raised surface, border, type, focus, and hover style through
+  `.dropdown-select-trigger`; compact filters only change their dimensions.
+  Tooltips use the shared Base UI tooltip wrapper. Interface glyphs come from
+  `lucide-react`. The animated status ring and undo countdown ring are bespoke
+  visuals, not icon glyphs.
 - A voiceover display name is local-only; a voice preset rename uses
   `PATCH /api/presets/{id}`. Do not merge these stores.
 

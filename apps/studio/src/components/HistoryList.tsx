@@ -37,6 +37,7 @@ import AdminPasswordModal from './AdminPasswordModal'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from '../historyPageSize'
 import { fetchHistoryPage, historyQueryKey, normalizeHistoryRequest } from '../historyQuery'
 import { pageControls } from '../historyPager'
+import { voiceoverHeading } from '../historyHeading'
 import { Skeleton } from 'boneyard-js/react'
 import { VoiceoverHistoryFixture } from './BoneyardFixtures'
 
@@ -1129,6 +1130,7 @@ export default function HistoryList({
   const liveIds = new Set(visible.map(({ entry }) => entry.id))
   const selectedIds = [...selected].filter((id) => liveIds.has(id))
   const selectedCount = selectedIds.length
+  const headingText = voiceoverHeading(visibleTotal, selectedCount)
 
   const needle = draft.trim().toLowerCase()
   const shown = needle
@@ -1627,9 +1629,9 @@ export default function HistoryList({
         </div>
       {/* Always reserve this neutral action band so selection never moves rows. */}
       <div className="history-context-toolbar flex shrink-0 flex-wrap items-center gap-2 overflow-x-hidden text-[11px] text-muted" role={selectedCount > 0 ? 'toolbar' : undefined} aria-label={selectedCount > 0 ? 'Actions for selected voiceovers' : undefined}>
+        <span className="shrink-0" role="status" aria-label={headingText}>{headingText}</span>
         {selectedCount > 0 && (
           <>
-            <span className="shrink-0" role="status">{selectedCount} selected</span>
             <AppTooltip content={zipping ? 'Preparing download' : 'Download selected voiceovers'}>
               <button type="button" className="icon-btn shrink-0" disabled={zipping} onClick={handleDownloadSelected} aria-label={zipping ? 'Preparing download' : 'Download selected voiceovers'}><DownloadIcon size={15} /></button>
             </AppTooltip>
@@ -1637,9 +1639,6 @@ export default function HistoryList({
               <button type="button" className="icon-btn icon-btn-danger shrink-0" onClick={handleDeleteSelected} aria-label="Delete selected voiceovers"><TrashIcon size={15} /></button>
             </AppTooltip>
           </>
-        )}
-        {selectedCount === 0 && (
-          <span className="shrink-0" role="status" aria-label={`${visibleTotal} voiceovers`}>All voiceovers · {visibleTotal}</span>
         )}
         {selectedCount === 0 && (
           <VoiceoverQuickFilters className="ml-auto" presets={presets} history={history} value={filters} onChange={onFiltersChange} />
@@ -1794,7 +1793,7 @@ export default function HistoryList({
             <label className="flex items-center gap-1.5 text-[10px] text-faint">
               <span className="mono uppercase tracking-[0.08em]">Per page</span>
               <DropdownSelect
-                className="h-7 rounded-sm border border-control bg-surface-raised px-1.5 text-[11px] text-ink outline-none focus:border-audio-line"
+                className="dropdown-select-compact px-1.5"
                 value={String(pageSize)}
                 ariaLabel="Voiceovers per page"
                 options={PAGE_SIZE_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}

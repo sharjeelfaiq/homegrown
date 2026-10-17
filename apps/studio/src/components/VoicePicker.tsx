@@ -4,7 +4,7 @@ import { mediaUrl, presetDownloadUrl, type Preset } from '../api'
 import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
-import { Check as CheckIcon, Download as DownloadIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon } from 'lucide-react'
+import { Check as CheckIcon, ChevronDown, Download as DownloadIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon } from 'lucide-react'
 import AdminPasswordModal from './AdminPasswordModal'
 import InlineName from './InlineName'
 import { AppTooltip } from './Tooltip'
@@ -156,16 +156,14 @@ export default function VoicePicker({
       <AppTooltip content={selected?.name ?? 'Choose a voice'}>
         <DropdownMenu.Trigger
           ref={triggerRef}
-          className={`select voice-picker-trigger flex w-full items-center gap-1.5 text-left ${selected ? 'is-selected' : ''}`}
+          className={`dropdown-select-trigger voice-picker-trigger w-full ${selected ? 'is-selected' : ''}`}
           aria-label={selected ? `Voice: ${selected.name}${generating ? ', generating' : ''}` : 'Choose a voice'}
         >
         {/* The tooltip, because the field is deliberately a fixed 168px (see above)
             and a long name is genuinely cut -- measured at 126px visible of
             258px, i.e. under half. Widening it is not the fix; that was tried
             and read as a search bar. Hover reveals the rest instead. */}
-        <span
-          className="overflow-hidden text-ellipsis whitespace-nowrap"
-        >
+        <span className="min-w-0 flex-1 truncate">
           {selected ? selected.name : 'Choose a voice…'}
         </span>
           {generating && (
@@ -174,6 +172,7 @@ export default function VoicePicker({
             aria-hidden="true"
           />
           )}
+          <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted" />
         </DropdownMenu.Trigger>
       </AppTooltip>
 
