@@ -189,6 +189,7 @@ function RowHead({
         title={nameTitle}
         onCommit={onCommitRename}
         className="result-name voiceover-name"
+        editOnPencil
       />
 
       <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-3">
@@ -496,7 +497,7 @@ function PendingRow({
       <RowHead
         {...nameControl}
         voiceName={job.preset_name}
-        nameTitle="Click to rename"
+        nameTitle="Use pencil to rename voiceover"
       />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
@@ -788,7 +789,7 @@ function VoiceoverRow({
       <RowHead
         {...nameControl}
         voiceName={entry.preset_name}
-        nameTitle={`Created ${created} — click to rename`}
+        nameTitle={`Created ${created} — use pencil to rename voiceover`}
       />
 
       {/* Transport, clock, actions -- one line. The clock used to sit on its own

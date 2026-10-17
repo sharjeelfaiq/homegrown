@@ -185,6 +185,8 @@ on success, failure, or interruption and produces the same self-extracting
   visuals, not icon glyphs.
 - A voiceover display name is local-only; a voice preset rename uses
   `PATCH /api/presets/{id}`. Do not merge these stores.
+  Voiceover names, like voice preset names, stay read-only until their pencil
+  button is clicked; clicking the name itself must not enter edit mode.
 
 ## Deployment and safety
 

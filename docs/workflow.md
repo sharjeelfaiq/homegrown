@@ -148,6 +148,9 @@ the right. The row wraps on narrow screens without horizontal scrolling.
 Search and filters narrow the history.
 The search query, page size, and display-name overrides are stored in this
 browser; they are not server-side account data.
+To rename a voiceover, click the pencil button beside its name and edit the
+field. Clicking the name itself does not enter edit mode; the name field is
+read-only until the pencil is used.
 
 Dropdown menus and selectors share the Base UI menu primitives. Tooltips use
 the shared Base UI tooltip component, and interface icons use `lucide-react`.
