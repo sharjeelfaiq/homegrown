@@ -1160,6 +1160,13 @@ body {
   outline: none;
 }
 
+/* Dropdowns normally sit above the application chrome, but a portal opened
+   inside a dialog also has to clear the dialog's scrim (z-index: 200). Keep
+   that elevation opt-in so ordinary menus retain their established layering. */
+.modal-dropdown-positioner {
+  z-index: 250;
+}
+
 .dropdown-menu-content {
   min-width: 9rem;
   max-height: min(60svh, 24rem);

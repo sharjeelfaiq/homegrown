@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import ThemeSwitch from './ThemeSwitch'
+import SettingsModal from './SettingsModal'
 import ParticleText from './ParticleText'
 import ScriptBlock from './ScriptBlock'
 import ClonedVoicesSection from './ClonedVoicesSection'
@@ -9,7 +9,7 @@ import GenerateButton from './GenerateButton'
 import MascotPicker from './MascotPicker'
 import { MAX_SCRIPT_CHARS, UNDO_MS } from '../constants'
 import { presetNameFromFile } from '../format'
-import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Trash2 as TrashIcon } from 'lucide-react'
+import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Settings as SettingsIcon, Trash2 as TrashIcon } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { useJobToasts } from '../hooks/useJobToasts'
@@ -55,6 +55,14 @@ const MODEL_LOADING_TOAST_ID = 'voice-model-loading'
 
 export default function StudioShell() {
   const voiceoversRef = useRef<HTMLElement>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [mascotEnabled, setMascotEnabled] = useState(() => {
+    try { return localStorage.getItem('homegrown-mascot-enabled') !== 'false' } catch { return true }
+  })
+  const setMascotPreference = useCallback((next: boolean) => {
+    setMascotEnabled(next)
+    try { localStorage.setItem('homegrown-mascot-enabled', String(next)) } catch { /* storage is optional */ }
+  }, [])
   const [modelStatus, setModelStatus] = useState<'checking' | 'ready' | 'down'>('checking')
   const { startTour } = useOnboardingTour(modelStatus)
   const [wakeMessage, setWakeMessage] = useState<string | null>(null)
@@ -580,7 +588,16 @@ export default function StudioShell() {
           />
         </h1>
         <div className="absolute inset-y-0 right-(--gutter) z-150 flex items-center gap-1" data-tour="header-controls">
-          <ThemeSwitch />
+          <AppTooltip content="Settings">
+            <button
+              type="button"
+              className="icon-btn focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-audio"
+              aria-label="Open settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <SettingsIcon size={16} />
+            </button>
+          </AppTooltip>
           <AppTooltip content="Replay tour">
             <button
               type="button"
@@ -672,9 +689,16 @@ export default function StudioShell() {
             onError={setError}
             gpuFault={gpuFault != null}
           />
-          <MascotPicker anchorRef={voiceoversRef} />
+          {mascotEnabled && <MascotPicker anchorRef={voiceoversRef} />}
         </aside>
       </main>
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        mascotEnabled={mascotEnabled}
+        onMascotEnabledChange={setMascotPreference}
+      />
 
       {modelStatus === 'down' && (
         <AppTooltip content="Backend warning. Open details and retry.">

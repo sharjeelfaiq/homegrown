@@ -48,7 +48,10 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - `services/voice-api/main.py` is the FastAPI API, job queue, local JSON persistence, and
   static `apps/studio/dist` host when that build exists. Vite serves the live Studio during dev.
 - `apps/studio/src/components/StudioShell.tsx` composes voices, generation, and
-  queue activity. `HistoryList.tsx` renders completed and live voiceovers.
+  queue activity. `SettingsModal.tsx` owns the header Settings dialog:
+  `ThemeSwitch.tsx` persists the System or named theme choice, while the
+  mascot-visibility switch persists only a browser-local preference.
+  `HistoryList.tsx` renders completed and live voiceovers.
 - `boneyard-js` supplies generated, source-controlled loading layouts in
   `apps/studio/src/bones/`. `studio-startup` covers model initialization and
   `voiceover-history` covers only an uncached initial history query; do not use
@@ -148,6 +151,11 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   controls, Script editor, Generate, Voiceovers, then search/filters. Do not
   add mascot, queue-row, error, or other conditional targets; the automatic
   model-ready tour must work on an empty Studio.
+- The header Settings dialog is the only settings surface. It contains the
+  theme picker and the **Pet animal** switch; hiding the mascot must not alter
+  mascot assets, catalog generation, or generation state. The mascot switch is
+  stored as `homegrown-mascot-enabled` in localStorage and defaults to visible
+  when storage is unavailable or unset.
 - The mascot catalog is generated from top-level numbered pairs in
   `apps/studio/public/mascots/`: `<id>a.webp` is directions and `<id>b.webp`
   is reactions. Do not hand-edit `src/generated/mascotCatalog.ts`; add a pair,

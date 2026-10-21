@@ -40,12 +40,18 @@ user. Any client that can reach the API can perform delete actions.
 ## First-run orientation
 
 Once the model is ready, Studio automatically offers a concise, read-only tour.
-It covers theme/help, reusable voice selection and reference-clip upload,
+It covers the Settings/help controls, reusable voice selection and reference-clip upload,
 Script entry, the Generate action (`Ctrl/Cmd+Enter`),
 Voiceovers, and search/filter controls. Escape or the close button dismisses
 it; the header help button replays it. The tour excludes the mascot and
 volatile queue, error, and row-action surfaces so it remains reliable on a
 fresh launch.
+
+Open **Settings** in the header to choose **System** or a named Studio theme.
+The selected theme follows system appearance only while **System** is selected.
+Settings also contains the **Pet animal** switch, which hides or shows the
+mascot. These preferences are stored in the browser; they do not affect
+presets, generated audio, or other clients.
 
 ## Create and manage voices
 
@@ -164,9 +170,9 @@ Undo for the text replacement.
 
 Presets, completed history, and the generation queue are persisted under
 `services/voice-api/storage/` in a source checkout. Browser-local names,
-search, and history-page cache are stored in localStorage. Queue records survive
-a backend restart; a running job restarts from the beginning of that job, not
-from its last chunk.
+search, history-page cache, theme choice, and mascot-visibility preference are
+stored in localStorage. Queue records survive a backend restart; a running job
+restarts from the beginning of that job, not from its last chunk.
 
 During Vite development, Studio renders first and shows a persistent **Voice
 model is loading** toast with an animated spinner until startup succeeds or

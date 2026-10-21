@@ -100,10 +100,11 @@ not a runtime dependency.
 
 Do these before spending 30 minutes freezing a broken build.
 
-These are the same six gates `npm run build` runs. All six must pass; each
-exists because something once shipped broken past it. Note the order: the build
-runs `build_splash.py --check` *after* `npm install`, because it needs the
-Tailwind CLI from `apps/studio/node_modules`.
+`npm run build` runs eight validations: the five Python checks below, Studio
+tests, Studio lint, and the splash freshness check. All eight must pass; each
+exists because something once shipped broken past it. The build installs Studio
+dependencies before these validations, then runs `build_splash.py --check`
+last because it needs the Tailwind CLI from `apps/studio/node_modules`.
 
 ```bash
 # 1. No colour outside apps/studio/src/styles/tokens.css (reads 6-digit hex,
@@ -126,11 +127,11 @@ python scripts/check_orphan_css.py
 #    are separately frozen exes with no import path between them.
 python scripts/check_desktop_port.py
 
-# 6. desktop/launcher/_splash.py must be current with its splash sources.
-python scripts/build_splash.py --check
-
-# Studio catalog generation, unit tests, and lint
+# 6–7. Studio catalog generation, unit tests, and lint
 cd apps/studio && npm run test && npm run lint && cd ../..
+
+# 8. desktop/launcher/_splash.py must be current with its splash sources.
+python scripts/build_splash.py --check
 ```
 
 `npm run lint` currently reports `react(only-export-components)` Fast Refresh
@@ -257,7 +258,11 @@ Expect, in order:
      protocol=TCP localport=8731 enable=yes profile=private
    ```
 5. The loader redirects to the app once the model has loaded.
-6. In Studio, confirm the Script editor footer shows the language selector on
+6. In Studio, open the header **Settings** dialog. Confirm it offers a System
+   choice and named themes, changing a choice updates Studio immediately, and
+   the **Pet animal** switch hides and restores the mascot without affecting
+   voices or voiceovers. Reload the page and confirm both preferences persist.
+7. Confirm the Script editor footer shows the language selector on
    the left and the compact Generate action on the right. Check that Generate
    stays disabled until script text, voice, language, and model readiness
    prerequisites are met; use Ctrl/Cmd+Enter after it enables. To check the
@@ -268,33 +273,33 @@ Expect, in order:
    disabled during that interval, with tooltips explaining that model loading
    can take up to three minutes. The packaged launcher shows its browser splash
    instead and only opens Studio after readiness.
-7. In the Voices card, search with a mixed-case substring and confirm only
+8. In the Voices card, search with a mixed-case substring and confirm only
    matching rows remain; select a voice, then clear the query and confirm all
    rows return. Drag an audio file over the card and drop it there: the clone
    should start and show its running mark. Drop another file elsewhere in
    Studio: it must not clone, and the browser must not navigate to the file.
    Check preview, reference download, rename, and delete actions on cloned rows.
-8. In Voiceovers, use the filter button beside search and verify Voice, Date
+9. In Voiceovers, use the filter button beside search and verify Voice, Date
    range, Duration, and Generation status controls. Confirm the total count
    appears in the compact, vertically centered footer alongside pagination.
    At a narrow viewport, verify the header wraps without horizontal scrolling.
    Confirm clicking a voiceover row does not select it or change the layout;
    each row's individual actions remain available. Hover and keyboard-focus
    controls to check tooltips and theme-aware styling.
-9. Drag the mascot by its artwork, then use its side arrows to cycle numbered
+10. Drag the mascot by its artwork, then use its side arrows to cycle numbered
    mascots without moving it; Mascot 2 (the Cat sheets) should be the default.
    Click the artwork without moving it and confirm reaction sprites play, then
    resize the mascot with its corner grip (drag and arrow keys) and confirm it
    stays inside the viewport at both bounds. Confirm every committed mascot has
    a matching `<id>a.webp` directions sheet and `<id>b.webp` reactions sheet,
    and that `apps/studio/src/generated/mascotCatalog.ts` is current.
-10. Verify voice and completed-voiceover deletes: selecting **Delete** should
+11. Verify voice and completed-voiceover deletes: selecting **Delete** should
    open a confirmation with **Cancel** and **Delete**. Cancel preserves the
    item; confirming shows a seven-second Undo toast. The voice row is hidden
    immediately, while a voiceover row remains until the timer expires and its
    history refresh completes. Selecting Undo preserves the item; allowing the
    timer to expire deletes it. Queue cancellation has no Undo toast.
-11. If the backend is unavailable or startup fails, confirm the pulsing warning
+12. If the backend is unavailable or startup fails, confirm the pulsing warning
    button appears at the lower left. Open it and verify the reported message
    and Retry action. With cached history present, make a background history
    refresh fail and verify the rows remain visible without an inline warning

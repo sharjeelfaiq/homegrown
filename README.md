@@ -87,6 +87,11 @@ lower left. Open it to read the backend message and retry startup. A failed
 background refresh keeps cached voiceovers visible without adding an inline
 warning above the list.
 
+Use the header **Settings** button to choose a Studio theme or follow the
+system theme. The same dialog can hide or show the mascot. Both choices are
+stored in this browser; hiding the mascot does not remove its assets or change
+voice generation.
+
 The Studio mascot is a session-local viewport companion. On wide screens it
 rests at the Voiceovers section's lower-left corner, and on narrow screens at
 the viewport's lower-left, until you drag the mascot artwork itself; after a
