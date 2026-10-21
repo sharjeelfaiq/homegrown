@@ -78,9 +78,9 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   data. Canonical searches cover all history; custom-name matches can narrow
   only loaded/cached pages. Voice preset names are server-side and are stamped
   into a history entry at generation time.
-- A completed job invalidates history. Voice and history deletion are scheduled
-  directly from their row actions and deferred for the seven-second Undo toast;
-  the server DELETE runs only after that window expires. History is optimistically
+- A completed job invalidates history. Voice and history deletion require the
+  shared Cancel/Delete confirmation modal, then defer the server DELETE for the
+  seven-second Undo toast. History is optimistically
   removed when the request runs, rolls back on failure, and invalidates on
   success. Unmounting cancels pending client-side deletes. Requeue/reuse does
   not mutate history.

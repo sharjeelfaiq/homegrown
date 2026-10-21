@@ -7,6 +7,7 @@ import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { Dropdown } from './Dropdown'
+import ConfirmDeleteModal from './ConfirmDeleteModal'
 import InlineName from './InlineName'
 import StatusMark, { type StatusMarkStatus } from './StatusMark'
 import { AppTooltip } from './Tooltip'
@@ -39,6 +40,7 @@ export default function ClonedVoicesSection({
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('')
   const [previewingId, setPreviewingId] = useState<string | null>(null)
+  const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
   const [uploadStatus, setUploadStatus] = useState<StatusMarkStatus | 'idle'>('idle')
   const rootRef = useRef<HTMLElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -273,7 +275,7 @@ export default function ClonedVoicesSection({
                     <Dropdown.Trigger className="icon-btn" aria-label={`More actions for ${preset.name}`}><EllipsisIcon size={14} /></Dropdown.Trigger>
                   </AppTooltip>
                   <Dropdown.Content side="bottom" align="end" sideOffset={4} className="row-actions-menu">
-                    <Dropdown.Item className="dropdown-menu-item dropdown-menu-item-danger gap-2" onClick={() => { stopPreview(); void onDelete(preset.id) }}><TrashIcon size={14} aria-hidden="true" /> Delete</Dropdown.Item>
+                    <Dropdown.Item className="dropdown-menu-item dropdown-menu-item-danger gap-2" onClick={() => { stopPreview(); setDeletePreset(preset) }}><TrashIcon size={14} aria-hidden="true" /> Delete</Dropdown.Item>
                   </Dropdown.Content>
                 </Dropdown.Root></>}
               </span>
@@ -281,6 +283,13 @@ export default function ClonedVoicesSection({
           ))}
         </ul>
       )}
+      <ConfirmDeleteModal
+        open={deletePreset !== null}
+        title="Delete voice?"
+        description={deletePreset ? `Delete “${deletePreset.name}” and its reference audio? You can undo this for 7 seconds.` : ''}
+        onClose={() => setDeletePreset(null)}
+        onConfirm={() => { if (deletePreset) void onDelete(deletePreset.id) }}
+      />
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio crossOrigin="anonymous" ref={audioRef} preload="none" onPlay={(event) => setActiveAudio(event.currentTarget)} onPause={(event) => { setPreviewingId(null); releaseAudio(event.currentTarget) }} onEnded={(event) => { setPreviewingId(null); releaseAudio(event.currentTarget) }} style={{ display: 'none' }} />
     </section>

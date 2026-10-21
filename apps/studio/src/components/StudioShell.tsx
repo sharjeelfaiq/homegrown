@@ -637,7 +637,7 @@ export default function StudioShell() {
               long-reference-clip warning rendered above. */}
         </div>
 
-        <aside ref={voiceoversRef} className="relative flex w-full min-w-0 flex-col gap-[22px] wide:h-full wide:min-h-0" data-tour="voiceovers">
+        <aside ref={voiceoversRef} className="relative flex w-full min-w-0 flex-col gap-[22px] wide:h-full wide:min-h-0">
           {cpuNotice && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">Running on CPU — generation will be very slow. {cpuNotice}</p>}
           <ScriptBlock
             text={script}

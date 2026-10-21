@@ -59,14 +59,14 @@ export function useOnboardingTour(modelStatus: 'checking' | 'ready' | 'down') {
         startedRef.current = false
       },
       steps: [
-        { popover: { title: 'Welcome to Homegrown', description: 'Create reusable voices, then turn a script into a voiceover from one focused studio.', nextBtnText: 'Take the tour' } },
-        { element: '[data-tour="header-controls"]', popover: { title: 'Personalize and get help', description: 'Switch the studio theme here. Use the help button anytime to replay this tour.', side: 'bottom', align: 'end' } },
-        { element: '[data-tour="voice-controls"]', popover: { title: 'Choose or create a voice', description: 'Pick a reusable voice, preview it, or upload a short reference clip to make a new one.', side: 'bottom', align: 'end' } },
-        { element: '[data-tour="script-editor"]', popover: { title: 'Write the script', description: 'Type what the voice should say. Press / anytime to focus the script editor.', side: 'bottom', align: 'start' } },
-        { element: '[data-tour="generate-control"]', popover: { title: 'Generate a voiceover', description: 'The centered Generate action creates your voiceover. Ctrl/Cmd + Enter works too.', side: 'top', align: 'start' } },
-        { element: '[data-tour="voiceovers"]', popover: { title: 'Monitor and reuse work', description: 'Active and finished voiceovers appear here. Play, download, or reuse a script whenever you need it.', side: 'top', align: 'start' } },
-        { element: '[data-tour="voiceover-search-filters"]', popover: { title: 'Find past work', description: 'Search voiceovers by name or voice, then filter the list to find what you need.', side: 'bottom', align: 'end' } },
-        { popover: { title: 'You are ready', description: 'Your voices, draft, and voiceover history stay close at hand. Replay this tour from the help button whenever you need it.', doneBtnText: 'Done' } },
+        { popover: { title: 'Welcome to Homegrown', description: 'Choose a voice, write a script, and manage generated voiceovers in one studio. At wider sizes, Voices sits left while the editor and history stack on the right; on smaller screens, the cards stack.', nextBtnText: 'Take the tour' } },
+        { element: '[data-tour="header-controls"]', popover: { title: 'Theme and help', description: 'Switch between the available themes here, or use the help button to replay this tour.', side: 'bottom', align: 'end' } },
+        { element: '[data-tour="voice-controls"]', popover: { title: 'Choose or add a voice', description: 'Select a voice by clicking its row. Search, preview, download, rename, or delete voices here; use Clone voice to add one from an audio clip.', side: 'bottom', align: 'end' } },
+        { element: '[data-tour="script-editor"]', popover: { title: 'Write the script', description: 'Type or paste what the selected voice should say. The word count appears in the lower-right corner.', side: 'bottom', align: 'start' } },
+        { element: '[data-tour="generate-control"]', popover: { title: 'Generate a voiceover', description: 'Generate is at the lower-right of the script card. Select a voice and language, enter a script, and wait for the voice model to be ready before generating. Hover Generate for its keyboard shortcut.', side: 'top', align: 'end' } },
+        { element: '[data-tour="voiceovers"]', popover: { title: 'Voiceover history', description: 'Generated voiceovers appear in this card. Play or download a result, reuse its script, and manage its name or deletion from the row actions.', side: 'top', align: 'start' } },
+        { element: '[data-tour="voiceover-search-filters"]', popover: { title: 'Search and filter voiceovers', description: 'Search by voiceover or voice name. Open the filter button to narrow results by voice, date range, duration, or generation status.', side: 'bottom', align: 'end' } },
+        { popover: { title: 'You are ready', description: 'Choose a voice, write a script, select its language, then generate. Your results stay in the Voiceovers card below the editor. Replay this tour from the help button whenever you need it.', doneBtnText: 'Done' } },
       ],
     })
     instanceRef.current = instance

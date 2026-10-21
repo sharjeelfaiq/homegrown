@@ -42,12 +42,15 @@ describe('useOnboardingTour', () => {
       undefined,
     ])
     expect(config.steps.map((step: { popover: { title: string, description: string } }) => step.popover.title)).toEqual([
-      'Welcome to Homegrown', 'Personalize and get help', 'Choose or create a voice', 'Write the script', 'Generate a voiceover', 'Monitor and reuse work', 'Find past work', 'You are ready',
+      'Welcome to Homegrown', 'Theme and help', 'Choose or add a voice', 'Write the script', 'Generate a voiceover', 'Voiceover history', 'Search and filter voiceovers', 'You are ready',
     ])
-    expect(config.steps[2].popover.description).toContain('reference clip')
-    expect(config.steps[4].popover.description).toContain('centered Generate')
-    expect(config.steps[5].popover.description).toContain('Active and finished')
-    expect(config.steps[6].popover.description).toContain('filter')
+    expect(config.steps[0].popover.description).toContain('on smaller screens, the cards stack')
+    expect(config.steps[2].popover.description).toContain('clicking its row')
+    expect(config.steps[3].popover.description).not.toContain('Press /')
+    expect(config.steps[4].popover.description).toContain('lower-right')
+    expect(config.steps[4].popover.description).toContain('Hover Generate')
+    expect(config.steps[5].popover.description).toContain('Generated voiceovers appear in this card')
+    expect(config.steps[6].popover.description).toContain('filter button')
 
     act(() => tour?.startTour({ force: true }))
     expect(driverMock).toHaveBeenCalledTimes(1)

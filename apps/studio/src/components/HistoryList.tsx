@@ -29,6 +29,7 @@ import UndoCountdown from './UndoCountdown'
 import { ArrowDown as ArrowDownIcon, ArrowUp as ArrowUpIcon, Check as CheckIcon, ChevronLeft, ChevronRight, X as CrossIcon, Download as DownloadIcon, Ellipsis as MoreIcon, Play as PlayIcon, Trash2 as TrashIcon, WandSparkles as WandIcon } from 'lucide-react'
 import type { VoiceoverFilterState } from './VoiceoverFilters'
 import VoiceoverFilters from './VoiceoverFilters'
+import ConfirmDeleteModal from './ConfirmDeleteModal'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from '../historyPageSize'
 import { fetchHistoryPage, historyQueryKey, normalizeHistoryRequest } from '../historyQuery'
 import { pageControls } from '../historyPager'
@@ -833,6 +834,7 @@ export default function HistoryList({
   // Selecting rows, then typing a search, then acting has to operate on what
   const [reordering, setReordering] = useState(false)
 
+  const [deleteRequest, setDeleteRequest] = useState<{ id: string; label: string } | null>(null)
   const deleteTimers = useRef(new Map<number, string | number>())
 
   useEffect(() => () => {
@@ -1169,6 +1171,12 @@ export default function HistoryList({
 
   */
   function handleDelete(id: string, label: string) {
+    setDeleteRequest({ id, label })
+  }
+
+  function confirmDelete() {
+    if (!deleteRequest) return
+    const { id, label } = deleteRequest
     const timer = window.setTimeout(() => {
       deleteTimers.current.delete(timer)
       void (async () => {
@@ -1192,6 +1200,7 @@ export default function HistoryList({
       },
     })
     deleteTimers.current.set(timer, toastId)
+    setDeleteRequest(null)
   }
 
   async function handleCancel(jobId: string) {
@@ -1306,7 +1315,7 @@ export default function HistoryList({
           typing a search would fire shortcuts. isTyping() already covers
           INPUT, but Escape is NOT gated by it and would clear the composer's
           error banner behind the column. */}
-      <section className="results flex w-full min-h-0 flex-1 flex-col">
+      <section className="results flex w-full min-h-0 flex-1 flex-col" data-tour="voiceovers">
         <div className="voiceovers-card-header voiceover-history-header shrink-0">
           {/* Keep the controls mounted even for an empty history. This is important
               when a persisted filter or search hides every row: the user must
@@ -1578,6 +1587,13 @@ export default function HistoryList({
         </>
       )}
       </section>
+      <ConfirmDeleteModal
+        open={deleteRequest !== null}
+        title="Delete voiceover?"
+        description={deleteRequest ? `Delete “${deleteRequest.label}”? You can undo this for 7 seconds.` : ''}
+        onClose={() => setDeleteRequest(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

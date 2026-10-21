@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import ClonedVoicesSection from './ClonedVoicesSection'
 import type { Preset } from '../api'
 
-vi.mock('framer-motion', () => ({ AnimatePresence: ({ children }: { children: ReactNode }) => children, motion: { ul: 'ul' } }))
+vi.mock('framer-motion', () => ({ AnimatePresence: ({ children }: { children: ReactNode }) => children, motion: { div: 'div', ul: 'ul' } }))
 vi.mock('../hooks/usePrefersReducedMotion', () => ({ usePrefersReducedMotion: () => false }))
 vi.mock('../AudioActivityContext', () => ({ useAudioActivity: () => ({ setActiveAudio: vi.fn(), releaseAudio: vi.fn() }) }))
 vi.mock('../GenerationActivityContext', () => ({ useGenerationActivity: () => ({ runningPresetIds: new Set<string>() }) }))
@@ -99,13 +99,19 @@ describe('ClonedVoicesSection', () => {
     expect(screen.getByText('No matching voices.')).toBeInTheDocument()
   })
 
-  it('starts voice deletion from the row menu without a password dialog', () => {
+  it('confirms voice deletion with Cancel and Delete actions', () => {
     const onDelete = vi.fn(async () => {})
     renderSection({ onDelete })
     fireEvent.click(screen.getByRole('button', { name: 'More actions for Ada' }))
     fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Delete “Ada” and its reference audio?')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onDelete).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Ada' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     expect(onDelete).toHaveBeenCalledWith('ada')
-    expect(screen.queryByLabelText(/admin password/i)).not.toBeInTheDocument()
   })
 
   it('disables Clone voice while the model loads and exposes the loading tooltip', () => {

@@ -289,8 +289,9 @@ Expect, in order:
    a matching `<id>a.webp` directions sheet and `<id>b.webp` reactions sheet,
    and that `apps/studio/src/generated/mascotCatalog.ts` is current.
 10. Verify voice and completed-voiceover deletes: selecting **Delete** should
-   show a seven-second Undo toast with no password dialog. The voice row is
-   hidden immediately; a voiceover row remains until the timer expires and its
+   open a confirmation with **Cancel** and **Delete**. Cancel preserves the
+   item; confirming shows a seven-second Undo toast. The voice row is hidden
+   immediately, while a voiceover row remains until the timer expires and its
    history refresh completes. Selecting Undo preserves the item; allowing the
    timer to expire deletes it. Queue cancellation has no Undo toast.
 11. If the backend is unavailable or startup fails, confirm the pulsing warning

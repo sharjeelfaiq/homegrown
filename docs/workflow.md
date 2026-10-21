@@ -72,10 +72,11 @@ a fixed width to prevent footer shifts. Use the Voices card above the composer
 to search and select a voice. Voice names are read-only by default. Click the
 pencil icon button to edit a name; it hides during editing and returns when
 editing ends. Use the row's **Play**,
-download, and **Delete** actions. Clicking delete immediately removes the row
-and shows a seven-second **Undo** toast; Undo cancels the pending delete. If it
-expires, the server deletes the preset and its reference audio. Preset deletion
-can make queued jobs using that voice fail.
+download, and **Delete** actions. Delete opens a confirmation with **Cancel** and
+**Delete**. Cancel leaves the voice untouched. Confirming hides the row and
+shows a seven-second **Undo** toast; Undo restores it. If the toast expires,
+the server deletes the preset and its reference audio. Preset deletion can make
+queued jobs using that voice fail.
 
 Use the compact **Search voices** field in the Voices card to filter names
 locally and case-insensitively. Clicking a matching row selects it. An
@@ -147,11 +148,13 @@ the shared Base UI tooltip component, and interface icons use `lucide-react`.
 Each completed row has a direct download button beside its three-dot menu. The
 menu contains **Delete**. Downloads produce an MP3.
 
-Delete schedules a server delete and shows a seven-second Undo toast. The row
-remains until the timer expires and the refreshed history no longer includes it.
-Undo cancels the pending request. Leaving the page before the timer expires
-cancels the pending client-side delete; the history entry remains on the server.
-Each delete is a separate action; there is no batch-selection workflow.
+Delete opens a confirmation with **Cancel** and **Delete**. Cancel leaves the
+voiceover untouched. Confirming schedules a server delete and shows a
+seven-second Undo toast. The row remains until the timer expires and the
+refreshed history no longer includes it. Undo cancels the pending request.
+Leaving the page before the timer expires cancels the pending client-side delete;
+the history entry remains on the server. Each delete is a separate action; there
+is no batch-selection workflow.
 
 Reusing a finished voiceover's script fills the composer with that script and
 voice. If this replaces text already in the composer, the app offers a separate
