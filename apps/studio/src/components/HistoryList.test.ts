@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { pageControls } from '../historyPager'
-import { voiceoverHeading } from '../historyHeading'
-import { selectedDownloadKind, selectionAfterRowClick, selectionAfterRowDrag } from './HistoryList'
 
 describe('history page controls', () => {
   it('shows every page when there are four or fewer', () => {
@@ -25,43 +23,3 @@ describe('history page controls', () => {
   })
 })
 
-describe('voiceover selection', () => {
-  it('uses the total in the heading until voiceovers are selected', () => {
-    expect(voiceoverHeading(0, 0)).toBe('0 voiceovers')
-    expect(voiceoverHeading(1, 0)).toBe('1 voiceover')
-    expect(voiceoverHeading(67, 0)).toBe('67 voiceovers')
-  })
-
-  it('uses the selected count in the heading with singular grammar', () => {
-    expect(voiceoverHeading(67, 1)).toBe('1 voiceover')
-    expect(voiceoverHeading(67, 3)).toBe('3 voiceovers')
-  })
-
-  it('uses a plain click to select only that row', () => {
-    expect([...selectionAfterRowClick(new Set(['a', 'b']), ['a', 'b', 'c'], 2, 0, { additive: false, range: false })]).toEqual(['c'])
-  })
-
-  it('toggles with Ctrl/Cmd-click', () => {
-    expect([...selectionAfterRowClick(new Set(['a']), ['a', 'b', 'c'], 1, 0, { additive: true, range: false })]).toEqual(['a', 'b'])
-    expect([...selectionAfterRowClick(new Set(['a', 'b']), ['a', 'b', 'c'], 1, 0, { additive: true, range: false })]).toEqual(['a'])
-  })
-
-  it('adds the contiguous visible range on Shift-click', () => {
-    expect([...selectionAfterRowClick(new Set(['a']), ['a', 'b', 'c', 'd'], 3, 0, { additive: false, range: true })]).toEqual(['a', 'b', 'c', 'd'])
-    expect([...selectionAfterRowClick(new Set(['a']), ['a', 'b', 'c', 'd'], 3, null, { additive: false, range: true })]).toEqual(['a', 'b', 'c', 'd'])
-  })
-
-  it('selects a contiguous range from a plain drag', () => {
-    expect([...selectionAfterRowDrag(new Set(), ['a', 'b', 'c', 'd'], 1, 3, 'replace')]).toEqual(['b', 'c', 'd'])
-  })
-
-  it('adds a dragged range with Shift and toggles it with Ctrl/Cmd', () => {
-    expect([...selectionAfterRowDrag(new Set(['a']), ['a', 'b', 'c'], 1, 2, 'add')]).toEqual(['a', 'b', 'c'])
-    expect([...selectionAfterRowDrag(new Set(['a', 'b']), ['a', 'b', 'c'], 1, 2, 'toggle')]).toEqual(['a', 'c'])
-  })
-
-  it('downloads one selected voiceover directly and batches multiple selections', () => {
-    expect(selectedDownloadKind(1)).toBe('mp3')
-    expect(selectedDownloadKind(2)).toBe('zip')
-  })
-})

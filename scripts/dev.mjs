@@ -2,8 +2,9 @@
 //
 //   npm run dev
 //
-// Backend on 127.0.0.1:8000, Vite dev server on :5173, both stopped together
-// with Ctrl-C. This is deployment mode 1 of the four in CLAUDE.md.
+// Vite starts first on :5173, then the backend starts on 127.0.0.1:8000. Both
+// are stopped together with Ctrl-C. This is deployment mode 1 of the four in
+// CLAUDE.md.
 //
 // Reachable from other devices on the network: Vite binds every interface and
 // proxies /api, /audio and /refs to the backend, so a phone's API calls arrive
@@ -91,8 +92,8 @@ if (isDir(atRoot('apps', 'studio', 'dist'))) {
 // Defender Firewall prompt, this one on python.exe. Clicking Cancel on one of
 // those writes a permanent Block rule for that exe path, which nothing in the
 // app can undo. One prompt (Node, for :5173) is enough.
-bold('Backend   http://127.0.0.1:8000   (loading the model, this takes a while)');
 bold('Frontend  http://localhost:5173');
+bold('Backend   http://127.0.0.1:8000   (starts after Studio is available; model loading can take up to 3 minutes)');
 
 const { result, commands } = concurrently(
   [
@@ -100,7 +101,7 @@ const { result, commands } = concurrently(
       name: 'backend',
       prefixColor: 'blue',
       cwd: atRoot('services', 'voice-api'),
-      command: `"${python}" -m uvicorn main:app --host 127.0.0.1 --port 8000`,
+      command: `node "${atRoot('scripts', 'start-backend-after-studio.mjs')}" "${python}" -m uvicorn main:app --host 127.0.0.1 --port 8000`,
     },
     {
       name: 'studio',

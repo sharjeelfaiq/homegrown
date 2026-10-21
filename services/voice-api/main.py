@@ -1,5 +1,4 @@
 import io
-import hmac
 import json
 import logging
 import math
@@ -46,19 +45,6 @@ from audio_convert import wav_to_mp3, write_mp3
 from audio_stitcher import pack_speech, stitch_audio, trim_edge_silence
 from text_chunker import chunk_text
 from media_paths import StoredMediaPathError, resolve_stored_media_path, storage_relative_path
-
-DEFAULT_ADMIN_PASSWORD = "Homegrown-Admin-8731!"
-
-
-class AdminDeleteRequest(BaseModel):
-    admin_password: str
-
-
-def _require_admin_password(password: str) -> None:
-    expected = os.environ.get("ADMIN_PASSWORD") or DEFAULT_ADMIN_PASSWORD
-    if not hmac.compare_digest(password, expected):
-        raise HTTPException(403, "Incorrect admin password; nothing was deleted.")
-
 
 _whisper_model = None
 _whisper_lock = threading.Lock()
@@ -1079,10 +1065,6 @@ ALLOWED_ORIGINS = [
 app = FastAPI(title="CloneVoicePrompt-style TTS API", lifespan=lifespan)
 
 
-@app.post("/api/admin/verify")
-def verify_admin_password(req: AdminDeleteRequest):
-    _require_admin_password(req.admin_password)
-    return {"ok": True}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -1553,8 +1535,7 @@ def download_reference(preset_id: str, user_id: str = Depends(get_current_user))
 
 
 @app.delete("/api/presets/{preset_id}")
-def delete_preset(preset_id: str, req: AdminDeleteRequest, user_id: str = Depends(get_current_user)):
-    _require_admin_password(req.admin_password)
+def delete_preset(preset_id: str, user_id: str = Depends(get_current_user)):
     preset = _find_preset(preset_id)
     if preset is None or preset.get("user_id") != user_id:
         raise HTTPException(404, "Unknown preset_id")
@@ -1720,8 +1701,7 @@ def zip_history(req: HistoryZipRequest, user_id: str = Depends(get_current_user)
 
 
 @app.delete("/api/history/{entry_id}")
-def delete_history_entry(entry_id: str, req: AdminDeleteRequest, user_id: str = Depends(get_current_user)):
-    _require_admin_password(req.admin_password)
+def delete_history_entry(entry_id: str, user_id: str = Depends(get_current_user)):
     entry = next((h for h in _history if h["id"] == entry_id), None)
     if entry is None or entry.get("user_id") != user_id:
         raise HTTPException(404, "Unknown history entry_id")

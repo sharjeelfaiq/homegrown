@@ -1,37 +1,19 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
-import { getEstimate, type Estimate, type Preset } from '../api'
+import { useEffect, type ReactNode, type RefObject } from 'react'
+import { getEstimate, type Estimate } from '../api'
 import { MAX_SCRIPT_CHARS } from '../constants'
-import VoicePicker from './VoicePicker'
 import DropdownSelect from './DropdownSelect'
-import { Upload as UploadIcon } from 'lucide-react'
-import StatusMark, { type StatusMarkStatus } from './StatusMark'
 
 interface Props {
   text: string
   onTextChange: (text: string) => void
-  /** Focused by the "/" shortcut. */
   textareaRef?: RefObject<HTMLTextAreaElement | null>
-  /** Chunking depends on the voice, so the estimate has to be re-fetched when
-   * it changes -- not only when the text does. */
   presetId: string | null
   onEstimate?: (estimate: Estimate | null) => void
-  presets: Preset[]
-  onSelectVoice: (presetId: string | null) => void
-  onRenameVoice: (id: string, name: string, opts?: { unloading?: boolean }) => Promise<void>
-  onDeleteVoice: (id: string, adminPassword: string) => Promise<void>
-  voicesLoading: boolean
-  creatingVoice: boolean
-  onAddVoice: (file: File) => Promise<'done' | 'failed'>
-  /** What the model speaks, from /api/languages. Empty until the model is
-   * loaded (or if that request failed), and the control is hidden then --
-   * generation falls back to the voice's own language exactly as before. */
   languages: string[]
-  /** null means "whatever the selected voice was created in". */
   language: string | null
   onLanguageChange: (language: string | null) => void
-  /** The selected voice's language, retained for consumers that provide a
-   * contextual language hint alongside the explicit script language. */
-  voiceLanguage?: string | null
+  /** Owned by StudioShell because submission state belongs there. */
+  generateAction: ReactNode
 }
 
 export default function ScriptBlock({
@@ -40,70 +22,15 @@ export default function ScriptBlock({
   textareaRef,
   presetId,
   onEstimate,
-  presets,
-  onSelectVoice,
-  onRenameVoice,
-  onDeleteVoice,
-  voicesLoading,
-  creatingVoice,
-  onAddVoice,
   languages,
   language,
   onLanguageChange,
+  generateAction,
 }: Props) {
   const overLimit = text.length > MAX_SCRIPT_CHARS
-  const voiceUploadRef = useRef<HTMLInputElement>(null)
-  const [uploadStatus, setUploadStatus] = useState<StatusMarkStatus | 'idle'>('idle')
-  const completionTimerRef = useRef<number | null>(null)
-  // The global drop target shares `creatingVoice`; only the inline picker can
-  // tell us whether the request ended in success or failure. Keep this ref so
-  // the global request can return to its idle icon without interrupting the
-  // inline request's short confirmation mark.
-  const inlineUploadRef = useRef(false)
 
-  useEffect(() => () => {
-    if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current)
-  }, [])
-
-  useEffect(() => {
-    if (creatingVoice) {
-      if (completionTimerRef.current !== null) {
-        window.clearTimeout(completionTimerRef.current)
-        completionTimerRef.current = null
-      }
-      setUploadStatus('running')
-    } else if (!inlineUploadRef.current && completionTimerRef.current === null) {
-      setUploadStatus('idle')
-    }
-  }, [creatingVoice])
-
-  function showUploadResult(result: 'done' | 'failed') {
-    setUploadStatus(result)
-    if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current)
-    completionTimerRef.current = window.setTimeout(() => {
-      completionTimerRef.current = null
-      setUploadStatus('idle')
-    }, 2000)
-  }
-
-  async function handleVoiceFile(file: File) {
-    inlineUploadRef.current = true
-    if (completionTimerRef.current !== null) {
-      window.clearTimeout(completionTimerRef.current)
-      completionTimerRef.current = null
-    }
-    setUploadStatus('running')
-    try {
-      showUploadResult(await onAddVoice(file))
-    } finally {
-      inlineUploadRef.current = false
-    }
-  }
-
-  // The estimate is not displayed. onEstimate feeds StudioShell's
-  // long-reference-clip warning; the backend calculation also keeps the
-  // generated job's chunk count aligned with the pre-flight result. Deleting
-  // this request removes the warning path.
+  // The estimate feeds StudioShell's long-reference-clip warning and keeps
+  // pre-flight chunking aligned with the generated job.
   useEffect(() => {
     if (text.trim().length === 0 || overLimit) {
       onEstimate?.(null)
@@ -112,123 +39,50 @@ export default function ScriptBlock({
     let cancelled = false
     const timer = setTimeout(() => {
       getEstimate(text, presetId)
-        .then((r) => {
-          if (cancelled) return
-          onEstimate?.(r)
-        })
-        .catch(() => {
-          if (cancelled) return
-          onEstimate?.(null)
-        })
+        .then((result) => { if (!cancelled) onEstimate?.(result) })
+        .catch(() => { if (!cancelled) onEstimate?.(null) })
     }, 400)
     return () => {
       cancelled = true
       clearTimeout(timer)
     }
-    // onEstimate is intentionally excluded: it is a fresh closure each render
-    // and would re-fire this request on every keystroke.
+    // onEstimate is intentionally excluded: it is a fresh closure each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, overLimit, presetId])
 
   const trimmed = text.trim()
   const words = trimmed ? trimmed.split(/\s+/).length : 0
-  // Derive the active state directly from the existing request flag so a
-  // dropped file changes the glyph in the same render that disables Upload.
-  const visibleUploadStatus = creatingVoice ? 'running' : uploadStatus
 
   return (
-    // The card owns the focus treatment so the textarea and its footer read as
-    // one editor; the theme-aware hairline is defined in index.css.
     <div className="script-editor grid h-[clamp(300px,39svh,400px)] min-h-[clamp(300px,39svh,400px)] max-h-[clamp(300px,39svh,400px)] grid-rows-[minmax(0,1fr)_auto] overflow-visible rounded-md border border-transparent bg-surface-card" data-tour="script-editor">
-      {/* The stable 300–400px editor range leaves a predictable writing area
-          while the grid reserves a separate footer row for its controls. */}
       <div className="script-editor-input">
         <textarea
           ref={textareaRef}
           className="block h-full min-h-0 w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-8 text-[15px]/[1.7] outline-none placeholder:text-faint"
-          placeholder="Write what the voice should say…"
+          placeholder="Type or paste a script…"
           value={text}
-          onChange={(e) => onTextChange(e.target.value)}
-          // The visible cap lives on the Script heading, not in here: a cap
-          // inside the box overlapped the first line of text (measured: cap
-          // 11-29px, line one 15-40.5px, and a long line reaches under it).
-          aria-keyshortcuts="/"
+          onChange={(event) => onTextChange(event.target.value)}
         />
         <span className={`script-word-count mono text-[11px] whitespace-nowrap ${overLimit ? 'text-danger' : 'text-faint'}`}>
           {words.toLocaleString()} word{words === 1 ? '' : 's'}
         </span>
       </div>
 
-
       <footer className="script-editor-footer">
-        <div className="script-voice-setting" data-tour="voice-controls">
-          <div className="script-voice-control">
-            <div className="script-voice-choice">
-              <div data-tour="voice-picker">
-                <VoicePicker
-                  presets={presets}
-                  selectedPresetId={presetId}
-                  onSelect={onSelectVoice}
-                  onRename={onRenameVoice}
-                  loading={voicesLoading}
-                  onDelete={onDeleteVoice}
-                />
-              </div>
-              <div className="clone-voice-control">
-                <input
-                  ref={voiceUploadRef}
-                  type="file"
-                  accept="audio/*"
-                  className="hidden"
-                  disabled={creatingVoice}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    event.target.value = ''
-                    if (file) void handleVoiceFile(file)
-                  }}
-                />
-                <button
-                  type="button"
-                  className="clone-voice-button flex h-8 flex-none items-center gap-1.5 rounded-sm px-2 text-[11px] text-muted hover:bg-control-fill-hover hover:text-audio"
-                  aria-label={creatingVoice ? 'Cloning voice' : 'Clone voice'}
-                  aria-busy={creatingVoice}
-                  disabled={creatingVoice}
-                  data-tour="add-voice"
-                  onClick={() => voiceUploadRef.current?.click()}
-                >
-                  {visibleUploadStatus === 'running' || visibleUploadStatus === 'done' || visibleUploadStatus === 'failed' ? (
-                    <StatusMark
-                      status={visibleUploadStatus}
-                      size={14}
-                      strokeWidth={2.2}
-                      color="var(--progress)"
-                      doneColor="var(--green)"
-                      errorColor="var(--danger)"
-                    />
-                  ) : (
-                    <UploadIcon size={14} />
-                  )}
-                  <span>{creatingVoice ? 'Cloning…' : 'Clone voice'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-          {/* The script language is separate from the language used to clone
-              the voice. */}
-          {languages.length > 0 && (
-            <label className="script-language-control">
-              <DropdownSelect
-                className="w-[190px] min-w-[190px] max-w-[190px]"
-                contentClassName="standard-options-popup"
-                value={language ?? ''}
-                ariaLabel="Script language"
-                placeholder="Select language"
-                options={[{ value: '', label: 'Select language' }, ...languages.map((name) => ({ value: name, label: name }))]}
-                onValueChange={(next) => onLanguageChange(next || null)}
-              />
-            </label>
-          )}
-        </div>
+        {languages.length > 0 && (
+          <label className="script-language-control">
+            <DropdownSelect
+              className="w-[190px] min-w-[190px] max-w-[190px]"
+              contentClassName="standard-options-popup"
+              value={language ?? ''}
+              ariaLabel="Script language"
+              placeholder="Select language"
+              options={[{ value: '', label: 'Select language' }, ...languages.map((name) => ({ value: name, label: name }))]}
+              onValueChange={(next) => onLanguageChange(next || null)}
+            />
+          </label>
+        )}
+        <div className="script-editor-generate" data-tour="generate-control">{generateAction}</div>
       </footer>
       <span className="script-editor-frame" aria-hidden="true" />
     </div>

@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { MOD_ARIA, MOD_KEY } from '../keys'
-import Kbd from './Kbd'
 import SpecularButton from './SpecularButton'
 import { AppTooltip } from './Tooltip'
 
@@ -13,6 +12,8 @@ interface Props {
   busy: boolean
   /** True while waking the backend, before any job has been submitted. */
   warming?: boolean
+  /** Replaces the shortcut hint while model startup blocks the action. */
+  tooltip?: string
   count: number
   onClick: () => void
 }
@@ -34,6 +35,7 @@ export default function GenerateButton({
   blockedReason,
   busy,
   warming,
+  tooltip,
   count,
   onClick,
 }: Props) {
@@ -55,13 +57,13 @@ export default function GenerateButton({
         ? `Generate ${count} voiceovers`
         : 'Generate'
 
-  // The action sits in the middle grid column. Auxiliary copy is absolutely
-  // positioned on desktop, so a long blocked reason can never nudge it off
-  // the composer axis.
+  // The action is a compact editor-footer control. Auxiliary feedback stays
+  // beside it, so the action remains right-aligned while its label is stable.
   return (
-    <section className="generate-action-grid grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start">
-      <div aria-hidden="true" />
-      <div className="relative flex flex-col items-center">
+    <section className="generate-action">
+      <div className="generate-action-auxiliary" aria-live="polite">
+        {blockedReason && <span className="text-[12px] text-muted" role="status">{blockedReason}</span>}
+      </div>
       {/* Tooltip, not a visible key cap -- unlike the script box and the play
           control, which wear theirs. The button stays a stable action label;
           any missing prerequisite is carried by the adjacent warning icon.
@@ -70,7 +72,7 @@ export default function GenerateButton({
           vocabulary ("Control+Enter"), which is why MOD_ARIA is separate from
           the display glyph in MOD_KEY. Assistive tech announces the shortcut
           from that attribute, so nothing is lost by the cap being absent. */}
-      <AppTooltip content={`Generate (${MOD_KEY}+Enter)`}>
+      <AppTooltip content={tooltip ?? `Generate (${MOD_KEY}+Enter)`}>
         <SpecularButton
           type="button"
           className="generate-btn"
@@ -92,14 +94,6 @@ export default function GenerateButton({
           </AnimatePresence>
         </SpecularButton>
       </AppTooltip>
-        <div className="generate-action-auxiliary mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center wide:absolute wide:left-full wide:top-1/2 wide:mt-0 wide:ml-3 wide:-translate-y-1/2 wide:flex-nowrap wide:text-left wide:whitespace-nowrap">
-          {blockedReason && <span className="text-[12px] text-muted" role="status">{blockedReason}</span>}
-          <span className="flex items-center gap-1 text-[11px] text-faint coarse:hidden" aria-hidden="true">
-            <Kbd>{`${MOD_KEY}+Enter`}</Kbd><span>to generate</span>
-          </span>
-        </div>
-      </div>
-      <div aria-hidden="true" />
     </section>
   )
 }

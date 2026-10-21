@@ -5,7 +5,6 @@ import { useAudioActivity } from '../AudioActivityContext'
 import { useGenerationActivity } from '../GenerationActivityContext'
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { ChevronDown, Download as DownloadIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon } from 'lucide-react'
-import AdminPasswordModal from './AdminPasswordModal'
 import InlineName from './InlineName'
 import { AppTooltip } from './Tooltip'
 import { Dropdown } from './Dropdown'
@@ -19,7 +18,7 @@ interface Props {
    * completely different things -- "you have no voices" and "we have not asked
    * yet" -- and only one of them is the user's problem to fix. */
   loading?: boolean
-  onDelete: (id: string, adminPassword: string) => Promise<void>
+  onDelete: (id: string) => Promise<void>
 }
 
 /** Voice picker: a trigger button plus a popover list, each row carrying its
@@ -31,9 +30,8 @@ interface Props {
  * actions off a row. Anyone tempted to simplify this back to a <select> loses
  * the play and delete buttons with it.
  *
- * Delete uses the password confirmation rather than window.confirm, which
- * blocks the page. Deleting
- * the selected voice needs no special handling here -- StudioShell's
+ * Delete schedules removal with the same Undo toast as the persistent Voices
+ * card. Deleting the selected voice needs no special handling here -- StudioShell's
  * handleDeletePreset already clears the selection.
  *
  * The generating indicator shows in two places on purpose: on the trigger for
@@ -49,7 +47,6 @@ export default function VoicePicker({
   const [open, setOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [previewingId, setPreviewingId] = useState<string | null>(null)
-  const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const { setActiveAudio, releaseAudio } = useAudioActivity()
@@ -268,7 +265,7 @@ export default function VoicePicker({
                     </a>
                   </AppTooltip>
                   <AppTooltip content="Delete voice">
-                    <button type="button" className="icon-btn icon-btn-danger" aria-label={`Delete ${p.name}`} onClick={() => { stopPreview(); setDeletePreset(p) }}>
+                    <button type="button" className="icon-btn icon-btn-danger" aria-label={`Delete ${p.name}`} onClick={() => { stopPreview(); void onDelete(p.id) }}>
                       <TrashIcon size={13} />
                     </button>
                   </AppTooltip>
@@ -278,16 +275,6 @@ export default function VoicePicker({
           </ul>
       </Dropdown.Content>
       </Dropdown.Root>
-
-      <AdminPasswordModal
-        open={deletePreset !== null}
-        title="Delete voice"
-        description={deletePreset ? `Permanently delete “${deletePreset.name}” and its reference audio?` : ''}
-        onClose={() => setDeletePreset(null)}
-        onSubmit={async (password) => {
-          if (deletePreset) await onDelete(deletePreset.id, password)
-        }}
-      />
 
       {/* setActiveAudio routes every element through AudioEngine's
           createMediaElementSource. */}

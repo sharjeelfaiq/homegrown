@@ -23,7 +23,6 @@ vi.mock('../GenerationActivityContext', () => ({
   useGenerationActivity: () => ({ runningPresetIds: new Set<string>() }),
 }))
 
-vi.mock('./AdminPasswordModal', () => ({ default: () => null }))
 vi.mock('./InlineName', () => ({
   default: ({ value }: { value: string }) => <span>{value}</span>,
 }))

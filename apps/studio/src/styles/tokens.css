@@ -74,17 +74,10 @@
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
 
   /* ---- Layout ---------------------------------------------------------- */
-  --shell: 1180px; /* max width of the two-column workspace */
-  /* The voiceovers column. 400px was the binding constraint on the whole
-     layout: a voiceover row could not fit its transport, script preview, voice
-     and length on one line, so the row had to grow to three. The composer next
-     to it is a FIXED-height textarea that gains nothing from extra width, so
-     the space belongs here -- this is the column the user re-reads. */
-  /* Fluid, not fixed. At a flat 520px the two-column grid handed the aside its
-     full width while the composer took whatever was left -- ~417px at 1024px,
-     which was the worst-looking band in the app. The clamp gives the composer
-     ~548px there instead, and still reaches 520px once there is room for it. */
-  --aside: clamp(360px, 38vw, 520px);
+  /* Two equal desktop tracks: the Voices and Voiceovers cards align exactly.
+     Raising the cap by 48px gives each track (and the script editor above the
+     Voiceovers card) 24px more room once the workspace reaches its maximum. */
+  --shell: 1228px;
   /* One compacted voiceover row: 26px name line + 24px transport line + ~17px
      script preview + gaps + padding + hairline. This is what a row is SPECIFIED
      to be -- a real finished row measures ~101px, which is why it no longer

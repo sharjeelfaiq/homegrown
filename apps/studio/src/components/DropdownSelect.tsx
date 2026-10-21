@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react'
+import { useState } from 'react'
 import { Dropdown } from './Dropdown'
 
 export interface DropdownSelectOption {
@@ -25,15 +26,19 @@ export default function DropdownSelect({
   className = '', contentClassName = '',
   side = 'bottom', align = 'start', sideOffset = 4,
 }: Props) {
+  const [open, setOpen] = useState(false)
   const selected = options.find((option) => option.value === value)
   return (
-    <Dropdown.Root>
+    <Dropdown.Root open={open} onOpenChange={setOpen}>
       <Dropdown.Trigger className={`dropdown-select-trigger ${className}`} aria-label={ariaLabel}>
         <span className="min-w-0 flex-1 truncate">{selected?.label ?? placeholder}</span>
         <ChevronDown aria-hidden="true" className="size-3.5 shrink-0" />
       </Dropdown.Trigger>
       <Dropdown.Content side={side} align={align} sideOffset={sideOffset} className={`dropdown-select-popup ${contentClassName}`}>
-            <Dropdown.RadioGroup value={value} onValueChange={onValueChange}>
+            <Dropdown.RadioGroup value={value} onValueChange={(next) => {
+              onValueChange(next)
+              setOpen(false)
+            }}>
               {options.map((option) => (
                 <Dropdown.RadioItem
                   key={option.value}

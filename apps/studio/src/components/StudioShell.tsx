@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import ThemeSwitch from './ThemeSwitch'
 import ParticleText from './ParticleText'
 import ScriptBlock from './ScriptBlock'
+import ClonedVoicesSection from './ClonedVoicesSection'
 import HistoryList from './HistoryList'
 import { restoreVoiceoverFilters, type VoiceoverFilterState } from './VoiceoverFilters'
 import GenerateButton from './GenerateButton'
@@ -14,16 +15,15 @@ import { useGenerationActivity } from '../GenerationActivityContext'
 import { useJobToasts } from '../hooks/useJobToasts'
 import { usePersistedDraft } from '../hooks/usePersistedDraft'
 import { useErrorToast } from '../hooks/useErrorToast'
-import Kbd from './Kbd'
 import { useTheme } from '../ThemeContext'
 import { themeMode } from '../theme'
 import { useBootStatus } from '../hooks/useBootStatus'
-import { useFileDrop } from '../hooks/useFileDrop'
 import { useHotkeys } from '../hooks/useHotkeys'
 import { wakeBackend } from '../wake'
 import Modal from './Modal'
 import CursorGrid from './CursorGrid'
 import BootOverlay from './BootOverlay'
+import StatusMark from './StatusMark'
 import UndoCountdown from './UndoCountdown'
 import { useOnboardingTour } from '../hooks/useOnboardingTour'
 import {
@@ -31,7 +31,6 @@ import {
   createPreset,
   deleteHistoryEntry,
   deletePreset,
-  verifyAdminPassword,
   getHealth,
   getQueueScript,
   listLanguages,
@@ -51,6 +50,8 @@ import { AppTooltip } from './Tooltip'
 /** Sent only so the backend has something if language detection comes back
  * empty or names a language this model cannot speak. */
 const LANGUAGE_FALLBACK = 'English'
+const MODEL_LOADING_TOOLTIP = 'Voice model is loading — this can take up to 3 minutes.'
+const MODEL_LOADING_TOAST_ID = 'voice-model-loading'
 
 export default function StudioShell() {
   const voiceoversRef = useRef<HTMLElement>(null)
@@ -96,20 +97,8 @@ export default function StudioShell() {
   // there is nothing left to lose by leaving, so the browser's generic
   // "Leave site?" dialog would be noise guarding something already safe.
   const [script, setScript] = usePersistedDraft('homegrown-script-draft')
-  // The new-voice form writes the language stamped onto a voice at creation.
-  // Generation reads that by default, so the two cannot silently disagree --
-  // but the Script editor can now override it per job, which is the only way
-  // to read a script in a language the voice was not cloned from.
-  //
-  // Deliberately NOT persisted and NOT reset when the voice changes: it is a
-  // property of the script being written, and clearing it on a voice swap
-  // would silently send the job back to the voice's language.
   const [languageOverride, setLanguageOverride] = useState<string | null>(null)
-  // Empty until the model is loaded. /api/languages reads the loaded
-  // checkpoint's own language table, so this cannot be a client-side constant;
-  // a 503 or a failed request leaves it empty and hides the control.
   const [languages, setLanguages] = useState<string[]>([])
-
   const [historyFilters, setHistoryFilters] = useState<VoiceoverFilterState>(restoreVoiceoverFilters)
   const [pendingNew, setPendingNew] = useState(0)
   // A ref, not state: read inside a callback that must not be rebuilt on every
@@ -139,9 +128,23 @@ export default function StudioShell() {
   // below for why waiting it out is not an option.
   const bootFailedRef = useRef(false)
   const scriptRef = useRef<HTMLTextAreaElement>(null)
-  // Held here rather than in HistoryList because the Ctrl+F binding lives
-  // here, the same way scriptRef serves "/".
-  const searchRef = useRef<HTMLInputElement>(null)
+
+  // Keep one persistent toast visible throughout the initial model load. Use
+  // the same indeterminate StatusMark spinner shown by the Clone voice action.
+  useEffect(() => {
+    if (modelStatus === 'checking') {
+      toast('Voice model is loading', {
+        id: MODEL_LOADING_TOAST_ID,
+        duration: Infinity,
+        icon: <StatusMark status="running" size={16} strokeWidth={2.2} color="var(--progress)" strike={false} />,
+      })
+    } else {
+      toast.dismiss(MODEL_LOADING_TOAST_ID)
+    }
+    return () => {
+      toast.dismiss(MODEL_LOADING_TOAST_ID)
+    }
+  }, [modelStatus])
 
   const refreshHistory = useCallback(() => { void invalidateHistory() }, [])
 
@@ -170,12 +173,8 @@ export default function StudioShell() {
         if (cancelled || bootFailedRef.current) return
         setModelStatus('ready')
         setWakeMessage(null)
-        // Only now: /api/languages is 503 until the model is loaded, and the
-        // answer is a property of the loaded checkpoint, so it is read once
-        // here rather than polled. A failure leaves the list empty, which
-        // hides the control and keeps the previous voice-language behavior.
         listLanguages()
-          .then((r) => { if (!cancelled) setLanguages(r.languages) })
+          .then((result) => { if (!cancelled) setLanguages(result.languages) })
           .catch(() => {})
         // The backend runs on CPU when no usable GPU was found. It still works,
         // but generation is orders of magnitude slower -- say so up front rather
@@ -268,13 +267,16 @@ export default function StudioShell() {
   }
 
   // Both routes to a reference clip go through here -- the inline upload
-  // button and the window-wide drop -- so the name gets pre-filled either way.
+  // button and a drop on the Voices card -- so the name gets pre-filled either way.
   //
   // A dropped clip IS the decision -- there is no Save step and no name to
   // fill in. The name comes off the filename and is editable in place on the
   // row this creates, which is the whole point of the dialog now.
   async function handleAddVoice(file: File): Promise<'done' | 'failed'> {
-    if (creatingPreset) return 'failed'
+    // The Clone voice button is not the only route to this operation: a file
+    // can also be dropped over the page. Keep that path behind the same model
+    // readiness gate so it cannot bypass the disabled button during startup.
+    if (creatingPreset || modelStatus !== 'ready' || warmingUp) return 'failed'
     setCreatingPreset(true)
     setVoiceError(null)
     try {
@@ -296,12 +298,6 @@ export default function StudioShell() {
       setCreatingPreset(false)
     }
   }
-
-  // Dropping an audio file anywhere uploads it immediately, just as choosing
-  // one from the inline Upload control does.
-  const dragging = useFileDrop((file) => {
-    void handleAddVoice(file)
-  })
 
   async function handleRenamePreset(id: string, name: string, opts?: { unloading?: boolean }) {
     const trimmedName = name.trim()
@@ -328,18 +324,10 @@ export default function StudioShell() {
     }
   }
 
-  /** Optimistically remove the voice once the password modal submits; restore
-   *  it at its original position if the server rejects the deletion. */
-  async function handleDeletePreset(id: string, adminPassword: string) {
+  /** Optimistically remove the voice and defer the server delete for Undo. */
+  async function handleDeletePreset(id: string) {
     const doomed = presets.find((p) => p.id === id)
     if (!doomed) return
-    try {
-      await verifyAdminPassword(adminPassword)
-    } catch (e) {
-      const message = e instanceof ApiError ? e.message : 'Admin password could not be verified'
-      setError(message)
-      throw e
-    }
     const index = presets.findIndex((p) => p.id === id)
     // Captured before the optimistic hide, or the restore below cannot tell
     // "this voice was selected" from "nothing was selected".
@@ -356,7 +344,7 @@ export default function StudioShell() {
     }
     const timer = window.setTimeout(() => {
       voiceDeleteTimers.current.delete(timer)
-      void deletePreset(id, adminPassword).catch((e: unknown) => {
+      void deletePreset(id).catch((e: unknown) => {
         restoreVoice()
         setError(e instanceof ApiError ? e.message : 'Failed to delete voice')
       })
@@ -376,14 +364,14 @@ export default function StudioShell() {
     voiceDeleteTimers.current.set(timer, toastId)
   }
 
-  async function handleDeleteHistory(id: string, adminPassword: string) {
+  async function handleDeleteHistory(id: string) {
     const snapshots = historyQueryClient.getQueriesData<HistoryPage>({ queryKey: ['voiceover-history'] })
     historyQueryClient.setQueriesData<HistoryPage>({ queryKey: ['voiceover-history'] }, (page) => {
       if (!page || !page.history.some((entry) => entry.id === id)) return page
       return { history: page.history.filter((entry) => entry.id !== id), total: Math.max(0, page.total - 1) }
     })
     try {
-      await deleteHistoryEntry(id, adminPassword)
+      await deleteHistoryEntry(id)
       refreshHistory()
     } catch (e) {
       for (const [key, page] of snapshots) historyQueryClient.setQueryData(key, page)
@@ -432,7 +420,7 @@ export default function StudioShell() {
     if (!scriptReady || selectedVoice == null) {
       setError(
         presets.length === 0
-          ? 'Add a voice first — drop a reference clip anywhere on this page.'
+          ? 'Add a voice first — drop a reference clip on the Voices card.'
           : selectedVoice == null
             ? 'Pick a voice before generating.'
             : 'Write a script before generating.',
@@ -467,8 +455,6 @@ export default function StudioShell() {
       await startGenerate({
         presetId: selectedVoice.id,
         text: script,
-        // The editor's choice wins; absent one, the voice's own language.
-        // LANGUAGE_FALLBACK only covers a voice stamped with nothing at all.
         language: languageOverride ?? selectedVoice.language ?? LANGUAGE_FALLBACK,
       })
       setScript('')
@@ -489,14 +475,18 @@ export default function StudioShell() {
     }
   }
 
-  const canGenerate = modelStatus === 'ready' && scriptReady && selectedVoice != null && languageOverride != null && !submitting && !warmingUp
+  // `wakeBackend` resolves only after /api/health confirms model_loaded. This
+  // is the single readiness gate for every model-dependent Studio action.
+  const modelReady = modelStatus === 'ready' && !warmingUp
+  const modelLoading = !modelReady && modelStatus !== 'down'
+  const canGenerate = modelReady && scriptReady && selectedVoice != null && languageOverride != null && !submitting
 
   // Say what is missing rather than presenting a mute grey slab -- but only
   // for prerequisites the user has to go and fix elsewhere. An empty script is
   // not one of those: the cursor is already in the box, so the button just
   // reads "Generate" and stays disabled.
   const blockedReason =
-    canGenerate || submitting || warmingUp || modelStatus !== 'ready'
+    canGenerate || submitting || !modelReady
       ? null
       : presets.length === 0
           ? 'Add a voice first'
@@ -504,26 +494,13 @@ export default function StudioShell() {
             ? 'Pick a voice'
             : languageOverride == null
               ? 'Select a language'
-            : script.length > MAX_SCRIPT_CHARS
-              ? 'Script is too long'
-              : null
+              : script.length > MAX_SCRIPT_CHARS
+                ? 'Script is too long'
+                : null
 
   useHotkeys({
     onGenerate: () => {
       if (canGenerate) handleGenerate()
-    },
-    onFocusScript: () => scriptRef.current?.focus(),
-    // Reports whether it took the key. The search box is only rendered when
-    // there is something to search, so with an empty column this returns
-    // false and the browser's own find opens instead of being swallowed.
-    onFindInApp: () => {
-      const el = searchRef.current
-      if (!el) return false
-      el.focus()
-      // Ctrl+F on a box that already has a query should let you retype rather
-      // than append to it.
-      el.select()
-      return true
     },
     onCancel: () => setError(null),
   })
@@ -536,7 +513,17 @@ export default function StudioShell() {
       select="viewport"
       snapshotConfig={{ excludeTags: ['svg', 'canvas'], excludeSelectors: ['[data-boneyard-decorative]'] }}
     >
-      <div className="flex min-h-svh flex-col wide:h-svh wide:overflow-hidden">
+      <div
+        className="flex min-h-svh flex-col wide:h-svh wide:overflow-hidden"
+        onDragOver={(event) => {
+          if (Array.from(event.dataTransfer.types).includes('Files')) event.preventDefault()
+        }}
+        onDrop={(event) => {
+          // Prevent the browser opening a dropped file outside the Voices card.
+          // Cloning itself is handled only by ClonedVoicesSection.onDrop.
+          if (Array.from(event.dataTransfer.types).includes('Files')) event.preventDefault()
+        }}
+      >
       {/* First child, and the shell root must stay transform-free: a transform
           here would become the containing block for this fixed element and
           create a stacking context around it -- the same pair of effects that
@@ -621,55 +608,24 @@ export default function StudioShell() {
           .result-list. A flex item's default min-height:auto refuses to shrink
           below its content, so one missing link puts the scrollbar back on the
           page instead of on the list. All five are marked; do not drop one. */}
-      <main className="mx-auto grid w-full max-w-(--shell) grid-cols-[minmax(0,1fr)] items-start gap-[34px] px-(--gutter) pt-8 pb-[72px] wide:min-h-0 wide:flex-auto wide:grid-cols-[minmax(0,1.15fr)_minmax(0,var(--aside))] wide:gap-10 wide:pb-8">
-        <div className="composer flex min-w-0 flex-col gap-[22px] wide:min-h-0">
-          {/* Pairs with the Voiceovers heading opposite, same .section-rule
-              treatment: you write a script here, the voiceovers appear there.
-              "Script" rather than "Compose" or "New voiceover" because it is
-              the word the terminology table fixes for the text the user
-              writes. */}
-          <h2 className="section-rule -mb-3">
-            <span>Script</span>
-            {/* order-3 puts it past the ::after hairline, i.e. hard right --
-                the same trick the Voiceovers heading uses for its count, so
-                the two columns' headings stay symmetrical.
-
-                Here rather than inside the script box, which is where it
-                started: an absolutely-positioned cap in the box's top-right
-                overlapped the first line of text on both axes (cap 11-29px,
-                line one 15-40.5px, and a long line runs under it horizontally
-                too). The bottom corners were already taken by the word count,
-                the resize grip and the scrollbar. */}
-            <Kbd className="order-3">/</Kbd>
-          </h2>
-
-          {cpuNotice && (
-            <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">Running on CPU — generation will be very slow. {cpuNotice}</p>
-          )}
-          <ScriptBlock
-            text={script}
-            onTextChange={setScript}
-            textareaRef={scriptRef}
-            presetId={voiceId}
-            onEstimate={setEstimate}
-            presets={presets}
-            onSelectVoice={setVoiceId}
-            onRenameVoice={handleRenamePreset}
-            onDeleteVoice={handleDeletePreset}
-            voicesLoading={modelStatus === 'checking'}
-            creatingVoice={creatingPreset}
-            onAddVoice={handleAddVoice}
-            languages={languages}
-            language={languageOverride}
-            onLanguageChange={setLanguageOverride}
-            voiceLanguage={selectedVoice?.language ?? null}
-          />
-
+      <main className="studio-workspace mx-auto grid w-full max-w-(--shell) grid-cols-[minmax(0,1fr)] items-start gap-[34px] px-(--gutter) pt-8 pb-[72px] wide:min-h-0 wide:flex-auto wide:gap-10 wide:pb-8">
+        <div className="composer flex w-full min-w-0 flex-col gap-[22px] wide:h-full wide:min-h-0">
           {/* The voice's own reference clip decides chunk size, so a long
               reference silently multiplies both chunk count and render time.
               The backend only logged this; now it reaches the person who can
               act on it. */}
-          {estimate?.warning && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">{estimate.warning}</p>}
+          <ClonedVoicesSection
+            presets={presets}
+            selectedPresetId={voiceId}
+            onSelect={setVoiceId}
+            onRename={handleRenamePreset}
+            loading={modelStatus === 'checking'}
+            modelReady={modelReady}
+            modelLoading={modelLoading}
+            creatingVoice={creatingPreset}
+            onAddVoice={handleAddVoice}
+            onDelete={handleDeletePreset}
+          />
 
           {/* GenerateButton stays a button throughout -- progress now lives in
               the Voiceovers column, as the first row, where the finished
@@ -679,25 +635,34 @@ export default function StudioShell() {
               time plus chunk progress are more honest. /api/estimate remains
               on the 400ms debounce solely for exact chunking and the
               long-reference-clip warning rendered above. */}
-          <section className="compose-bar -mt-1" data-tour="generate-control">
-            <GenerateButton
+        </div>
+
+        <aside ref={voiceoversRef} className="relative flex w-full min-w-0 flex-col gap-[22px] wide:h-full wide:min-h-0" data-tour="voiceovers">
+          {cpuNotice && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">Running on CPU — generation will be very slow. {cpuNotice}</p>}
+          <ScriptBlock
+            text={script}
+            onTextChange={setScript}
+            textareaRef={scriptRef}
+            presetId={voiceId}
+            onEstimate={setEstimate}
+            languages={languages}
+            language={languageOverride}
+            onLanguageChange={setLanguageOverride}
+            generateAction={<GenerateButton
               disabled={!canGenerate}
               blockedReason={blockedReason}
+              tooltip={modelLoading ? MODEL_LOADING_TOOLTIP : modelStatus === 'down' ? 'The voice model is unavailable. Open the backend warning for details.' : undefined}
               busy={submitting}
               warming={warmingUp}
               count={scriptReady ? 1 : 0}
               onClick={handleGenerate}
-            />
-          </section>
-
-        </div>
-
-        <aside ref={voiceoversRef} className="relative min-w-0 wide:h-full wide:min-h-0" data-tour="voiceovers">
+            />}
+          />
+          {estimate?.warning && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">{estimate.warning}</p>}
           <HistoryList
             presets={presets}
             filters={historyFilters}
             onFiltersChange={setHistoryFilters}
-            searchRef={searchRef}
             pendingNew={pendingNew}
             onShowNew={showNewVoiceovers}
             onAtTopChange={handleAtTopChange}
@@ -842,13 +807,6 @@ export default function StudioShell() {
         }}
       />
 
-      {dragging && (
-        <div className="pointer-events-none fixed inset-0 z-100 grid place-items-center bg-scrim-drop outline-2 outline-dashed outline-offset-[-14px] outline-audio">
-          <p className="m-0 font-mono text-[13px] tracking-[0.06em] text-audio">
-            Drop a reference clip to make a voice
-          </p>
-        </div>
-      )}
       {modelStatus === 'checking' && <BootOverlay boot={boot} elapsed={wakeMessage} />}
       </div>
     </Skeleton>

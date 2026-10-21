@@ -421,10 +421,10 @@
      not a target size, and it is not what sizes the button most of the time:
      the blocked reasons ("Waiting for the voice model") are far longer and
      set the real width whenever they appear. So this can be tight. */
-  min-width: 100px;
-  height: 44px;
-  padding: 0 17px;
-  font-size: 15px;
+  min-width: 92px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
   border: 1px solid color-mix(in srgb, var(--text-primary) 24%, transparent);
@@ -675,8 +675,8 @@ body {
   grid-template-columns: minmax(max-content, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  height: 36px;
-  margin-top: 4px;
+  height: 40px;
+  margin-top: 0;
   padding: 0 8px;
 }
 
@@ -687,6 +687,15 @@ body {
 .voiceover-pager > nav {
   grid-column: 2;
   width: var(--pager-slot);
+}
+
+.voiceover-pager-count {
+  grid-column: 3;
+  justify-self: end;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
 /* Inert once there is only one page. The nav also carries the `inert`
@@ -774,7 +783,7 @@ body {
   min-height: 56px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   border-top: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-nav) 72%, var(--bg-card));
   padding: 5px 12px 5px 18px;
@@ -826,53 +835,93 @@ body {
   outline: none;
 }
 
-/* Keep the voice choice and language as two clearly labeled settings. */
-.script-voice-setting {
+.script-editor-generate {
   display: flex;
-  width: 100%;
   min-width: 0;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.script-voice-control,
-.script-language-control {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-}
-
-.script-language-control {
-  flex: none;
   margin-left: auto;
 }
 
-.script-voice-choice {
+.script-language-control {
+  display: flex;
+  flex: none;
+  min-width: 0;
+}
+
+.generate-action {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
-.clone-voice-control {
+.generate-action-auxiliary {
   display: flex;
-  flex: none;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  text-align: right;
 }
 
-/* The picker keeps its readable fixed width; only the setting row wraps when
-   a phone is too narrow for its label, picker, and upload control together. */
+/* Voice management is persistent above the script, but remains a bounded
+   card on desktop so a long preset list does not displace the editor. On
+   narrow screens the shared result-list rule returns scrolling to the page. */
+.cloned-voices-section {
+  max-height: min(280px, 32svh);
+}
+
+.cloned-voices-list {
+  flex: 1 1 auto;
+}
+
+.cloned-voices-toolbar {
+  /* Match the Voiceovers card's compact horizontal rhythm: the control row
+     shares its divider, inset, and 40px target height with that card's footer. */
+  min-height: 40px;
+}
+
+.cloned-voices-empty {
+  padding: 6px 8px;
+}
+
+.cloned-voices-section.is-file-drop-target::before {
+  border-color: var(--accent-2-line);
+  background: color-mix(in srgb, var(--accent-2-soft) 60%, var(--glass-fill));
+}
+
+@media (width >= 1025px) {
+  .cloned-voices-section {
+    max-height: none;
+  }
+}
+
 @media (max-width: 500px) {
   .script-editor-footer {
     height: auto;
+    min-height: 56px;
     flex-wrap: wrap;
   }
 
-  .script-voice-setting {
+  .script-editor-generate {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .generate-action {
     flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .generate-action-auxiliary {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .cloned-voices-section {
+    max-height: none;
   }
 }
 
@@ -909,11 +958,37 @@ body {
   }
 }
 
+/* Both desktop cards are measured from this one shared calculation. Using two
+   `1fr` tracks can assign a leftover device pixel to just one column, which
+   makes their glass borders appear unequal in a screenshot despite equal flex
+   factors. */
+@media (width >= 1025px) {
+  .studio-workspace {
+    grid-template-columns:
+      minmax(0, calc((100% - 2.5rem) / 2))
+      minmax(0, calc((100% - 2.5rem) / 2));
+  }
+
+  /* The shared tracks are equal, but the first card's glass pseudo-element
+     lands on the opposite side of a device-pixel boundary. Trim its trailing
+     bleed by one pixel so the two visible card frames are exactly equal. */
+  .cloned-voices-section.results::before {
+    right: -12px;
+  }
+}
+
 /* The search/filter controls share the glass surface with the rows. Keeping
    their inset in one place makes the search edge, toolbar, list content, and
    pager line up even when the card is narrow. */
 @utility voiceovers-card-header {
   padding: 8px;
+}
+
+/* The completed-voiceover card is intentionally denser than the cloned-voice
+   manager: its search and filter controls are frequent scanning tools, not a
+   primary editing surface. */
+.voiceover-history-header {
+  padding: 6px;
 }
 
 /* Reserved below the search controls in HistoryList. It can grow to a second
@@ -1541,12 +1616,9 @@ body {
   }
 }
 
-/* Bulk selection needs a row-level signal as well as the small checkbox: the
-   selection context should still be obvious while a reader follows a row. */
+/* Shared selected-state treatment for menus and voice controls. */
 @utility is-selected {
-  /* --accent-2-*, not --audio-*: see voice-picker-trigger above. This one was
-     dead too -- a selected row carried no tint and no edge, which is the whole
-     signal the bulk bar depends on. */
+  /* --accent-2-*, not --audio-*: see voice-picker-trigger above. */
   background: var(--accent-2-soft);
   box-shadow: inset 2px 0 0 var(--accent-2-line);
 }

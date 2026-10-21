@@ -9,12 +9,12 @@ performance guarantee.
 
 UI NOTE (current)
 ----------------------------------------
-The GPU/render path remains independent of the Generate control's presentation.
-Generate is a 44px semantic button with unchanged Ctrl/Cmd+Enter activation;
-its optional pointer-local WebGL specular layer has a CSS fallback and is off
-for disabled or reduced-motion states. Confirm an actual generation on target
-hardware after UI changes: queueing, progress, completion, audio output, and
-the browser console are the meaningful integration checks.
+The Generate action is a compact, right-aligned control in the Script editor
+footer and retains Ctrl/Cmd+Enter activation. Its optional pointer-local WebGL
+specular layer has a CSS fallback and is off for disabled or reduced-motion
+states. Confirm an actual generation on target hardware after UI changes:
+queueing, progress, completion, audio output, and the browser console are the
+meaningful integration checks.
 
 CURRENT SETUP (baseline for comparison)
 ----------------------------------------

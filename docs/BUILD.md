@@ -84,10 +84,8 @@ first remove the same previous build outputs listed above.
 Complete [First-time setup](../README.md#first-time-setup) before building. It
 creates `.venv`, installs `services/voice-api/requirements.txt`, downloads the
 model, configures `services/voice-api/.env`, and installs Studio dependencies.
-The compiled default admin password is `Homegrown-Admin-8731!`. Override it
-with `ADMIN_PASSWORD` in `services/voice-api/.env` for local use. That `.env`
-is not bundled; an optional `<install>/backend/.env` can override the default
-for an extracted package.
+The API has no authentication, including for delete actions. Use the packaged
+app only on a trusted network.
 
 ```bash
 ./.venv/Scripts/python.exe -m pip install pyinstaller
@@ -259,39 +257,43 @@ Expect, in order:
      protocol=TCP localport=8731 enable=yes profile=private
    ```
 5. The loader redirects to the app once the model has loaded.
-6. In the Studio, verify Generate is 44px high and centered beneath the editor; check its normal, starting, and submitting labels plus
-   the adjacent blocked-state reason, and use Ctrl/Cmd+Enter when it is ready. Drag the mascot by its artwork, then use its subtle side arrows to cycle numbered mascots without moving it; Mascot 2 (the Cat sheets) should be the default. Click the artwork without moving it and confirm the reaction sprites still play, then resize the mascot with its corner grip (drag and arrow keys) and confirm it stays inside the viewport at both bounds. Confirm every committed mascot has a matching `<id>a.webp` directions sheet and `<id>b.webp` reactions sheet, and that `apps/studio/src/generated/mascotCatalog.ts` is current. In each theme, move the pointer over the enabled
-   button and confirm the specular highlight stays within the button without moving layout. It must be
-   absent while disabled or when reduced motion is enabled.
-   Open the cloned-voice picker and verify the compact **Search voices** field
-   appears at the top. Type a mixed-case substring and confirm only matching
-   voice rows remain; select a result and confirm the trigger updates. Clear the
-   query, close and reopen the picker, and confirm all voices are shown again.
-   Enter a query with no matches and confirm **No matching voices.** appears
-   without changing the selected voice. Press Escape from the search field and
-   confirm the picker closes. Confirm the Script editor exposes the Base UI
-   voice selector, Clone Voice action, and script-language dropdown. With an
-   empty script, no voice, or no selected language, Generate must remain
-   disabled; enter text and select both a voice and language, then confirm it
-   enables only after the model is ready. Open each dropdown by mouse and
-   keyboard and confirm its options are readable and selection updates the
-   trigger.
-   In Voiceovers, confirm the left heading shows the full count when nothing
-   is selected, then shows the selected count. Check the singular **1
-   voiceover** and plural **n voiceovers** forms. With no selection, confirm
-   Voice, Duration, Status, and the calendar date-filter button align to the
-   right, with the calendar at the end. Verify the date menu starts at
-   **Select date range** and offers Today, Last 7 days, and Last 30 days. At a narrow viewport, confirm the row
-   wraps instead of introducing horizontal scrolling. Confirm the Clear
-   filters button is absent. Hover and keyboard-focus icon controls and confirm
-   tooltips appear;
-   check that menus, tooltips, and icons retain their theme-aware styling in
-   each theme.
-7. Verify voice and completed-voiceover deletes: a wrong admin password closes
-   the modal without deleting; the default password opens a seven-second Undo
-   toast; selecting Undo preserves the item, while allowing the timer to expire
-   deletes it. Queue cancellation is separate and has no Undo timer toast.
-8. If the backend is unavailable or startup fails, confirm the pulsing warning
+6. In Studio, confirm the Script editor footer shows the language selector on
+   the left and the compact Generate action on the right. Check that Generate
+   stays disabled until script text, voice, language, and model readiness
+   prerequisites are met; use Ctrl/Cmd+Enter after it enables. To check the
+   startup toast and disabled-state tooltips, run `npm run dev` separately:
+   Vite should render Studio before FastAPI starts, and the persistent
+   **Voice model is loading** toast should show an animated spinner until the
+   model is ready or startup fails. Generate and Clone voice should stay
+   disabled during that interval, with tooltips explaining that model loading
+   can take up to three minutes. The packaged launcher shows its browser splash
+   instead and only opens Studio after readiness.
+7. In the Voices card, search with a mixed-case substring and confirm only
+   matching rows remain; select a voice, then clear the query and confirm all
+   rows return. Drag an audio file over the card and drop it there: the clone
+   should start and show its running mark. Drop another file elsewhere in
+   Studio: it must not clone, and the browser must not navigate to the file.
+   Check preview, reference download, rename, and delete actions on cloned rows.
+8. In Voiceovers, use the filter button beside search and verify Voice, Date
+   range, Duration, and Generation status controls. Confirm the total count
+   appears in the compact, vertically centered footer alongside pagination.
+   At a narrow viewport, verify the header wraps without horizontal scrolling.
+   Confirm clicking a voiceover row does not select it or change the layout;
+   each row's individual actions remain available. Hover and keyboard-focus
+   controls to check tooltips and theme-aware styling.
+9. Drag the mascot by its artwork, then use its side arrows to cycle numbered
+   mascots without moving it; Mascot 2 (the Cat sheets) should be the default.
+   Click the artwork without moving it and confirm reaction sprites play, then
+   resize the mascot with its corner grip (drag and arrow keys) and confirm it
+   stays inside the viewport at both bounds. Confirm every committed mascot has
+   a matching `<id>a.webp` directions sheet and `<id>b.webp` reactions sheet,
+   and that `apps/studio/src/generated/mascotCatalog.ts` is current.
+10. Verify voice and completed-voiceover deletes: selecting **Delete** should
+   show a seven-second Undo toast with no password dialog. The voice row is
+   hidden immediately; a voiceover row remains until the timer expires and its
+   history refresh completes. Selecting Undo preserves the item; allowing the
+   timer to expire deletes it. Queue cancellation has no Undo toast.
+11. If the backend is unavailable or startup fails, confirm the pulsing warning
    button appears at the lower left. Open it and verify the reported message
    and Retry action. With cached history present, make a background history
    refresh fail and verify the rows remain visible without an inline warning
@@ -307,12 +309,9 @@ Then confirm the listener is on every interface:
 netstat -ano | findstr :8731    # expect 0.0.0.0:8731
 ```
 
-The app has **no general authentication or multi-user isolation**. The admin
-password gates only voice and completed-voiceover deletion; anyone who reaches
-this port can still use other API actions, including uploading voices and
-generating audio. The shared default is `Homegrown-Admin-8731!`; override it in
-`<install>/backend/.env` before allowing other trusted-LAN users to delete.
-Trusted networks only.
+The app has **no authentication or multi-user isolation**. Anyone who reaches
+this port can use all API actions, including deletion, uploading voices, and
+generating audio. Trusted networks only.
 
 If the loader never appears, the launcher exe is stale — step 4 did not rebuild.
 
@@ -382,7 +381,6 @@ means deleting the folder.
 | `apps/studio/dist is missing` during step 4 | Step 3 was skipped |
 | Loader never appears | Stale launcher exe — re-run step 4 |
 | Firewall prompt on first run | Expected when `backend.exe` binds `0.0.0.0:8731`; allow it only on a trusted private network |
-| Delete password | `Homegrown-Admin-8731!` unless `ADMIN_PASSWORD` is set in `backend/.env` |
 | Long-reference warning is missing | Backend predates the `POST /api/estimate` chunking check — rebuild |
 | PyInstaller runs out of disk | `TMP`/`TEMP` not redirected in step 4 |
 | `No matching distribution` for torch | `--extra-index-url` header in `requirements.txt` was bypassed |

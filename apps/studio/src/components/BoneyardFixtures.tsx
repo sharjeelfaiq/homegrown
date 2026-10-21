@@ -39,26 +39,26 @@ export function StudioStartupFixture() {
         </div>
       </header>
 
-      <main className="mx-auto grid w-full max-w-(--shell) grid-cols-[minmax(0,1fr)] items-start gap-[34px] px-(--gutter) pt-8 pb-[72px] wide:min-h-0 wide:flex-auto wide:grid-cols-[minmax(0,1.15fr)_minmax(0,var(--aside))] wide:gap-10 wide:pb-8">
+      <main className="studio-workspace mx-auto grid w-full max-w-(--shell) grid-cols-[minmax(0,1fr)] items-start gap-[34px] px-(--gutter) pt-8 pb-[72px] wide:min-h-0 wide:flex-auto wide:gap-10 wide:pb-8">
         <section className="flex min-w-0 flex-col gap-[22px] wide:min-h-0">
-          <RuleHeading trailing="/">Script</RuleHeading>
-          <div className="script-editor grid h-[clamp(272px,36svh,372px)] min-h-[clamp(272px,36svh,372px)] grid-rows-[minmax(0,1fr)_auto] rounded-md border border-hairline bg-surface-card">
-            <div className="p-[18px] space-y-3"><div className="h-3 w-[82%] rounded-full bg-surface-raised" /><div className="h-3 w-[64%] rounded-full bg-surface-raised" /></div>
-            <div className="script-editor-footer">
-              <div className="h-2.5 w-14 rounded-full bg-surface-raised" />
-              <div className="script-voice-setting"><span className="h-2.5 w-9 rounded-full bg-surface-raised" /><span className="h-8 w-28 rounded-sm bg-surface-raised" /><span className="size-8 rounded-sm bg-surface-raised" /></div>
-            </div>
-          </div>
-          <div className="generate-action-grid grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start">
-            <div /><div className="relative flex flex-col items-center"><div className="h-10 w-36 rounded-sm bg-invert-bg" /><div className="generate-action-auxiliary mt-1 h-4 w-24 wide:absolute wide:left-full wide:top-1/2 wide:mt-0 wide:ml-3 wide:-translate-y-1/2" /></div><div />
-          </div>
+          <section className="cloned-voices-section results flex flex-none flex-col wide:min-h-0 wide:flex-1">
+            <div className="voiceovers-card-header"><div className="mt-2"><div className="h-10 w-full rounded-sm border border-control bg-surface-raised" /></div></div>
+            <div className="history-context-toolbar flex shrink-0 items-center"><div className="h-2.5 w-24 rounded-full bg-surface-raised" /><div className="ml-auto h-2.5 w-16 rounded-full bg-surface-raised" /></div>
+            <div className="result-list cloned-voices-list"><div className="h-10 border-b border-hairline bg-surface-card" /><div className="h-10 bg-surface-card" /></div>
+          </section>
         </section>
 
         <aside className="flex min-w-0 flex-col wide:h-full wide:min-h-0">
+          <div className="script-editor grid h-[clamp(272px,36svh,372px)] min-h-[clamp(272px,36svh,372px)] grid-rows-[minmax(0,1fr)_auto] rounded-md border border-hairline bg-surface-card">
+            <div className="p-[18px] space-y-3"><div className="h-3 w-[82%] rounded-full bg-surface-raised" /><div className="h-3 w-[64%] rounded-full bg-surface-raised" /></div>
+            <div className="script-editor-footer">
+              <div className="h-8 w-[190px] rounded-sm bg-surface-raised" />
+              <div className="script-editor-generate"><div className="h-8 w-24 rounded-sm bg-invert-bg" /></div>
+            </div>
+          </div>
           <RuleHeading trailing="0">Voiceovers</RuleHeading>
           <section className="results flex min-h-0 flex-1 flex-col">
             <div className="voiceovers-card-header shrink-0"><div className="mt-2 flex gap-2"><div className="h-10 flex-1 rounded-sm border border-control bg-surface-raised" /><div className="h-10 w-10 rounded-sm border border-control bg-surface-raised" /></div></div>
-            <div className="history-context-toolbar flex shrink-0 items-center"><div className="h-2.5 w-24 rounded-full bg-surface-raised" /></div>
             <VoiceoverRows />
           </section>
         </aside>

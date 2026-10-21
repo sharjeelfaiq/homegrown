@@ -149,14 +149,6 @@ async function authFetch(url: string, opts: RequestInit = {}): Promise<Response>
   return fetch(url, opts)
 }
 
-export function verifyAdminPassword(adminPassword: string): Promise<{ ok: boolean }> {
-  return authFetch(apiUrl('/api/admin/verify'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ admin_password: adminPassword }),
-  }).then(parseOrThrow<{ ok: boolean }>)
-}
-
 export function getHealth(): Promise<HealthResponse> {
   return fetch(apiUrl('/api/health')).then(parseOrThrow<HealthResponse>)
 }
@@ -234,14 +226,9 @@ export function presetDownloadUrl(presetId: string): string {
   return apiUrl(`/api/presets/${presetId}/download`)
 }
 
-export function deletePreset(
-  presetId: string,
-  adminPassword: string,
-): Promise<{ ok: boolean }> {
+export function deletePreset(presetId: string): Promise<{ ok: boolean }> {
   return authFetch(apiUrl(`/api/presets/${presetId}`), {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ admin_password: adminPassword }),
   }).then(parseOrThrow<{ ok: boolean }>)
 }
 
@@ -271,14 +258,9 @@ export function listHistory(
   )
 }
 
-export function deleteHistoryEntry(
-  entryId: string,
-  adminPassword: string,
-): Promise<{ ok: boolean }> {
+export function deleteHistoryEntry(entryId: string): Promise<{ ok: boolean }> {
   return authFetch(apiUrl(`/api/history/${entryId}`), {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ admin_password: adminPassword }),
   }).then(parseOrThrow<{ ok: boolean }>)
 }
 

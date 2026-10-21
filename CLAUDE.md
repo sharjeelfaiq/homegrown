@@ -37,9 +37,9 @@ show only the failed stage and a bounded tail. The build still restores `apps/st
 on success, failure, or interruption and produces the same self-extracting
 `dist/Homegrown-<version>.exe` artifact.
 
-`npm run dev` starts FastAPI on `127.0.0.1:8000` and Vite on `:5173`, via
-`concurrently` from the root `package.json`. Vite proxies `/api`, `/audio`, and
-`/refs`. The finished-product path is `npm run build` followed by the generated
+`npm run dev` starts Vite on `:5173` first, then FastAPI on `127.0.0.1:8000`,
+via `concurrently` from the root `package.json`. Vite proxies `/api`, `/audio`,
+and `/refs`. The finished-product path is `npm run build` followed by the generated
 `Homegrown-<version>.exe`. Both root commands are thin wrappers over
 `scripts/dev.mjs` and `scripts/build.mjs`.
 
@@ -56,10 +56,9 @@ on success, failure, or interruption and produces the same self-extracting
 - `engine/qwen/` is the vendored CUDA-graph TTS wrapper. CPU fallback exists but is
   slow.
 - There is one fixed local user (`local-user`), no accounts, and no workspaces.
-  Ordinary API actions are unauthenticated. Only voice and completed-voiceover
-  deletion require the admin password (`Homegrown-Admin-8731!` by default,
-  overridden by `ADMIN_PASSWORD`). Do not describe this as sign-in or
-  multi-user isolation.
+  All API actions are unauthenticated, including voice and completed-voiceover
+  deletion. Do not describe this as sign-in or multi-user isolation; bind only
+  to trusted networks.
 
 ## History and cache contract
 
@@ -79,9 +78,9 @@ on success, failure, or interruption and produces the same self-extracting
   data. Canonical searches cover all history; custom-name matches can narrow
   only loaded/cached pages. Voice preset names are server-side and are stamped
   into a history entry at generation time.
-- A completed job invalidates history. Voice and history deletion first verify
-  the admin password, then defer the DELETE for the seven-second Undo toast.
-  The DELETE endpoint verifies again at commit. History is optimistically
+- A completed job invalidates history. Voice and history deletion are scheduled
+  directly from their row actions and deferred for the seven-second Undo toast;
+  the server DELETE runs only after that window expires. History is optimistically
   removed when the request runs, rolls back on failure, and invalidates on
   success. Unmounting cancels pending client-side deletes. Requeue/reuse does
   not mutate history.
@@ -90,12 +89,12 @@ on success, failure, or interruption and produces the same self-extracting
 
 ## UI and queue contract
 
-- The Script editor keeps an overflow-visible, rounded card frame so the voice
-  picker can escape the card. Its visible border is a final non-interactive
-  overlay child, painted above the opaque footer; keep that element after the
-  textarea and footer so every corner remains continuous when focused. The
-  editor height uses `clamp(300px, 39svh, 400px)`; keep the input grid row
-  flexible so the footer stays visible.
+- The Script editor keeps an overflow-visible, rounded card frame. Its visible
+  border is a final non-interactive overlay child, painted above the opaque
+  footer; keep that element after the textarea and footer so every corner
+  remains continuous when focused. The editor height uses
+  `clamp(300px, 39svh, 400px)`; keep the input grid row flexible so the footer
+  stays visible.
 - The Script editor footer's script-language selector uses the shared
   Base UI menu-backed dropdown, populated from `GET /api/languages` (the loaded
   checkpoint's own `codec_language_id`, read once when the model reports
@@ -109,18 +108,22 @@ on success, failure, or interruption and produces the same self-extracting
   when the voice changes. `POST /api/generate` validates `language` against the
   same table and returns 400 otherwise, so an unsupported value is a refused
   request rather than a failed job.
+- `ClonedVoicesSection.tsx` is the persistent voice-management card. It owns
+  voice search, selection, rename, preview, download, delete, and Clone voice.
+  File drops clone only when dropped on this card; the rest of Studio only
+  suppresses the browser's default file-open behavior.
+  Clone voice and Generate share StudioShell's model-ready gate: they stay
+  semantically disabled until `wakeBackend` observes `model_loaded: true`.
+  During startup their tooltip says `Voice model is loading — this can take up
+  to 3 minutes.` The API may select CPU when no usable GPU exists;
+  that fallback is ready only after its model initialization completes.
+  While Studio is checking startup, it keeps a **Voice model is loading** toast
+  with an indeterminate `StatusMark` spinner until readiness or failure.
 - Inline voice upload uses the ReactBits-style `StatusMark`: amber while
   running, green after success, and red after failure. The final success or
   failure mark is intentionally retained for two seconds before restoring the
   Upload icon. Keep the status attributes (`data-status`) and that timing in
-  sync with `ScriptBlock.test.tsx`.
-- `VoicePicker.tsx` renders a local, case-insensitive cloned-voice name search
-  input at the top of its Base UI menu popup. The query is cleared by `close()`;
-  clicking a read-only voice name selects it without closing the picker. Names
-  become editable only through the pencil icon button, which hides while the
-  name is being edited and returns when editing ends. Rows retain preview,
-  download, and delete actions. Keep typing and arrow keys in the search field
-  from selecting rows.
+  sync with `ClonedVoicesSection.test.tsx`.
 - Backend startup failures are reported through a fixed, pulsing warning button
   at the lower-left of Studio; its modal shows the relevant message and Retry
   action when available. Do not put a failure banner above the Script editor.
@@ -150,30 +153,26 @@ on success, failure, or interruption and produces the same self-extracting
   is reactions. Do not hand-edit `src/generated/mascotCatalog.ts`; add a pair,
   run a normal Studio command, and commit the assets with its regenerated
   catalog. Mascot 2 (the Cat sheets) is the default when it exists.
-- Generate is a 44px action in the center column of a three-column grid. Keep
-  blocked-state and shortcut copy in `.generate-action-auxiliary`: it is
-  outside normal layout flow on wide screens and below the button on narrow
-  screens, so it cannot offset the real button from the editor axis.
+- Generate is a compact right-aligned action in the Script editor footer; the
+  language selector is left-aligned. Its tooltip exposes the Ctrl/Cmd+Enter
+  shortcut when ready and the model-loading explanation while startup blocks
+  it. Keep `.generate-action-auxiliary` visually stable and do not reintroduce
+  shortcut or prerequisite copy beside the action.
 - Completed rows are paginated with persisted page-size choices: 10, 25, 50,
   or 100. The fixed pager shows all pages through four; thereafter it shows a
   sliding window of five numbered buttons, always including the current page.
   Default display numbers must account for the server page offset.
 - Live queued/running/failed rows come from `GenerationActivityContext`; do not
   fold them into completed-history cache data.
-- Voice/history deletes are password-gated and deferred behind a seven-second
-  Undo toast; unmount cancels a pending delete. Queue cancellation is different:
+- Voice/history deletes are deferred behind a seven-second Undo toast; unmount
+  cancels a pending delete. Queue cancellation is different:
   after the user confirms it, send it immediately and do not show an Undo timer
   toast. Keep this distinction in sync across the UI and API.
   A running job checks for cancellation between streamed audio pieces (about
   one second), so it may stop partway through a script chunk.
-- The context toolbar below voiceover search always shows a heading on the
-  left: total history count until selection, then selected-row count. Use
-  singular **voiceover** for one and plural **voiceovers** otherwise. Compact
-  Voice, Duration, Status, and calendar date filters sit on the right when no
-  rows are selected. It wraps on narrow screens without horizontal scrolling.
-  Selection actions live in this reserved toolbar, never in a floating dock.
-  One selected row downloads directly; multiple selected rows use the history
-  ZIP endpoint.
+- The Voiceovers header contains search and a compact filter popover. Its footer
+  contains pagination and the total history count, vertically centered. Do not
+  restore batch selection or selection-action layout shifts.
 - Dropdown selectors, the theme menu, and voiceover action menus use
   `@base-ui/react/menu` through the shared `Dropdown.tsx` wrapper. Selection
   dropdowns share their raised surface, border, type, focus, and hover style
@@ -191,9 +190,8 @@ on success, failure, or interruption and produces the same self-extracting
 ## Deployment and safety
 
 - Local development and the Windows self-extracting build are supported.
-- The app has no general authentication; only voice/history deletion requires
-  the admin password. The shared default is not a LAN security boundary. Bind
-  only to trusted networks and override `ADMIN_PASSWORD` before sharing access.
+- The app has no authentication. Any client that reaches the API can use all
+  actions, including deletion. Bind only to trusted networks.
 - Never commit `.env`, model files, generated audio, or local storage data.
 
 ## Documentation

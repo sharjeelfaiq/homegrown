@@ -26,10 +26,8 @@ cp services/voice-api/.env.example services/voice-api/.env
 
 Download the model once (the default location is the ignored `models/`
 directory), then set `MODEL_PATH` in `services/voice-api/.env` to its absolute
-Windows path. The default admin password is `Homegrown-Admin-8731!`; override
-`ADMIN_PASSWORD` with a long, unique password in `services/voice-api/.env`
-before anyone else can reach the app. Only delete operations use this password;
-other API actions are not authenticated:
+Windows path. The app has no sign-in or authentication; use it only on a
+trusted network:
 
 ```bash
 PY=.venv/Scripts/python.exe; [ -f "$PY" ] || PY=.venv/bin/python
@@ -51,28 +49,38 @@ PYEOF
 npm run dev
 ```
 
-Open `http://localhost:5173`. The script starts FastAPI on `127.0.0.1:8000`
-and Vite on port 5173. Vite proxies `/api`, `/audio`, and `/refs`, so Studio
-always uses same-origin API paths. It prints a LAN address when available.
-There is no sign-in; the admin password only gates deletion of voices and
-completed voiceovers. Use only a trusted network.
+Open `http://localhost:5173`. The script starts Vite first so Studio can show
+its startup state, then starts FastAPI on `127.0.0.1:8000`; FastAPI probes for
+a usable NVIDIA GPU and loads Qwen3-TTS before reporting ready. Vite proxies
+`/api`, `/audio`, and `/refs`, so Studio always uses same-origin API paths. It
+prints a LAN address when available.
+There is no sign-in or authentication. Use only a trusted network; anyone who
+can reach the API can delete voices and completed voiceovers as well as use the
+other API actions.
 
-For manual startup, use separate terminals:
-
-```bash
-cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
-```
+For manual startup, start Studio first in one terminal, wait until Vite is
+serving at `http://localhost:5173`, then start FastAPI in a second terminal.
+This lets the frontend render while the backend probes the device and loads
+the model:
 
 ```bash
 cd apps/studio && npm run dev
 ```
 
-Keep `apps/studio/.env.local` empty for supported local workflows.
+```bash
+cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
 
-When a voice clip is uploaded from the Script editor, the Upload icon changes
-to an animated lifecycle mark: amber while work is running, green on success,
-and red on failure. The completed result remains visible for two seconds before
-the Upload icon returns.
+Keep `apps/studio/.env.local` empty for supported local workflows. While the
+model initializes, Studio shows a persistent **Voice model is loading** toast
+with an animated spinner; it disappears when startup succeeds or fails. The
+full-screen startup overlay also reports the backend phase.
+
+Clone a voice from the persistent Voices card or drop an audio file directly
+onto that card. Dropping a file elsewhere does not clone it. During upload, the
+Clone voice icon changes to an animated lifecycle mark: amber while work is
+running, green on success, and red on failure. The completed result remains
+visible for two seconds before the Upload icon returns.
 
 If the backend is unavailable, Studio shows a pulsing warning button at the
 lower left. Open it to read the backend message and retry startup. A failed
@@ -100,14 +108,14 @@ Python's `unittest` runner and never build or freeze the backend. The separate
 `npm run build` command packages the Windows application.
 
 The Script editor is 300–400px high, with its height adapting to viewport size.
-The **Generate** button is centered below the editor and is 44px high. It stays
-disabled until the script contains non-whitespace text, an available voice and
-a script language are selected, the model is ready, and no submission or
-startup is in progress. Its disabled reason and keyboard-shortcut reminder are
-auxiliary text, so they do not shift the action off the editor's centerline.
-The voice, script-language, filter, and page-size selectors use one shared
-Base UI menu-backed dropdown style; the Clone Voice action sits beside the
-voice selector. Compact Voice, Duration, and Status filters use the shared
+Its footer places the language selector on the left and the compact **Generate**
+action on the right. Generate stays disabled until the script contains
+non-whitespace text, an available voice and a script language are selected,
+the model is fully ready, and no submission is in progress. While the model is
+loading, Generate and **Clone voice** are disabled; their tooltips say the voice
+model is loading and can take up to three minutes. The voice, script-language, filter,
+and page-size selectors use one shared Base UI menu-backed dropdown style.
+Compact Voice, Duration, and Status filters use the shared
 dropdown surface and option-window styling; their triggers are slightly shorter
 and use smaller text than the script-language selector.
 Unselected dropdown inputs use **Select {field label}** as their default
@@ -115,22 +123,14 @@ option (for example, **Select language**); fields with an existing setting
 continue to show that setting. The language control keeps a fixed 190px width
 so voice-name changes do not shift the editor footer.
 
-The cloned-voice picker includes a compact search field at the top of its
-dropdown. Search filters the available voice names locally, case-insensitively.
-Clicking a voice name selects it without closing the picker; names are read-only
-until the pencil button is clicked. The pencil hides while a name is being
-edited and returns when editing ends. Preview, download, and delete actions
-remain available on each row. The query is cleared when the dropdown closes.
-
-With no voice selected, the voice picker reads **Select voice**. In the
-Voiceovers section, the left heading shows the total voiceover count
-until rows are selected, then shows the selected count (with singular grammar
-for one voiceover). When no rows are selected, **Select voice**, **Select
-duration**, **Select status**, and the **Select date range** calendar filter
-sit on the right. The row wraps on narrow screens instead of scrolling
-horizontally. Menus share the Base UI dropdown primitives, tooltips use the
-shared Base UI tooltip, and interface icons use `lucide-react`. Animated
-status and undo countdown rings remain custom visuals.
+The persistent Voices card includes a compact, case-insensitive search field.
+Clicking a row selects that voice; cloned-voice names are editable with their
+pencil control, while preview, reference download, and delete actions remain
+on each row. In the Voiceovers section, filters are in the filter popover next
+to search and the total count is in the compact footer. Menus share the Base UI
+dropdown primitives, tooltips use the shared Base UI tooltip, and interface
+icons use `lucide-react`. Animated status and undo countdown rings remain
+custom visuals.
 
 On the first model-ready launch, Studio offers a short, read-only tour of the
 theme/help controls, reusable voice creation, the Script editor, Generate, and
@@ -145,11 +145,10 @@ npm run build
 ```
 
 This creates `dist/Homegrown-<version>.exe`. Run that self-extracting archive,
-then run the extracted `Homegrown.exe`; it opens the browser loader and starts
-the local Studio and API. The packaged backend listens on port 8731 for trusted
-LAN use; deletion uses the default admin password unless `ADMIN_PASSWORD` is
-overridden in the extracted `backend/.env`. Other API actions are not
-authenticated, so never expose it to an untrusted network. The detailed,
+then run the extracted `Homegrown.exe`; its browser loader appears before the
+local API initializes Qwen3-TTS. The packaged backend listens on port 8731 for
+trusted LAN use. No API actions are authenticated, so never expose it to an
+untrusted network. The detailed,
 recoverable build procedure is in [docs/BUILD.md](docs/BUILD.md).
 
 The build prints a numbered ten-stage overview without a separate `PLAN`
@@ -193,10 +192,9 @@ docs/workflow.md   day-to-day Studio workflow
 
 - Do not commit `.env` files, model snapshots, generated audio, or local
   storage.
-- There is no sign-in or multi-user isolation. The default admin password is
-  shared and only protects deletions; other API actions are unauthenticated.
-  Change it before allowing other trusted-LAN users to delete, and never expose
-  the development or packaged app to an untrusted network.
+- There is no sign-in, authentication, or multi-user isolation. Any client that
+  can reach the API can use all actions, including deletion. Never expose the
+  development or packaged app to an untrusted network.
 - See [docs/gpu-notes.md](docs/gpu-notes.md) for local-GPU measurements and
   [engine/qwen/README.md](engine/qwen/README.md) for the vendored wrapper.
 - `docs/history/` is archival material only; it documents superseded cloud and

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion, useIsPresent } from 'framer-motion'
 import {
@@ -7,10 +7,8 @@ import {
   deleteQueueJob,
   reorderQueue,
   retryQueueJob,
-  zipHistory,
   downloadUrl,
   mediaUrl,
-  verifyAdminPassword,
   type HistoryEntry,
   type QueueEntry,
 } from '../api'
@@ -29,15 +27,11 @@ import InlineName from './InlineName'
 import VoiceoverPlayer from './VoiceoverPlayer'
 import UndoCountdown from './UndoCountdown'
 import { ArrowDown as ArrowDownIcon, ArrowUp as ArrowUpIcon, Check as CheckIcon, ChevronLeft, ChevronRight, X as CrossIcon, Download as DownloadIcon, Ellipsis as MoreIcon, Play as PlayIcon, Trash2 as TrashIcon, WandSparkles as WandIcon } from 'lucide-react'
-import { MOD_ARIA, MOD_KEY } from '../keys'
-import Kbd from './Kbd'
 import type { VoiceoverFilterState } from './VoiceoverFilters'
-import VoiceoverQuickFilters from './VoiceoverQuickFilters'
-import AdminPasswordModal from './AdminPasswordModal'
+import VoiceoverFilters from './VoiceoverFilters'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from '../historyPageSize'
 import { fetchHistoryPage, historyQueryKey, normalizeHistoryRequest } from '../historyQuery'
 import { pageControls } from '../historyPager'
-import { voiceoverHeading } from '../historyHeading'
 import { Skeleton } from 'boneyard-js/react'
 import { VoiceoverHistoryFixture } from './BoneyardFixtures'
 
@@ -45,9 +39,6 @@ interface Props {
   presets: import('../api').Preset[]
   filters: VoiceoverFilterState
   onFiltersChange: (filters: VoiceoverFilterState) => void
-  /** Focused (and selected) by the Ctrl/Cmd+F shortcut, which is bound in
-   *  StudioShell -- the same arrangement as the script box and "/". */
-  searchRef?: RefObject<HTMLInputElement | null>
   /** Voiceovers that finished while the user was scrolled away from the top. */
   pendingNew: number
   onShowNew: () => void
@@ -55,7 +46,7 @@ interface Props {
    * decide whether a finished voiceover may be inserted under the user's eyes
    * or has to be announced instead. */
   onAtTopChange: (atTop: boolean) => void
-  onDelete: (id: string, adminPassword: string) => Promise<void>
+  onDelete: (id: string) => Promise<void>
   onRequeue: (entry: HistoryEntry) => void
   /** Reuses a pending job's full script. The queue poll only carries its
    * preview, so the parent fetches the source on this explicit action. */
@@ -86,65 +77,6 @@ const PREVIEW_CHARS = 80
 
 function truncate(text: string, max = PREVIEW_CHARS): string {
   return text.length > max ? `${text.slice(0, max)}…` : text
-}
-
-/** A single selected row should behave exactly like its row-level Download
- * action. ZIP creation is reserved for an actual batch. */
-export function selectedDownloadKind(selectedCount: number): 'mp3' | 'zip' {
-  return selectedCount === 1 ? 'mp3' : 'zip'
-}
-
-export interface RowSelectionModifiers {
-  additive: boolean
-  range: boolean
-}
-
-/** Standard desktop-list selection: plain click replaces, Ctrl/Cmd toggles,
- * and Shift adds the visible range from its anchor. */
-export function selectionAfterRowClick(
-  selected: ReadonlySet<string>,
-  rowIds: readonly string[],
-  index: number,
-  anchor: number | null,
-  { additive, range }: RowSelectionModifiers,
-): Set<string> {
-  const id = rowIds[index]
-  if (!id) return new Set(selected)
-  const resolvedAnchor = anchor ?? rowIds.findIndex((rowId) => selected.has(rowId))
-  if (range && resolvedAnchor >= 0 && rowIds[resolvedAnchor]) {
-    const next = new Set(selected)
-    const [from, to] = resolvedAnchor < index ? [resolvedAnchor, index] : [index, resolvedAnchor]
-    for (let i = from; i <= to; i++) next.add(rowIds[i])
-    return next
-  }
-  if (additive) {
-    const next = new Set(selected)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    return next
-  }
-  return new Set([id])
-}
-
-/** Apply a contiguous drag range against the selection that existed before the
- * gesture. Recomputing from that base makes Ctrl/Cmd-drag stable while the
- * pointer crosses rows instead of toggling the same row repeatedly. */
-export function selectionAfterRowDrag(
-  selected: ReadonlySet<string>,
-  rowIds: readonly string[],
-  start: number,
-  end: number,
-  mode: 'replace' | 'add' | 'toggle',
-): Set<string> {
-  const next = mode === 'replace' ? new Set<string>() : new Set(selected)
-  const [from, to] = start < end ? [start, end] : [end, start]
-  for (let i = from; i <= to; i++) {
-    const id = rowIds[i]
-    if (!id) continue
-    if (mode === 'toggle' && selected.has(id)) next.delete(id)
-    else next.add(id)
-  }
-  return next
 }
 
 /* The two-column layout, and with it the fixed-height scrolling Voiceovers
@@ -718,9 +650,6 @@ function VoiceoverRow({
   downloadHref,
   onDelete,
   onRequeue,
-  selected,
-  onSelect,
-  rowIndex,
   animateExit,
   menuPlacement = 'up',
 }: {
@@ -730,9 +659,6 @@ function VoiceoverRow({
   downloadHref: string
   onDelete: () => void
   onRequeue: () => void
-  selected: boolean
-  onSelect: (modifiers: RowSelectionModifiers) => void
-  rowIndex: number
   animateExit: boolean
   menuPlacement?: 'up' | 'down'
 }) {
@@ -740,20 +666,6 @@ function VoiceoverRow({
   const [menuOpen, setMenuOpen] = useState(false)
   const created = timeAgo(entry.created_at)
   const reduced = usePrefersReducedMotion()
-
-  function isInteractiveTarget(event: ReactMouseEvent | ReactKeyboardEvent) {
-    const target = event.target as HTMLElement
-    return target.closest('a, button, input, [role="menu"], [role="slider"]') !== null
-  }
-
-  function selectFromRow(event: ReactMouseEvent | ReactKeyboardEvent) {
-    if (isInteractiveTarget(event)) return
-    const nativeEvent = event.nativeEvent
-    onSelect({
-      additive: 'ctrlKey' in nativeEvent && (nativeEvent.ctrlKey || nativeEvent.metaKey),
-      range: 'shiftKey' in nativeEvent && nativeEvent.shiftKey,
-    })
-  }
 
   return (
     // EXIT ONLY -- no initial/animate. The three ways a row appears here are a
@@ -773,18 +685,7 @@ function VoiceoverRow({
         ? { opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }
         : undefined}
       transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
-      className={`group/row ${selected ? 'is-selected' : ''} -mx-2 flex cursor-default ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline px-2 py-[7px] last:border-b-0`}
-      tabIndex={0}
-      aria-label={`Select ${name}`}
-      aria-selected={selected}
-      data-voiceover-row-index={rowIndex}
-      onClick={selectFromRow}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return
-        if (isInteractiveTarget(event)) return
-        event.preventDefault()
-        selectFromRow(event)
-      }}>
+      className={`group/row -mx-2 flex cursor-default ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline px-2 py-[7px] last:border-b-0`}>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <RowHead
         {...nameControl}
@@ -892,7 +793,6 @@ export default function HistoryList({
   presets,
   filters,
   onFiltersChange,
-  searchRef,
   pendingNew,
   onShowNew,
   onAtTopChange,
@@ -929,22 +829,10 @@ export default function HistoryList({
   // Without this flag Enter would commit twice, and Escape would commit the
   // very edit it just discarded.
 
-  // Deletion requires the admin password modal before the server removes the
-  // history record and audio files.
-  //
   // Selection is keyed by id and is NOT derived from what is on screen.
   // Selecting rows, then typing a search, then acting has to operate on what
-  // was selected -- filtering the action down to the visible rows would
-  // silently do less than the count says.
-  const [selected, setSelected] = useState<Set<string>>(() => new Set())
-  const [zipping, setZipping] = useState(false)
   const [reordering, setReordering] = useState(false)
-  // Anchor for shift-click ranges. An index into `shown`, NOT into `history`:
-  // a range drawn across a filtered list has to select what lies between the
-  // two rows the user can see.
-  const lastClickedIndex = useRef<number | null>(null)
 
-  const [deleteRequest, setDeleteRequest] = useState<{ ids: string[]; label: string } | null>(null)
   const deleteTimers = useRef(new Map<number, string | number>())
 
   useEffect(() => () => {
@@ -959,34 +847,8 @@ export default function HistoryList({
   const [pendingCancels, setPendingCancels] = useState<Set<string>>(() => new Set())
 
   const listRef = useRef<HTMLUListElement>(null)
-  const selectionScopeRef = useRef<HTMLElement>(null)
-  const dragRef = useRef<{
-    start: number
-    pointerId: number
-    startX: number
-    startY: number
-    mode: 'replace' | 'add' | 'toggle'
-    base: Set<string>
-    active: boolean
-  } | null>(null)
-  const suppressNextClick = useRef(false)
-
-  // Row selection belongs to this panel. A click in the composer, elsewhere on
-  // the page, or another panel is the conventional desktop-list deselect.
-  useEffect(() => {
-    if (selected.size === 0) return
-    const clearWhenLeavingPanel = (event: PointerEvent) => {
-      if (selectionScopeRef.current?.contains(event.target as Node)) return
-      setSelected(new Set())
-      lastClickedIndex.current = null
-    }
-    document.addEventListener('pointerdown', clearWhenLeavingPanel)
-    return () => document.removeEventListener('pointerdown', clearWhenLeavingPanel)
-  }, [selected])
 
   useEffect(() => {
-    setSelected(new Set())
-    lastClickedIndex.current = null
     listRef.current?.scrollTo({ top: 0 })
   }, [filters])
 
@@ -1122,12 +984,7 @@ export default function HistoryList({
   const visible = numbered
   const visibleTotal = total
 
-  // A selected row that has since been deleted (here or in another tab) must
-  // not keep inflating the count or be sent to the zip endpoint.
-  const liveIds = new Set(visible.map(({ entry }) => entry.id))
-  const selectedIds = [...selected].filter((id) => liveIds.has(id))
-  const selectedCount = selectedIds.length
-  const headingText = voiceoverHeading(visibleTotal, selectedCount)
+  const headingText = `${visibleTotal} voiceover${visibleTotal === 1 ? '' : 's'}`
 
   const needle = draft.trim().toLowerCase()
   const shown = needle
@@ -1151,7 +1008,6 @@ export default function HistoryList({
     const target = Math.max(0, Math.min(next, pageCount - 1))
     if (target === page) return
     setPage(target)
-    lastClickedIndex.current = null
     listRef.current?.scrollTo({ top: 0 })
     listRef.current?.scrollIntoView({ block: 'start' })
   }
@@ -1160,7 +1016,6 @@ export default function HistoryList({
   // those ids, and that would immediately snap every navigation back to page 1.
   useEffect(() => {
     setPage(0)
-    lastClickedIndex.current = null
   }, [pageSize, draft, filters])
 
   // Whether the reader is at the top decides if a finished voiceover may be
@@ -1265,95 +1120,7 @@ export default function HistoryList({
   }
 
 
-  /** Select one row, Ctrl/Cmd-toggle it, or Shift-click to add the range.
-   *
-   * `index` is the row's position in `pageRows` -- what is on screen after the
-   * search filter -- so a range drawn across a filtered list selects the span
-   * the user actually drew, not whatever sits between those two rows in the
-   * unfiltered history. */
-  function selectRow(index: number, modifiers: RowSelectionModifiers) {
-    if (suppressNextClick.current) {
-      suppressNextClick.current = false
-      return
-    }
-    const ids = pageRows.map(({ entry }) => entry.id)
-    setSelected((prev) => {
-      const fallbackAnchor = lastClickedIndex.current ?? ids.findIndex((id) => prev.has(id))
-      return selectionAfterRowClick(prev, ids, index, fallbackAnchor < 0 ? null : fallbackAnchor, modifiers)
-    })
-    lastClickedIndex.current = null
-    if (!modifiers.range) lastClickedIndex.current = index
-  }
-
-  function beginRowDrag(event: ReactPointerEvent<HTMLUListElement>) {
-    if (event.button !== 0) return
-    const target = event.target as HTMLElement
-    if (target.closest('a, button, input, [role="menu"], [role="slider"]')) return
-    const row = target.closest<HTMLElement>('[data-voiceover-row-index]')
-    if (!row || !listRef.current?.contains(row)) return
-    const start = Number(row.dataset.voiceoverRowIndex)
-    if (!Number.isInteger(start)) return
-    dragRef.current = {
-      start,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      mode: event.shiftKey ? 'add' : event.ctrlKey || event.metaKey ? 'toggle' : 'replace',
-      base: new Set(selected),
-      active: false,
-    }
-  }
-
-  useEffect(() => {
-    const rowAtPoint = (x: number, y: number) => {
-      const target = document.elementFromPoint(x, y)
-      const row = target?.closest<HTMLElement>('[data-voiceover-row-index]')
-      if (!row || !listRef.current?.contains(row)) return null
-      const index = Number(row.dataset.voiceoverRowIndex)
-      return Number.isInteger(index) ? index : null
-    }
-    const onMove = (event: PointerEvent) => {
-      const drag = dragRef.current
-      if (!drag || event.pointerId !== drag.pointerId) return
-      const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY)
-      if (!drag.active && distance < 5) return
-      const index = rowAtPoint(event.clientX, event.clientY)
-      if (index === null) return
-      // Let a normal click (including a slightly shaky Shift-click) reach the
-      // row's click handler. Drag selection only starts once the pointer has
-      // crossed into another voiceover row.
-      if (!drag.active && index === drag.start) return
-      drag.active = true
-      event.preventDefault()
-      document.body.style.userSelect = 'none'
-      const ids = pageRows.map(({ entry }) => entry.id)
-      setSelected(selectionAfterRowDrag(drag.base, ids, drag.start, index, drag.mode))
-    }
-    const finish = (event: PointerEvent) => {
-      const drag = dragRef.current
-      if (!drag || event.pointerId !== drag.pointerId) return
-      if (drag.active) {
-        const index = rowAtPoint(event.clientX, event.clientY)
-        lastClickedIndex.current = index ?? drag.start
-        // A click is only synthesized when the pointer ends over the list;
-        // avoid leaving a stale suppression flag when a drag ends elsewhere.
-        suppressNextClick.current = index !== null
-        document.body.style.userSelect = ''
-      }
-      dragRef.current = null
-    }
-    document.addEventListener('pointermove', onMove, { passive: false })
-    document.addEventListener('pointerup', finish)
-    document.addEventListener('pointercancel', finish)
-    return () => {
-      document.removeEventListener('pointermove', onMove)
-      document.removeEventListener('pointerup', finish)
-      document.removeEventListener('pointercancel', finish)
-      document.body.style.userSelect = ''
-    }
-  }, [pageRows])
-
-  async function handleDownloadSelected() {
+  /*
     if (selectedCount === 0 || zipping) return
     if (selectedDownloadKind(selectedCount) === 'mp3') {
       const selectedId = selectedIds[0]
@@ -1400,42 +1167,16 @@ export default function HistoryList({
     }
   }
 
-  function handleDeleteSelected() {
-    if (selectedCount === 0) return
-    const ids = [...selectedIds]
-    const label = ids.length === 1 ? '1 voiceover' : `${ids.length} voiceovers`
-    setDeleteRequest({ ids, label })
-  }
-
+  */
   function handleDelete(id: string, label: string) {
-    setDeleteRequest({ ids: [id], label })
-  }
-
-  async function confirmDelete(adminPassword: string) {
-    if (!deleteRequest) return
-    try {
-      await verifyAdminPassword(adminPassword)
-    } catch (e) {
-      onError(e instanceof ApiError ? e.message : 'Admin password could not be verified')
-      throw e
-    }
-
-    const { ids, label } = deleteRequest
     const timer = window.setTimeout(() => {
       deleteTimers.current.delete(timer)
       void (async () => {
-        for (const id of ids) {
-          try {
-            await onDelete(id, adminPassword)
-            removeFileName(id)
-            setSelected((prev) => {
-              const next = new Set(prev)
-              next.delete(id)
-              return next
-            })
-          } catch (e) {
-            onError(e instanceof ApiError ? e.message : `Failed to delete ${label}`)
-          }
+        try {
+          await onDelete(id)
+          removeFileName(id)
+        } catch (e) {
+          onError(e instanceof ApiError ? e.message : `Failed to delete ${label}`)
         }
       })()
     }, UNDO_MS)
@@ -1552,7 +1293,7 @@ export default function HistoryList({
   // at 1440 wide: 471 / 539 / 671 / 871 / 1171px of list at viewport heights
   // 700 / 768 / 900 / 1100 / 1400, root overflow 0 at all five.
   return (
-    <div className="mb-6 flex flex-col gap-1 wide:mb-0 wide:h-full wide:min-h-0">
+    <div className="mb-6 flex flex-col gap-1 wide:mb-0 wide:min-h-0 wide:flex-1">
       <p className="sr-only" role="status">{filters.status === 'active' || filters.status === 'failed' ? `Showing ${filters.status === 'active' ? 'generating and queued' : 'failed'} live voiceovers.` : `Showing ${total} completed voiceover${total === 1 ? '' : 's'}${filters.status === 'completed' ? '.' : ' with live jobs above.'}`}</p>
       {/* Keep the controls mounted even for an empty history. This is important
           when a persisted filter or search hides every row: the user must
@@ -1565,8 +1306,8 @@ export default function HistoryList({
           typing a search would fire shortcuts. isTyping() already covers
           INPUT, but Escape is NOT gated by it and would clear the composer's
           error banner behind the column. */}
-      <section ref={selectionScopeRef} className="results flex min-h-0 flex-1 flex-col">
-        <div className="voiceovers-card-header shrink-0">
+      <section className="results flex w-full min-h-0 flex-1 flex-col">
+        <div className="voiceovers-card-header voiceover-history-header shrink-0">
           {/* Keep the controls mounted even for an empty history. This is important
               when a persisted filter or search hides every row: the user must
               still have a visible way to clear it and recover the list.
@@ -1582,17 +1323,15 @@ export default function HistoryList({
           // separate increases to the h-* utility changed the emitted CSS and
           // nothing on screen. .result-list is flex: 1 1 auto and takes the
           // space instead.
-          className="mt-2 flex gap-2"
+          className="mt-1 flex gap-2"
           data-tour="voiceover-search-filters"
         >
           <div className="relative min-w-0 flex-1">
           <input
-            ref={searchRef}
             type="search"
-            aria-keyshortcuts={`${MOD_ARIA}+F`}
-            className={`voiceover-search peer h-10 w-full rounded-sm border border-control bg-surface-raised ${draft === '' ? 'pr-16' : 'pr-3'} pl-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line coarse:pr-3`}
-            placeholder="Search by the name of voiceover or voice..."
-            aria-label="Search by the name of voiceover or voice"
+            className="voiceover-search h-9 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+            placeholder="Search voiceovers or voices…"
+            aria-label="Search voiceovers or voices"
             value={draft}
             maxLength={MAX_SEARCH_CHARS}
             onChange={(e) => setDraft(e.target.value)}
@@ -1616,31 +1355,10 @@ export default function HistoryList({
               ~42px wide and text scrolling past it would run underneath,
               which is the same mistake the word count and the "/" cap each
               had to be fixed for. */}
-          {draft === '' && (
-            <Kbd className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 transition-opacity duration-(--fast) ease-(--ease) peer-focus:opacity-0 coarse:hidden">
-              {`${MOD_KEY}+F`}
-            </Kbd>
-          )}
           </div>
+          <VoiceoverFilters presets={presets} history={history} value={filters} onChange={onFiltersChange} />
           </div>
         </div>
-      {/* Always reserve this neutral action band so selection never moves rows. */}
-      <div className="history-context-toolbar flex shrink-0 flex-wrap items-center gap-2 overflow-x-hidden text-[11px] text-muted" role={selectedCount > 0 ? 'toolbar' : undefined} aria-label={selectedCount > 0 ? 'Actions for selected voiceovers' : undefined}>
-        <span className="shrink-0" role="status" aria-label={headingText}>{headingText}</span>
-        {selectedCount > 0 && (
-          <>
-            <AppTooltip content={zipping ? 'Preparing download' : 'Download selected voiceovers'}>
-              <button type="button" className="icon-btn shrink-0" disabled={zipping} onClick={handleDownloadSelected} aria-label={zipping ? 'Preparing download' : 'Download selected voiceovers'}><DownloadIcon size={15} /></button>
-            </AppTooltip>
-            <AppTooltip content="Delete selected voiceovers">
-              <button type="button" className="icon-btn icon-btn-danger shrink-0" onClick={handleDeleteSelected} aria-label="Delete selected voiceovers"><TrashIcon size={15} /></button>
-            </AppTooltip>
-          </>
-        )}
-        {selectedCount === 0 && (
-          <VoiceoverQuickFilters className="ml-auto" presets={presets} history={history} value={filters} onChange={onFiltersChange} />
-        )}
-      </div>
       {/* Surfaced instead of scrolling the list out from under a reader. */}
       {pendingNew > 0 && (
         <button
@@ -1684,7 +1402,7 @@ export default function HistoryList({
         )
       ) : (
         <>
-          <ul className="result-list" ref={listRef} onPointerDown={beginRowDrag}>
+          <ul className="result-list" ref={listRef}>
             {/* initial={false} is load-bearing on both of these: without it
                 every row already on screen animates on mount, so a reload with
                 jobs running replays an entrance for work that started minutes
@@ -1749,9 +1467,6 @@ export default function HistoryList({
                     )}
                     onDelete={() => handleDelete(entry.id, name)}
                     onRequeue={() => onRequeue(entry)}
-                    selected={selected.has(entry.id)}
-                    onSelect={(modifiers) => selectRow(i, modifiers)}
-                    rowIndex={i}
                     // Not while searching. A keystroke can filter out a dozen
                     // rows at once, and a dozen simultaneous height collapses is
                     // the one place in this column that would feel slow -- the
@@ -1857,18 +1572,12 @@ export default function HistoryList({
                 </li>
               </ul>
             </nav>
+            <span className="voiceover-pager-count" role="status" aria-label={headingText}>{headingText}</span>
           </div>
           )}
         </>
       )}
       </section>
-      <AdminPasswordModal
-        open={deleteRequest !== null}
-        title="Confirm deletion"
-        description={deleteRequest ? `Permanently delete ${deleteRequest.label}?` : ''}
-        onClose={() => setDeleteRequest(null)}
-        onSubmit={confirmDelete}
-      />
     </div>
   )
 }
