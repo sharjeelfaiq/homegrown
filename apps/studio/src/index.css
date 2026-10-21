@@ -569,20 +569,6 @@ body {
   font-size: 10px;
 }
 
-.dropdown-select-trigger.quick-filter-select-trigger {
-  height: 29px;
-  padding-right: 7px;
-  padding-left: 7px;
-  font-size: 10.5px;
-}
-
-/* The selected voice remains a subtle readiness cue within the shared
-   dropdown style. */
-.dropdown-select-trigger.voice-picker-trigger.is-selected {
-  border-color: var(--accent-2-line);
-  background: var(--accent-2-soft);
-}
-
 /* A heading whose trailing hairline fills the rest of the line -- the
    "SCRIPT ────" / "VOICEOVERS ────" rule. Used by three headings, and the
    ::after is the whole point of it, so it stays a utility rather than being
@@ -747,9 +733,8 @@ body {
 
    Fixed to real tokens, and to the app's OWN conventions rather than to a
    literal reading of the dead rules. Hover is ghost-btn's (control-fill-hover,
-   text-primary); the active page is voice-picker-trigger.is-selected's
-   (accent-2-soft + accent-2-line + text-primary), which is already how this app
-   says "this is the current one". The literal reading -- a solid --accent-2
+   text-primary); the active page uses the shared accent-2 selected treatment,
+   which is already how this app says "this is the current one". The literal reading -- a solid --accent-2
    fill with --bg-base text -- measures 3.06:1 on daylight, which fails AA for a
    12px numeral; check_contrast.py validates tokens, not composed surfaces, so
    nothing would have caught it. */
@@ -1229,19 +1214,6 @@ body {
   white-space: nowrap;
 }
 
-.voice-picker-dropdown {
-  width: min(302px, calc(100vw - 48px));
-  max-height: min(280px, calc(100svh - 32px));
-}
-
-.voice-picker-list {
-  max-height: min(270px, calc(100svh - 44px));
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
-}
-
 .dropdown-menu-content[data-starting-style],
 .dropdown-menu-content[data-ending-style] {
   opacity: 0;
@@ -1623,9 +1595,9 @@ body {
   }
 }
 
-/* Shared selected-state treatment for menus and voice controls. */
+/* Shared selected-state treatment for menus and controls. */
 @utility is-selected {
-  /* --accent-2-*, not --audio-*: see voice-picker-trigger above. */
+  /* --accent-2-*, not --audio-*: audio is a Tailwind utility bridge. */
   background: var(--accent-2-soft);
   box-shadow: inset 2px 0 0 var(--accent-2-line);
 }
