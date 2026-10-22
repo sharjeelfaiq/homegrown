@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
+import { formatToastDescription, formatToastTitle } from '../lib/messageFormatting'
 
 /** Report a piece of error STATE as a toast.
  *
@@ -37,8 +38,8 @@ export function useErrorToast(message: string | null, title: string): void {
     if (message == null || message === '') return
     // closeButton, because duration: Infinity means nothing else dismisses this.
     // The Toaster turns it off globally -- see the comment there.
-    idRef.current = toast.error(title, {
-      description: message,
+    idRef.current = toast.error(formatToastTitle(title), {
+      description: formatToastDescription(message),
       duration: Infinity,
       closeButton: true,
     })

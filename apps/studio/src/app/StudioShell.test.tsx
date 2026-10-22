@@ -36,9 +36,9 @@ vi.mock('../features/startup/BootOverlay', () => ({ default: () => null }))
 vi.mock('../features/generation/ScriptBlock', () => ({ default: () => null }))
 vi.mock('../features/generation/GenerateButton', () => ({ default: () => null }))
 vi.mock('boneyard-js/react', () => ({ Skeleton: ({ children }: { children: React.ReactNode }) => children }))
-vi.mock('../features/settings/SettingsModal', () => ({ default: ({ onBulkDelete }: { onBulkDelete: (kind: 'presets' | 'history') => Promise<unknown> }) => <>
-  <button onClick={() => { void onBulkDelete('presets').catch(mocks.error) }}>Bulk voices</button>
-  <button onClick={() => { void onBulkDelete('history').catch(mocks.error) }}>Bulk history</button>
+vi.mock('../features/settings/SettingsModal', () => ({ default: ({ onBulkDelete }: { onBulkDelete: (kind: 'presets' | 'history', password: string) => Promise<unknown> }) => <>
+  <button onClick={() => { void onBulkDelete('presets', 'test-admin-password').catch(mocks.error) }}>Bulk voices</button>
+  <button onClick={() => { void onBulkDelete('history', 'test-admin-password').catch(mocks.error) }}>Bulk history</button>
 </> }))
 vi.mock('../features/voices/ClonedVoicesSection', () => ({ default: ({ presets, selectedPresetId, onRename, onCloneBusyChange }: {
   presets: Preset[]; selectedPresetId: string | null; onRename: (id: string, name: string) => Promise<void>; onCloneBusyChange: (busy: boolean) => void

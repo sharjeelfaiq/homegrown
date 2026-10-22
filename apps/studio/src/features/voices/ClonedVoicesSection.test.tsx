@@ -182,15 +182,15 @@ describe('ClonedVoicesSection', () => {
     const input = container.querySelector('input[type="file"]')!
     const file = new File(['audio'], 'voice.wav', { type: 'audio/wav' })
     fireEvent.change(input, { target: { files: [file] } })
-    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is getting cloned.', expect.objectContaining({ duration: Infinity }))
-    expect(toastMock.mock.calls.find(([message]) => message === 'Your uploaded voice is getting cloned.')![1].icon).toMatchObject({ props: { status: 'running', size: 18, color: 'var(--progress)' } })
+    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is getting cloned', expect.objectContaining({ duration: Infinity }))
+    expect(toastMock.mock.calls.find(([message]) => message === 'Your uploaded voice is getting cloned')![1].icon).toMatchObject({ props: { status: 'running', size: 18, color: 'var(--progress)' } })
     expect(button.innerHTML).toBe(originalContents)
     expect(toastMock.dismiss).not.toHaveBeenCalled()
     expect(onAddVoice).toHaveBeenCalledTimes(1)
     await act(async () => { finish(result) })
     if (result === 'done') {
       expect(toastMock.dismiss).not.toHaveBeenCalled()
-      expect(toastMock).toHaveBeenLastCalledWith('Your voice has been cloned.', expect.objectContaining({
+      expect(toastMock).toHaveBeenLastCalledWith('Your voice has been cloned', expect.objectContaining({
         id: 'cloning-toast-1', duration: 1000,
         icon: expect.objectContaining({ props: expect.objectContaining({ status: 'done', doneColor: 'var(--green)' }) }),
       }))
@@ -208,7 +208,7 @@ describe('ClonedVoicesSection', () => {
     const file = new File(['audio'], 'voice.wav', { type: 'audio/wav' })
     fireEvent.drop(container.querySelector('.cloned-voices-section')!, { dataTransfer: { types: ['Files'], files: [file] } })
     expect(onAddVoice).toHaveBeenCalledWith(file)
-    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is getting cloned.', expect.anything())
+    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is getting cloned', expect.anything())
     unmount()
     expect(toastMock.dismiss).toHaveBeenCalledWith('cloning-toast-1')
     await act(async () => { finish('done') })
@@ -227,7 +227,7 @@ describe('ClonedVoicesSection', () => {
     else fireEvent.drop(container.querySelector('.cloned-voices-section')!, { dataTransfer: { types: ['Files'], files } })
     expect(onAddVoice).toHaveBeenCalledExactlyOnceWith(first)
     expect(screen.getByRole('button', { name: 'Clone voice' })).toBeEnabled()
-    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is waiting to be cloned.', expect.objectContaining({ description: second.name }))
+    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is waiting to be cloned', expect.objectContaining({ description: second.name }))
     await act(async () => { finish[0]('done') })
     expect(onAddVoice).toHaveBeenNthCalledWith(2, second)
     await act(async () => { finish[1]('done') })

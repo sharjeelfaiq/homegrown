@@ -1,5 +1,6 @@
 import { toast } from 'sonner'
 import { UNDO_MS } from '../../lib/constants'
+import { formatToastTitle } from '../../lib/messageFormatting'
 import UndoCountdown from './UndoCountdown'
 
 /** Defer deletion behind Undo; keep one toast through countdown, request and success. */
@@ -13,7 +14,7 @@ export function showUndoDeleteToast({ label, onDelete, onUndo, onError, onSettle
   const deadline = Date.now() + UNDO_MS
   let phase: 'waiting' | 'deleting' | 'done' | 'cancelled' = 'waiting'
 
-  const toastId = toast(`${label} deleted`, {
+  const toastId = toast(formatToastTitle(`${label} deleted`), {
     duration: Infinity,
     icon: <UndoCountdown deadline={deadline} />,
     action: {
@@ -32,7 +33,7 @@ export function showUndoDeleteToast({ label, onDelete, onUndo, onError, onSettle
   const timer = window.setTimeout(async () => {
     if (phase !== 'waiting') return
     phase = 'deleting'
-    toast(`Deleting ${label}…`, {
+    toast(formatToastTitle(`Deleting ${label}…`), {
       id: toastId, duration: Infinity, action: null,
       icon: <UndoCountdown />,
     })
@@ -40,7 +41,7 @@ export function showUndoDeleteToast({ label, onDelete, onUndo, onError, onSettle
       await onDelete()
       if (isCancelled()) return
       phase = 'done'
-      toast(`${label} deleted`, {
+      toast(formatToastTitle(`${label} deleted`), {
         id: toastId, duration: 1000, action: null,
         icon: <UndoCountdown status="done" />,
       })

@@ -216,8 +216,11 @@ export function deletePreset(presetId: string): Promise<{ ok: boolean }> {
 
 export interface BulkDeleteResult { deleted_ids: string[]; cleanup_failed: string[] }
 
-export function deleteAllRecords(kind: 'history' | 'presets'): Promise<BulkDeleteResult> {
-  return fetch(apiUrl(`/api/${kind}`), { method: 'DELETE' }).then(parseOrThrow<BulkDeleteResult>)
+export function deleteAllRecords(kind: 'history' | 'presets', adminPassword: string): Promise<BulkDeleteResult> {
+  return fetch(apiUrl(`/api/${kind}`), {
+    method: 'DELETE',
+    headers: { 'X-Homegrown-Admin-Password': adminPassword },
+  }).then(parseOrThrow<BulkDeleteResult>)
 }
 
 export interface HistoryPage {

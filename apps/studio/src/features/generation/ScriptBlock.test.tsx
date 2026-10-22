@@ -21,6 +21,11 @@ function renderScriptBlock() {
 afterEach(cleanup)
 
 describe('ScriptBlock footer', () => {
+  it('starts with the Script textarea focused', () => {
+    renderScriptBlock()
+    expect(document.activeElement).toBe(screen.getByPlaceholderText('Type or paste a script…'))
+  })
+
   it('contains only the supplied Generate action', () => {
     const { container } = renderScriptBlock()
     const footer = container.querySelector<HTMLElement>('.script-editor-footer')!

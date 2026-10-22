@@ -46,7 +46,7 @@
    title bar stays outside the independently scrolling settings body. */
 .settings-modal-panel {
   width: min(480px, 100%);
-  height: min(560px, calc(100svh - var(--gutter) - var(--gutter)));
+  height: min(460px, calc(100svh - var(--gutter) - var(--gutter)));
 }
 
 .settings-modal-panel .modal-body {
@@ -722,19 +722,25 @@ body {
   height: 40px;
   margin-top: 0;
   padding: 0 8px;
+  /* The .results card surface bleeds 12px below its content box. Center the
+     controls in the visible card footer while keeping this row at 40px. */
+  transform: translateY(6px);
 }
 
 .voiceover-pager > label {
+  align-self: center;
   white-space: nowrap;
 }
 
 .voiceover-pager > nav {
   grid-column: 2;
+  align-self: center;
   width: var(--pager-slot);
 }
 
 .voiceover-pager-count {
   grid-column: 3;
+  align-self: center;
   justify-self: end;
   white-space: nowrap;
   font-family: var(--font-mono);
@@ -1196,6 +1202,38 @@ body {
 
 .voiceover-name {
   max-width: 76%;
+}
+
+.history-name-script {
+  display: flex;
+  flex: 0 0 7rem;
+  width: 7rem;
+  min-width: 0;
+  align-items: center;
+}
+
+.history-name-script .inline-name-shell {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+}
+
+.history-name-script .voiceover-name {
+  width: 100%;
+  max-width: 100%;
+  flex: 1 1 auto;
+}
+
+.history-name-script:focus-within .inline-name-pencil {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .history-name-script {
+    flex-basis: 6rem;
+    width: 6rem;
+  }
 }
 
 .dropdown-menu-positioner {

@@ -12,18 +12,19 @@ import {
   type HistoryEntry,
   type QueueEntry,
 } from '../../lib/api'
-import { downloadName, formatClock, formatTimeOfDay, formatTimestampFull, timeAgo } from '../../lib/format'
+import { downloadName, formatClock, formatTimestampFull, timeAgo } from '../../lib/format'
 import { useGenerationActivity } from '../generation/GenerationActivityContext'
 import { useOptimisticProgress } from '../generation/useOptimisticProgress'
 import { toast } from 'sonner'
+import { formatToastTitle } from '../../lib/messageFormatting'
 import { usePersistedDraft } from '../generation/usePersistedDraft'
 import { usePersistedRecord } from '../../hooks/usePersistedRecord'
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 import { Dropdown } from '../../components/ui/Dropdown'
 import DropdownSelect from '../../components/ui/DropdownSelect'
 import { AppTooltip } from '../../components/ui/Tooltip'
-import InlineName from '../../components/ui/InlineName'
 import VoiceoverPlayer from '../../components/audio/VoiceoverPlayer'
+import HistoryRowHead, { type NameControl } from './HistoryRowHead'
 import { showUndoDeleteToast } from '../../components/ui/UndoDeleteToast'
 import { ArrowDown as ArrowDownIcon, ArrowUp as ArrowUpIcon, Check as CheckIcon, ChevronLeft, ChevronRight, X as CrossIcon, Download as DownloadIcon, Ellipsis as MoreIcon, Play as PlayIcon, Trash2 as TrashIcon, WandSparkles as WandIcon } from 'lucide-react'
 import type { VoiceoverFilterState } from './VoiceoverFilters'
@@ -86,61 +87,6 @@ function truncate(text: string, max = PREVIEW_CHARS): string {
  * together; nothing enforces it. */
 
 const TWO_COLUMN_QUERY = '(min-width: 1025px)'
-
-/** The rename field plus the voice name -- line one of every row, finished or
- * in progress. Shared rather than duplicated: the whole point of the
- * in-progress row is that it is the same row, so a change to the rename
- * behaviour must not be able to apply to only one of them. */
-interface NameControl {
-  number: number
-  name: string
-  /** Overrides the "Voiceover N" placeholder. A failed row has no number --
-   * it never becomes a voiceover -- so it must not advertise one. */
-  placeholder?: string
-  /** Receives the trimmed draft. The editing mechanics live in InlineName. */
-  onCommitRename: (next: string) => void
-}
-
-function RowHead({
-  number,
-  name,
-  placeholder,
-  onCommitRename,
-  voiceName,
-  timestamp,
-  timestampTitle,
-  nameTitle,
-}: NameControl & { voiceName: string; nameTitle: string; timestamp?: number; timestampTitle?: string }) {
-  return (
-    // Name left, voice right.
-    <div className="flex min-h-[26px] min-w-0 items-center justify-between gap-2">
-      <InlineName
-        value={name}
-        placeholder={placeholder ?? `Voiceover ${number}`}
-        ariaLabel={placeholder ?? `Name of voiceover ${number}`}
-        title={nameTitle}
-        onCommit={onCommitRename}
-        className="result-name voiceover-name"
-        editOnPencil
-      />
-
-      <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-3">
-        <AppTooltip content={`Voice: ${voiceName}`}>
-          <span className="mono min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-right text-[11px] text-faint">
-            {voiceName}
-          </span>
-        </AppTooltip>
-        {timestamp !== undefined && (
-          <AppTooltip content={timestampTitle ?? formatTimestampFull(timestamp)}>
-            <time className="result-stamp mono" dateTime={new Date(timestamp * 1000).toISOString()}>
-              {formatTimeOfDay(timestamp)}
-            </time>
-          </AppTooltip>
-        )}
-      </div>
-    </div>
-  )
-}
 
 /** Position and total for one voiceover, as `0:12 / 1:06`.
  *
@@ -221,15 +167,13 @@ function TransportTime({
 
 /** One voiceover being generated, in the slot its finished self will occupy.
  *
- * Same three lines as VoiceoverRow, with three swaps: the waveform becomes the
- * progress bar, the transport controls become Cancel, and the playback clock
- * becomes elapsed generation time. There is no pause control because there is
- * no pause: generation is serialised behind one GPU lock, so a paused job would
- * hold that lock and stall every other queued job. Cancel is the honest
- * control, and it lands at the next chunk boundary (~1s).
- *
- * Download is absent because there is nothing to download yet. The complete
- * script remains reusable, though, through the queue's on-demand script route. */
+ * It shares the completed row's two-line layout: name, script, and timestamp
+ * above; play slot, progress, status clock, and actions below. The seek track
+ * becomes a progress bar and the download action becomes cancellation. There
+ * is no pause control because generation is serialised behind one GPU lock, so
+ * pausing would hold that lock and stall every queued job. Cancellation lands
+ * at the next chunk boundary (~1s). The script remains reusable from the
+ * overflow menu through the queue's on-demand script route. */
 function PendingRow({
   job,
   nameControl,
@@ -426,45 +370,34 @@ function PendingRow({
         animate={{ x: sliding ? '100%' : 0 }}
         transition={{ duration: reduced || !sliding ? 0 : 0.22, ease: [0.2, 0, 0, 1] }}
       >
-      <RowHead
+      <HistoryRowHead
         {...nameControl}
-        voiceName={job.preset_name}
+        voiceName={failed ? job.preset_name : undefined}
         nameTitle="Use pencil to rename voiceover"
+        timestamp={!failed ? job.submitted_at : undefined}
+        timestampTitle={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}
+        scriptPreview={!failed ? (
+          <AppTooltip content={job.text_preview}>
+            <button
+              type="button"
+              className="result-text m-0 block min-w-0 overflow-hidden bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
+              aria-label={`Reuse transcript for ${nameControl.name || nameControl.placeholder || 'this voiceover'}`}
+              onClick={onReuse}
+            >
+              <span className="block overflow-hidden text-ellipsis whitespace-nowrap">
+                {truncate(job.text_preview)}
+              </span>
+            </button>
+          </AppTooltip>
+        ) : undefined}
       />
 
       {/* Bar left, Cancel right -- the same geometry as transport-then-actions,
           so the two row kinds line up down the column. */}
       <div className="flex min-h-7 min-w-0 items-center gap-2.5">
-        {/* Queued is the only state that still spells itself out, because it is
-            the only one with nothing else to say: no bar, no moving clock.
-            "Generating" and "Cancelling" are gone -- an amber bar that is
-            filling, beside a pulsing dot and a ticking clock, already says the
-            GPU is working, and the word was the one thing on this line whose
-            width changed as the state did. "Failed" is not repeated here
-            either; `.result-time` renders it (with the attempt count). */}
-        {queued && (
-          <span className="mono flex-none text-[10px] font-medium text-queued">Queued</span>
-        )}
-        {/* Queued work has no progress to report. Its reorder controls and
-            status lead this line instead of an empty bar.
-
-            Everything else gets the bar inside a wrapper that MIRRORS
-            VoiceoverPlayer's own box -- same `flex min-w-0 flex-1 items-center
-            gap-2`, led by an element carrying the play button's exact classes.
-            That is what makes the bar start and end on the same two pixels as a
-            finished row's waveform, and it stays true if those classes ever
-            change, which a hardcoded 32px spacer would not. The right edge is
-            held by `.result-actions`' shared min-width.
-
-            That leading box held nothing but air while the row carried an
-            elapsed clock, then briefly held a percentage ring. It now holds the
-            REAL control, disabled: the same play button, with the same classes
-            and the same glyph, that this row will own the moment it becomes a
-            voiceover. A second reading of the percentage was redundant beside
-            the track; an empty box was a hole where a control belongs. Disabled
-            says the right thing -- there is nothing to play YET -- and
-            `icon-btn:disabled` already dims it, so no new style. */}
-        {!queued && <div className="flex min-w-0 flex-1 items-center gap-2">
+        {/* Keep the play/seek geometry of a completed row. The disabled play
+            control and unfilled track show where this row will land once ready. */}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
         <button
           type="button"
           className="icon-btn size-6 flex-none border-none bg-transparent text-muted"
@@ -514,14 +447,13 @@ function PendingRow({
           </motion.div>
         </div>
         </AppTooltip>
-        </div>}
+        </div>
 
         {/* This slot keeps the progress track aligned with a finished row's
-            waveform. It also gives a running voiceover its elapsed clock;
-            queued work deliberately has no elapsed time because it has not
-            begun generating yet. */}
-        <span className="mono result-time" aria-label={running ? `Generating for ${formatClock(job.elapsed_s)}` : undefined}>
-          {running ? formatClock(job.elapsed_s) : failed ? (attempt > 1 ? `Failed · try ${attempt}` : 'Failed') : ''}
+            seek bar. Running work shows elapsed time; queued work shows its
+            state in the same fixed-width slot. */}
+        <span className="mono result-time" aria-label={running ? `Generating for ${formatClock(job.elapsed_s)}` : queued ? 'Queued' : undefined}>
+          {running ? formatClock(job.elapsed_s) : queued ? 'Queued' : failed ? (attempt > 1 ? `Failed · try ${attempt}` : 'Failed') : ''}
         </span>
 
         {/* The span STAYS at the same reserved width when there is no clock.
@@ -530,39 +462,37 @@ function PendingRow({
             it ends on the same pixel as a finished row's waveform -- the
             alignment remains stable across narrow and wide columns. */}
 
-        {queued && (
-          <div className="order-first flex flex-none items-center gap-0.5" aria-label="Reorder queued generation">
-            <AppTooltip content="Move up">
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Move queued generation up"
-                disabled={!canMoveUp || reordering || cancelPending}
-                onClick={onMoveUp}
-              >
-                <ArrowUpIcon size={15} />
-              </button>
-            </AppTooltip>
-            <AppTooltip content="Move down">
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Move queued generation down"
-                disabled={!canMoveDown || reordering || cancelPending}
-                onClick={onMoveDown}
-              >
-                <ArrowDownIcon size={15} />
-              </button>
-            </AppTooltip>
-          </div>
-        )}
-
-        {/* The progress bar normally supplies this flexible space and keeps
-            Cancel on the right edge. Queued rows intentionally have no bar,
-            so retain only its layout role here. */}
-        {queued && <div className="min-w-0 flex-1" aria-hidden="true" />}
-
         <div className="result-actions flex flex-none items-center gap-0.5">
+          {!failed && (
+            <>
+              {queued && (
+                <div className="flex flex-none items-center gap-0.5" aria-label="Reorder queued generation">
+                  <AppTooltip content="Move up">
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label="Move queued generation up"
+                      disabled={!canMoveUp || reordering || cancelPending}
+                      onClick={onMoveUp}
+                    >
+                      <ArrowUpIcon size={15} />
+                    </button>
+                  </AppTooltip>
+                  <AppTooltip content="Move down">
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label="Move queued generation down"
+                      disabled={!canMoveDown || reordering || cancelPending}
+                      onClick={onMoveDown}
+                    >
+                      <ArrowDownIcon size={15} />
+                    </button>
+                  </AppTooltip>
+                </div>
+              )}
+            </>
+          )}
           {/* Retry first: after a failure that was not the script's fault --
               a GPU fault takes out everything queued behind it -- resubmitting
               is what the user wants, and dismissing throws the script away. */}
@@ -610,29 +540,6 @@ function PendingRow({
         </div>
       </div>
 
-      {!failed && (
-        <div className="flex min-h-7 min-w-0 items-center gap-3">
-          <AppTooltip content={job.text_preview}>
-            <button
-              type="button"
-              className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
-              aria-label={`Reuse the script queued for ${nameControl.name || nameControl.placeholder || 'this voiceover'}`}
-              onClick={onReuse}
-            >
-              <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                {truncate(job.text_preview)}
-              </span>
-              <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
-            </button>
-          </AppTooltip>
-          <AppTooltip content={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}>
-            <time className="result-stamp mono" dateTime={new Date(job.submitted_at * 1000).toISOString()}>
-              {formatTimeOfDay(job.submitted_at)}
-            </time>
-          </AppTooltip>
-        </div>
-      )}
-
       </motion.div>
     </motion.li>
   )
@@ -677,31 +584,35 @@ function VoiceoverRow({
     //
     // Height is the one layout property this pass animates, and it is bounded
     // to a single row at a time. Do NOT reach for framer's `layout` prop to do
-    // this instead: up to ~20 WaveRibbon canvases are mounted here and `layout`
-    // measures every one of them each frame.
+    // this instead: it measures every row each frame.
     <motion.li
       layout={false}
       exit={animateExit && !reduced
         ? { opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }
         : undefined}
       transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
-      className={`group/row -mx-2 flex cursor-default ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline px-2 py-[7px] last:border-b-0`}>
+      className={`group/row -mx-2 flex cursor-default ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline px-2 py-1 last:border-b-0`}>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-      <RowHead
+      <HistoryRowHead
         {...nameControl}
-        voiceName={entry.preset_name}
+        timestamp={entry.created_at}
+        timestampTitle={`Generated ${formatTimestampFull(entry.created_at)}`}
         nameTitle={`Created ${created} — use pencil to rename voiceover`}
+        scriptPreview={(
+          <AppTooltip content={entry.text}>
+            <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-faint">
+              {truncate(entry.text)}
+            </span>
+          </AppTooltip>
+        )}
       />
 
-      {/* Transport, clock, actions -- one line. The clock used to sit on its own
-          line beside the script preview; moving it up is what lets the preview
-          have the last line to itself and the row get shorter. The player is
-          the flexible element, so the icon strip is never pushed off. */}
+      {/* Transport, clock, and actions share one compact line; the script sits
+          beside the fixed-width voiceover name above. */}
       <div className="flex min-w-0 items-center gap-2.5">
         <VoiceoverPlayer
           src={mediaUrl(entry.audio_url)}
           durationS={entry.duration_s}
-          entryKey={entry.id}
           label={`${name} voiceover`}
           audioRef={audioRef}
         />
@@ -710,7 +621,7 @@ function VoiceoverRow({
 
         <div className="result-actions flex flex-none items-center gap-0.5">
           <AppTooltip content="Download voiceover">
-            <a href={downloadHref} download className="icon-btn" aria-label={`Download ${name}`} onClick={() => toast('Download started')}>
+            <a href={downloadHref} download className="icon-btn" aria-label={`Download ${name}`} onClick={() => toast(formatToastTitle('Download started'))}>
               <DownloadIcon size={14} />
             </a>
           </AppTooltip>
@@ -720,6 +631,9 @@ function VoiceoverRow({
                 <MoreIcon size={15} />
               </Dropdown.Trigger>
               <Dropdown.Content side={menuPlacement === 'down' ? 'bottom' : 'top'} align="end" sideOffset={4} className="min-w-40">
+                    <Dropdown.Item className="dropdown-menu-item" onClick={onRequeue}>
+                      <WandIcon size={14} />Reuse transcript
+                    </Dropdown.Item>
                     <Dropdown.Item className="dropdown-menu-item dropdown-menu-item-danger" onClick={onDelete}>
                       <TrashIcon size={14} />Delete
                     </Dropdown.Item>
@@ -727,27 +641,6 @@ function VoiceoverRow({
             </Dropdown.Root>
           </div>
         </div>
-      </div>
-
-      <div className="flex min-h-7 min-w-0 items-center gap-3">
-        <AppTooltip content={entry.text}>
-          <button
-            type="button"
-            className="result-text m-0 flex min-w-0 flex-1 items-center gap-1.5 bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
-            aria-label={`Reuse the script of ${name}`}
-            onClick={onRequeue}
-          >
-            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-              {truncate(entry.text)}
-            </span>
-            <span className="flex flex-none items-center gap-1 text-[10px] text-muted"><WandIcon size={12} />Reuse</span>
-          </button>
-        </AppTooltip>
-        <AppTooltip content={`Generated ${formatTimestampFull(entry.created_at)}`}>
-          <time className="result-stamp mono" dateTime={new Date(entry.created_at * 1000).toISOString()}>
-            {formatTimeOfDay(entry.created_at)}
-          </time>
-        </AppTooltip>
       </div>
 
       </div>
@@ -758,9 +651,9 @@ function VoiceoverRow({
 /** Generated voiceovers, newest first, one page at a time -- plus whatever is
  * currently being generated, as the first rows.
  *
- * Finished rows use a header, transport/actions line, and reusable transcript
- * preview line. The header constrains and truncates its reference facts so the
- * layout stays readable at narrow widths.
+ * Finished and in-progress rows share a header with a fixed-width editable
+ * name, script preview, and timestamp, followed by a transport/status line.
+ * Long scripts use a single-line ellipsis preview.
  *
  * The in-progress rows come from the shared queue poller, not from a poll of
  * their own, and they use the same row layout so a job does not visibly jump

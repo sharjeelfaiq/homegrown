@@ -58,6 +58,7 @@ export default function ScriptBlock({
       <div className="script-editor-input">
         <textarea
           ref={textareaRef}
+          autoFocus
           className="block h-full min-h-0 w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pt-3.5 pb-8 text-[15px]/[1.7] outline-none placeholder:text-faint"
           placeholder="Type or paste a script…"
           value={text}

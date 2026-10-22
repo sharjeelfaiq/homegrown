@@ -21,7 +21,10 @@ HISTORY_PAGE_MAX = 100
 
 
 @router.delete("/api/history")
-def delete_all_history(user_id: str = Depends(dependencies.get_current_user)):
+def delete_all_history(
+    user_id: str = Depends(dependencies.get_current_user),
+    _admin: None = Depends(dependencies.require_admin_password),
+):
     with generation_worker._jobs_lock:
         generation_worker.require_idle_for_deletion(user_id)
         result = persistence_stores.delete_collection("history", user_id)

@@ -50,7 +50,7 @@ describe('voice clone FIFO', () => {
     const { result } = renderHook(() => useVoiceCloneQueue({ modelReady: true, onAddVoice }))
     act(() => result.current(files.slice(0, 3)))
     expect(onAddVoice).toHaveBeenCalledExactlyOnceWith(files[0])
-    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is waiting to be cloned.', expect.objectContaining({
+    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is waiting to be cloned', expect.objectContaining({
       description: 'second.wav', duration: Infinity,
       icon: expect.objectContaining({ props: expect.objectContaining({ status: 'pending', className: 'voice-clone-waiting' }) }),
     }))
@@ -62,7 +62,7 @@ describe('voice clone FIFO', () => {
     }
     expect(onAddVoice.mock.calls.map(([uploaded]) => uploaded)).toEqual(files)
     expect(peak).toBe(1)
-    const success = toastMock.mock.calls.filter(([message]) => message === 'Your voice has been cloned.')
+    const success = toastMock.mock.calls.filter(([message]) => message === 'Your voice has been cloned')
     expect(success.map(([, options]) => options.description)).toEqual(files.map(f => f.name))
     expect(success.every(([, options]) => options.duration === 1000)).toBe(true)
     expect(new Set(success.map(([, options]) => options.id)).size).toBe(4)
@@ -76,15 +76,15 @@ describe('voice clone FIFO', () => {
     act(() => result.current(files))
     await act(async () => { requests[0].reject(new Error('Invalid reference audio')) })
     expect(onAddVoice).toHaveBeenNthCalledWith(2, files[1])
-    expect(toastMock).toHaveBeenCalledWith('Could not clone bad.wav.', expect.objectContaining({
-      id: 'clone-1', description: 'Invalid reference audio',
+    expect(toastMock).toHaveBeenCalledWith('Voice cloning failed', expect.objectContaining({
+      id: 'clone-1', description: 'Could not clone bad.wav: Invalid reference audio.',
       icon: expect.objectContaining({ props: expect.objectContaining({ status: 'failed' }) }),
     }))
     await act(async () => { requests[1].resolve('failed') })
     expect(toastMock.dismiss).toHaveBeenCalledWith('clone-2')
     expect(onAddVoice).toHaveBeenNthCalledWith(3, files[2])
     await act(async () => { requests[2].resolve('done') })
-    expect(toastMock).toHaveBeenLastCalledWith('Your voice has been cloned.', expect.objectContaining({ description: 'good.wav' }))
+    expect(toastMock).toHaveBeenLastCalledWith('Your voice has been cloned', expect.objectContaining({ description: 'good.wav' }))
   })
 
   it('pauses while the model is unavailable and resumes with the latest request callback', async () => {

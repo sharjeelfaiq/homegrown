@@ -23,6 +23,9 @@ MODEL_PATH = os.environ.get(
     r"D:\models_cache\models--Qwen--Qwen3-TTS-12Hz-0.6B-Base\snapshots\5d83992436eae1d760afd27aff78a71d676296fc",
 )
 
+# Required for bulk deletion endpoints. Kept out of API responses and logs.
+ADMIN_PASSWORD = os.environ.get("HOMEGROWN_ADMIN_PASSWORD", "")
+
 
 if getattr(sys, "frozen", False):
     # Frozen: __file__ points inside the PyInstaller bundle, not a writable

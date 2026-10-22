@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import type { QueueEntry } from '../../lib/api'
+import { formatToastDescription, formatToastMessage, formatToastTitle } from '../../lib/messageFormatting'
 
 /** Toast once when a voiceover finishes or fails.
  *
@@ -57,18 +58,18 @@ export function useJobToasts(queue: QueueEntry[]): void {
       seen.add(job.job_id)
 
       if (job.status === 'done') {
-        toast.success('Voiceover ready', {
+        toast.success(formatToastTitle('Voiceover ready'), {
           // The voice, not the script: the script preview is truncated to 80
           // characters server-side and a toast is not where anyone reads it.
-          description: job.preset_name,
+          description: formatToastMessage(job.preset_name),
         })
       } else {
         // Errors do NOT auto-dismiss. A failure the user blinked past is a
         // failure they will report as the app doing nothing, and the row it
         // leaves behind carries the Retry -- so the toast has to survive long
         // enough to point at it.
-        toast.error('Voiceover failed', {
-          description: job.error || job.preset_name,
+        toast.error(formatToastTitle('Voiceover failed'), {
+          description: formatToastDescription(job.error || job.preset_name),
           duration: Infinity,
           // The only way out of an Infinity toast. Off globally on the Toaster.
           closeButton: true,

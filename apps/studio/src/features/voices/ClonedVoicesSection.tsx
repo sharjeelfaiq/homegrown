@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Download as DownloadIcon, Ellipsis as EllipsisIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon, Upload as UploadIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatToastTitle } from '../../lib/messageFormatting'
 import { mediaUrl, presetDownloadUrl, type Preset } from '../../lib/api'
 import { useAudioActivity } from '../../lib/audio/AudioActivityContext'
 import { useGenerationActivity } from '../generation/GenerationActivityContext'
@@ -102,7 +103,7 @@ export default function ClonedVoicesSection({
     } catch (error) {
       if (requestId === previewRequestRef.current) {
         setPreviewingId(null)
-        toast.error(error instanceof Error ? error.message : `Could not play ${preset.name}.`)
+        toast.error(formatToastTitle(error instanceof Error ? error.message : `Could not play ${preset.name}.`))
       }
     }
   }

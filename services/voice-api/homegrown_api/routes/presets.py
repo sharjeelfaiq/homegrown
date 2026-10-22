@@ -21,7 +21,10 @@ router = APIRouter()
 
 
 @router.delete("/api/presets")
-def delete_all_presets(user_id: str = Depends(dependencies.get_current_user)):
+def delete_all_presets(
+    user_id: str = Depends(dependencies.get_current_user),
+    _admin: None = Depends(dependencies.require_admin_password),
+):
     with generation_worker._jobs_lock:
         generation_worker.require_idle_for_deletion(user_id)
         return persistence_stores.delete_collection("presets", user_id)

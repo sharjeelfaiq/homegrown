@@ -11,6 +11,7 @@ import { MAX_SCRIPT_CHARS } from '../features/generation/constants'
 import { presetNameFromFile } from '../lib/format'
 import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Settings as SettingsIcon } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
+import { formatToastTitle } from '../lib/messageFormatting'
 import { useGenerationActivity } from '../features/generation/GenerationActivityContext'
 import { useJobToasts } from '../features/generation/useJobToasts'
 import { usePersistedDraft } from '../features/generation/usePersistedDraft'
@@ -20,6 +21,7 @@ import { useTheme } from '../lib/theme/ThemeContext'
 import { themeMode } from '../lib/theme/theme'
 import { useBootStatus } from '../features/startup/useBootStatus'
 import { useHotkeys } from '../hooks/useHotkeys'
+import { useTypeToScript } from '../hooks/useTypeToScript'
 import { wakeBackend } from '../features/startup/wake'
 import Modal from '../components/ui/Modal'
 import CursorGrid from '../components/effects/CursorGrid'
@@ -143,12 +145,13 @@ export default function StudioShell() {
   // below for why waiting it out is not an option.
   const bootFailedRef = useRef(false)
   const scriptRef = useRef<HTMLTextAreaElement>(null)
+  useTypeToScript(scriptRef, script, setScript)
 
   // Keep one persistent toast visible throughout the initial model load. Use
   // the same indeterminate StatusMark spinner shown by the voice-cloning toast.
   useEffect(() => {
     if (modelStatus === 'checking') {
-      toast('Voice model is loading', {
+      toast(formatToastTitle('Voice model is loading'), {
         id: MODEL_LOADING_TOAST_ID,
         duration: Infinity,
         icon: <StatusMark status="running" size={18} strokeWidth={2.2} color="var(--progress)" strike={false} />,
@@ -687,14 +690,14 @@ export default function StudioShell() {
         onClose={() => setSettingsOpen(false)}
         mascotEnabled={mascotEnabled}
         onMascotEnabledChange={setMascotPreference}
-        onBulkDelete={async (kind) => {
+        onBulkDelete={async (kind, adminPassword) => {
           if (bulkDeleting.current) throw new Error('A bulk deletion is already in progress.')
           if (submitting || warmingUp) throw new Error('Wait for the current generation submission to finish before bulk deletion.')
           if (kind === 'presets' && cloneBusy.current) throw new Error('Wait for all queued voices to finish cloning before deleting uploaded voices.')
           bulkDeleting.current = true
           setBulkBusy(true)
           try {
-            const result = await deleteAllRecords(kind)
+            const result = await deleteAllRecords(kind, adminPassword)
             const deleted = new Set(result.deleted_ids)
             if (activeAudio) {
               const path = new URL(activeAudio.src, window.location.href).pathname

@@ -39,6 +39,7 @@ class ApiContractTests(unittest.TestCase):
             (worker, '_jobs', {}), (worker, '_pending_job_ids', []),
             (worker, '_current_running_job_id', None),
             (worker, '_history_revision', 0),
+            (config, 'ADMIN_PASSWORD', 'test-admin-password'),
             (worker, '_queue_event', threading.Event()),
             (worker, '_stop_event', threading.Event()),
             (stores, '_presets', []), (stores, '_history', []),
@@ -70,6 +71,10 @@ class ApiContractTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 202, response.text)
         return response.json()['job_id']
+
+    def delete_all(self, path, password='test-admin-password'):
+        headers = {} if password is None else {'X-Homegrown-Admin-Password': password}
+        return self.client.delete(path, headers=headers)
 
     def test_all_existing_api_routes_remain_registered(self):
         expected = {
@@ -106,7 +111,7 @@ class ApiContractTests(unittest.TestCase):
         protected = self.root / 'protected.txt'
         protected.write_bytes(b'keep')
         stores._presets.append({'id': 'builtin-shared', 'user_id': 'local-user', 'is_builtin': True, 'audio_path': 'generated/0.wav'})
-        response = self.client.delete('/api/history')
+        response = self.delete_all('/api/history')
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(len(response.json()['deleted_ids']), 107)
         self.assertEqual(response.json()['cleanup_failed'], [])
@@ -114,7 +119,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(json.loads(config.HISTORY_FILE.read_text()), stores._history)
         self.assertEqual(set(config.GEN_DIR.iterdir()), {shared, config.GEN_DIR / '0.wav'})
         self.assertTrue(protected.exists())
-        self.assertEqual(self.client.delete('/api/history').json()['deleted_ids'], [])
+        self.assertEqual(self.delete_all('/api/history').json()['deleted_ids'], [])
 
     def test_bulk_presets_preserves_builtins_shared_media_and_history(self):
         for name in ('shared.wav', 'uploaded.wav'):
@@ -129,7 +134,7 @@ class ApiContractTests(unittest.TestCase):
             {'id': 'outside-refs', 'user_id': 'local-user', 'audio_path': 'settings.json'},
         ])
         stores._history.append({'id': 'keep', 'user_id': 'local-user', 'text': 'Saved transcript'})
-        result = self.client.delete('/api/presets')
+        result = self.delete_all('/api/presets')
         self.assertEqual(result.status_code, 200, result.text)
         self.assertEqual(set(result.json()['deleted_ids']), {'shared', 'uploaded', 'outside-refs'})
         self.assertEqual([p['id'] for p in stores._presets], ['builtin', 'other'])
@@ -144,12 +149,12 @@ class ApiContractTests(unittest.TestCase):
         for status in ('queued', 'running', 'canceling'):
             worker._jobs[job_id]['status'] = status
             for path in ('/api/history', '/api/presets'):
-                self.assertEqual(self.client.delete(path).status_code, 409)
+                self.assertEqual(self.delete_all(path).status_code, 409)
                 self.assertEqual(stores._presets[0]['id'], 'voice')
         worker._jobs[job_id]['status'] = 'canceled'
         with stores.reference_upload():
-            self.assertEqual(self.client.delete('/api/presets').status_code, 409)
-        self.assertEqual(self.client.delete('/api/presets').status_code, 200)
+            self.assertEqual(self.delete_all('/api/presets').status_code, 409)
+        self.assertEqual(self.delete_all('/api/presets').status_code, 200)
 
     def test_bulk_cleanup_failure_is_reported_and_store_failure_preserves_records(self):
         audio = config.GEN_DIR / 'locked.mp3'
@@ -158,7 +163,7 @@ class ApiContractTests(unittest.TestCase):
         stores._history.append(entry)
         with patch.object(stores, '_save_json', side_effect=OSError('disk full')):
             with self.assertRaises(OSError):
-                self.client.delete('/api/history')
+                self.delete_all('/api/history')
         self.assertEqual(stores._history, [entry])
         self.assertTrue(audio.exists())
         original_unlink = Path.unlink
@@ -167,7 +172,7 @@ class ApiContractTests(unittest.TestCase):
                 raise PermissionError('locked')
             return original_unlink(path, *args, **kwargs)
         with patch.object(Path, 'unlink', autospec=True, side_effect=locked_unlink):
-            result = self.client.delete('/api/history')
+            result = self.delete_all('/api/history')
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json(), {'deleted_ids': ['locked'], 'cleanup_failed': ['locked.mp3']})
         self.assertEqual(stores._history, [])
@@ -190,7 +195,7 @@ class ApiContractTests(unittest.TestCase):
                     })
                     try:
                         self.assertTrue(entered.wait(5))
-                        self.assertEqual(self.client.delete(f'/api/{collection}').status_code, 200)
+                        self.assertEqual(self.delete_all(f'/api/{collection}').status_code, 200)
                     finally:
                         release.set()
                     self.assertEqual(submission.result(timeout=5).status_code, 409)
@@ -203,6 +208,19 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/generate', json={}).status_code, 422)
         self.assertEqual(self.client.get('/api/does-not-exist').status_code, 404)
         self.assertEqual(self.client.post('/api/history/zip', json={'ids': []}).status_code, 400)
+
+    def test_bulk_deletions_require_the_configured_admin_password(self):
+        self.ready_voice()
+        stores._history.append({'id': 'private', 'user_id': 'local-user', 'text': 'Keep until authorized'})
+        for path in ('/api/history', '/api/presets'):
+            self.assertEqual(self.delete_all(path, password=None).status_code, 401)
+            self.assertEqual(self.delete_all(path, password='incorrect').status_code, 401)
+        self.assertEqual(len(stores._history), 1)
+        self.assertEqual(len(stores._presets), 1)
+        config.ADMIN_PASSWORD = ''
+        response = self.delete_all('/api/history')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(len(stores._history), 1)
 
     def test_submission_reorder_cancellation_and_retry_share_one_queue(self):
         self.ready_voice()

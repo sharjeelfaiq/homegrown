@@ -1,5 +1,6 @@
 import { useCallback, type RefObject } from 'react'
 import { toast } from 'sonner'
+import { formatToastTitle } from '../../lib/messageFormatting'
 
 /** Restore a generation's transcript, voice and language as one composer snapshot. */
 export function useReuseVoiceover({ script, voiceId, language, languages, setScript, setVoiceId, setLanguage, textareaRef }: {
@@ -21,10 +22,10 @@ export function useReuseVoiceover({ script, voiceId, language, languages, setScr
     setLanguage(restoredLanguage)
     textareaRef.current?.focus()
     if (!replacing) {
-      toast('Transcript ready to reuse')
+      toast(formatToastTitle('Transcript ready to reuse'))
       return
     }
-    toast('Script replaced', {
+    toast(formatToastTitle('Script replaced'), {
       description: 'The script, voice, and language were restored from this voiceover.',
       action: {
         label: 'Undo',
