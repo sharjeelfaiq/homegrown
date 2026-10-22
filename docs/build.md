@@ -134,6 +134,9 @@ cd apps/studio && npm run test && npm run lint && cd ../..
 
 # 8. desktop/launcher/_splash.py must be current with its splash sources.
 python scripts/build/build_splash.py --check
+
+# 9. Brand assets (favicon, app icon, logo) must match their generator.
+python scripts/build/build_brand.py --check
 ```
 
 `npm run lint` currently reports `react(only-export-components)` Fast Refresh
@@ -194,6 +197,18 @@ page uses: it has to paint with no backend and frequently no network, which is
 exactly when a CDN is unavailable. `_splash.py` is committed, so a build on a
 machine without npm still produces a working exe; `python scripts/build/build_splash.py
 --check` fails if it is stale relative to its sources.
+
+## Brand assets
+
+`scripts/build/build_brand.py` is the single source for the Homegrown mark (four
+waveform bars on a rounded tile, in `--bg-base` and `--accent-2`). It writes the
+Studio and landing-page `favicon.svg`, both `apple-touch-icon.png`, the landing
+page's `favicon.ico` and `logo.svg`, and `desktop/assets/icon.ico` (the Windows
+executable icon used by `launcher.spec`). `--check` fails on a stale SVG or a
+missing or wrongly sized PNG/ICO. Pillow rasterises the PNG/ICO files, so their
+bytes are not compared. The mark is also inlined in `BrandMark.tsx`, the landing
+page's header and footer, and the launcher splash; change the bars in the
+generator and those copies together, then rebuild `_splash.py`.
 
 It is a generated **module**, not a data file. `desktop/launcher/launcher.spec` declares
 `datas=[]` and PyInstaller follows imports, so the spec needs no change.
@@ -390,10 +405,10 @@ ls -lh dist/Homegrown-1.0.0.exe
 sha256sum dist/Homegrown-1.0.0.exe
 ```
 
-Record that checksum. If you publish this build on the landing page, update its
-download link and the size text beside the button together. The landing page
-deliberately publishes no checksum: a stale one is worse than none, so keep the
-SHA-256 in your release record rather than in `apps/marketing/index.html`.
+Record that checksum. The landing page has no download link: buyers contact the
+team through its form and the executable is delivered to them separately. It
+deliberately publishes no checksum, because a stale one is worse than none, so keep
+the SHA-256 in your release record rather than in `apps/marketing/index.html`.
 
 Final check: run the `.exe` on a machine that has never had this app, extract to
 a folder outside the repo, and run `Homegrown.exe` from there.

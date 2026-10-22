@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import SettingsModal from '../features/settings/SettingsModal'
 import ParticleText from '../components/effects/ParticleText'
+import BrandMark from '../components/brand/BrandMark'
 import ScriptBlock from '../features/generation/ScriptBlock'
 import ClonedVoicesSection from '../features/voices/ClonedVoicesSection'
 import HistoryList from '../features/history/HistoryList'
@@ -582,6 +583,12 @@ export default function StudioShell() {
             gatherDuration={320}
           />
         </h1>
+        {/* Brand mark in the left gutter, mirroring the controls on the right so the
+            centred wordmark stays put. Absolute: it adds nothing to the header's
+            height, so the loading skeleton layout is unchanged. */}
+        <div className="pointer-events-none absolute inset-y-0 left-(--gutter) flex items-center" aria-hidden="true">
+          <BrandMark className="size-7 rounded-[.4rem] ring-1 ring-(--line)" />
+        </div>
         <div className="absolute inset-y-0 right-(--gutter) z-150 flex items-center gap-1" data-tour="header-controls">
           <AppTooltip content="Settings">
             <button

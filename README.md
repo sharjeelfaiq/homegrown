@@ -236,15 +236,26 @@ restoration, and final executable path are unchanged.
 
 ## Marketing page
 
-`apps/marketing/` is a standalone static page. Open `apps/marketing/index.html`
-directly in a browser or manually share that directory. It does not require a
-build system or hosting-provider configuration.
+`apps/marketing/` is a standalone static page with no build step. Open
+`apps/marketing/index.html` directly in a browser or share that directory,
+including its `assets/` folder (the hero's launch video and poster, plus Studio
+screenshots). The page offers Homegrown as a $69 one-time lifetime purchase;
+there is no checkout or download link. Buyers use the on-page **Contact** section
+(`#contact`), whose pricing, hero and mobile-bar buttons all link to it. It lists
+WhatsApp (+92 333 5082452, via `wa.me`) and email (admin@runtimeguru.com) and says
+the team responds within a day or less. The page has no form, backend or
+environment variables. Check the page layout with `scripts/marketing/measure_landing.sh`.
+
+The page's favicon, touch icon and logo (`favicon.svg`, `favicon.ico`,
+`apple-touch-icon.png`, `logo.svg`) share one source with the Studio favicon and the
+Windows app icon: `python scripts/build/build_brand.py` regenerates them and
+`--check` verifies them (see `docs/build.md`).
 
 ## Repository layout
 
 ```text
 apps/
-  marketing/       standalone static marketing page
+  marketing/       static marketing page plus the contact-form function (api/, lib/)
   studio/          React + Vite Studio
 services/
   voice-api/

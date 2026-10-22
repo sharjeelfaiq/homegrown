@@ -2,7 +2,9 @@
 
 Homegrown consists of a React Studio, a local FastAPI service, a Windows
 launcher, and a vendored Qwen inference wrapper. The marketing page is a
-separate static site.
+separate, fully static site (no backend); buyers reach the team through WhatsApp and
+email links in its Contact section. It shares nothing with the local app, the Studio,
+or the voice API.
 
 ## Studio
 
@@ -101,6 +103,9 @@ remain the command entry points. Helpers are grouped under `scripts/dev`,
 keeps its independent executable, port and release layout. Splash sources live
 under `desktop/launcher/splash`; `scripts/build/build_splash.py` generates
 `desktop/launcher/_splash.py` using the Studio's Tailwind CLI.
+`scripts/build/build_brand.py` generates the favicon, touch icons, landing-page
+logo and `desktop/assets/icon.ico` from one geometry; `BrandMark.tsx` renders the
+same mark in the Studio header with theme tokens.
 
 Source organization does not migrate runtime data. Development `.env` and
 `storage/` remain under `services/voice-api`. Packaged storage and model paths
