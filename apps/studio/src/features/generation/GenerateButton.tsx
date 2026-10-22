@@ -54,7 +54,7 @@ export default function GenerateButton({
   return (
     <section className="generate-action">
       <div className="generate-action-auxiliary" aria-live="polite">
-        {blockedReason && <span className={`text-[12px] ${blockedReason === 'Select a language' ? 'text-faint' : 'text-muted'}`} role="status">{blockedReason}</span>}
+        {blockedReason && <span className={`text-[12px] ${blockedReason === 'Select a language' ? 'text-faint/70' : 'text-muted'}`} role="status">{blockedReason}</span>}
       </div>
       {/* Tooltip, not a visible key cap -- unlike the script box and the play
           control, which wear theirs. The button stays a stable action label;

@@ -39,7 +39,7 @@ describe('GenerateButton', () => {
   it('uses a subtler tone for the language prompt beside Generate', () => {
     render(<GenerateButton disabled blockedReason="Select a language" busy={false} onClick={() => {}} />)
 
-    expect(screen.getByText('Select a language')).toHaveClass('text-faint')
+    expect(screen.getByText('Select a language')).toHaveClass('text-faint/70')
   })
 
   it('keeps Generate disabled and exposes the model-loading explanation', () => {
