@@ -2,7 +2,7 @@
 
 This guide describes the current local Studio workflow. For first-time setup
 and safety boundaries, see [README.md](../README.md); for the frozen Windows
-build, see [BUILD.md](BUILD.md). GPU measurements are historical and collected
+build, see [build.md](build.md). GPU measurements are historical and collected
 on the hardware identified in [gpu-notes.md](gpu-notes.md).
 
 ## Start and safety
@@ -18,8 +18,10 @@ FastAPI on `127.0.0.1:8000`; FastAPI probes the usable device and initializes
 Qwen3-TTS before reporting ready. Vite proxies `/api`, `/audio`, and `/refs`
 to the API.
 `npm run dev` prints a LAN address because Vite listens on the network interfaces.
-The API has no authentication. Use a trusted network only; any client that can
-reach it can use all actions, including deletion.
+There are no accounts or general API authentication. Ordinary actions,
+including individual deletes, are unauthenticated. Permanent bulk deletion
+requires the local `HOMEGROWN_ADMIN_PASSWORD`; expose the API only to a trusted
+network.
 
 For manual startup, create and activate the Python environment as described in
 the README. Start Vite in one terminal and wait for it to serve `:5173`, then
@@ -34,21 +36,23 @@ cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn homegrown_api
 ```
 
 Set `MODEL_PATH` in `services/voice-api/.env` to the downloaded local model.
-The app has no accounts or authentication: API requests use the single local
-user. Any client that can reach the API can perform delete actions.
+The app has no accounts or general API authentication: requests use the single
+local user. Individual deletes and other ordinary API operations do not require
+a password; only permanent bulk deletion requires `HOMEGROWN_ADMIN_PASSWORD`.
 
 ## First-run orientation
 
 Once the model is ready, Studio automatically offers a concise, read-only tour.
-It covers the Settings/help controls, reusable voice selection and reference-clip upload,
-Script entry, the Generate action (`Ctrl/Cmd+Enter`),
-Voiceovers, and search/filter controls. Escape or the close button dismisses
-it; the header help button replays it. The tour excludes the mascot and
-volatile queue, error, and row-action surfaces so it remains reliable on a
-fresh launch.
+It covers Settings (themes, mascot visibility, and Danger Zone), voice
+selection and batch cloning, script and language entry, Generate and the
+generation queue, then Voiceovers playback, reuse, search, and filters. It
+explains queue behavior without targeting queue rows, which may not exist on a
+fresh launch. Escape or the close button dismisses the tour; the header help
+button replays it. The mascot and transient error states are not tour targets.
 
 Open **Settings** in the header to choose **System** or a named Studio theme.
 The selected theme follows system appearance only while **System** is selected.
+The complete theme list stays visible in its original order after a selection.
 Settings also contains the **Pet animal** switch, which hides or shows the
 mascot. These preferences are stored in the browser; they do not affect
 presets, generated audio, or other clients.
@@ -56,9 +60,12 @@ presets, generated audio, or other clients.
 The **Danger Zone** section has two permanent bulk actions: **Delete all generated
 voiceovers** and **Delete all uploaded voices**. Both require confirmation and
 have no Undo window. Voiceover deletion includes every page and its generated
-audio; uploaded-voice deletion preserves built-in voices and completed voiceovers.
+audio; cloned-voice deletion preserves completed voiceovers and legacy built-in records.
 Finish or cancel generation first, and let all waiting/active clones finish before
-deleting uploaded voices. The app reports any audio files it could not remove.
+deleting uploaded voices. The second confirmation requires the password set as
+`HOMEGROWN_ADMIN_PASSWORD` in `services/voice-api/.env`; if it is unset, the
+backend refuses the operation. Never commit that `.env` file. The app reports
+any audio files it could not remove.
 
 ## Create and manage voices
 
@@ -92,10 +99,29 @@ shows a seven-second **Undo** toast; Undo restores it. When the countdown ends,
 the server deletes the preset and its reference audio. Preset deletion can make
 queued jobs using that voice fail.
 
-Use the compact **Search voices** field in the Voices card to filter names
-locally and case-insensitively. Clicking a matching row selects it. An
+The Script textarea receives focus on initial load. A printable key pressed on
+a non-editable Studio surface returns focus to the textarea and inserts that
+character at the caret. Search fields and other editable controls keep their
+own typing behavior; modifier shortcuts, composition input, menus, and dialogs
+are not intercepted.
+
+Use the clipboard icon at the Script editor's top-right to paste clipboard
+text. Clicking it calls the browser clipboard API and lets the browser show its
+permission prompt when needed. It replaces the selected text when the textarea
+is focused, and appends when it is not. The paste is limited to the remaining
+space under the 60,000-character script limit. If access is unavailable or was
+denied, Studio shows a toast with guidance to use Ctrl+V or check this site's
+browser permission. The clear icon button below Paste is disabled when the
+textarea is empty; clicking it clears the script when text is present.
+
+Use the compact **Search voices** field in the Voices card to search names
+case-insensitively on the server. Only cloned voices appear in results and
+pages. The card offers 10, 25, 50, or 100 rows per page (default 10), with
+page navigation and a matching-voice total in the footer; its page size is
+stored independently from the Voiceovers page size. Changing the search or
+page size returns to page one. Clicking a matching row selects that voice. An
 unmatched query shows **No matching voices.** without changing the stored voice
-selection.
+selection. With no voices at all, the card keeps its empty-collection message.
 
 During cloning, the **Clone voice** label and Upload icon remain unchanged,
 and you can keep selecting or dropping more files. Each file joins the end of
@@ -158,9 +184,14 @@ can fail the running job and queued jobs; restart the backend to recover.
 
 Completed voiceovers are newest-first and paginated. Search matches canonical
 voice names across the full history; browser-local display-name overrides only
-match loaded pages. Open the filter button beside search to set Voice, Duration,
-Generation status, or Date range. The total count appears in the compact card
-footer. The row wraps on narrow screens without horizontal scrolling.
+match loaded pages. Open the filter button beside search to set Voice, Date
+range, Duration, or Generation status. The four equal-width controls form two
+rows: Voice and Date range, then Duration and Generation status. The total
+count appears in the compact card footer. Selecting a filter applies it immediately while leaving the filter
+popover open; its Clear action and active-filter count update at once. The
+popover closes only when clicked outside or dismissed with Escape. Custom date
+and duration ranges stay open through their Apply button. The row wraps on
+narrow screens without horizontal scrolling.
 Search and filters narrow the history.
 The search query, page size, and display-name overrides are stored in this
 browser; they are not server-side account data.
@@ -171,8 +202,13 @@ read-only until the pencil is used.
 Dropdown menus and selectors share the Base UI menu primitives. Tooltips use
 the shared Base UI tooltip component, and interface icons use `lucide-react`.
 
-Each completed row has a direct download button beside its three-dot menu. The
-menu contains **Delete**. Downloads produce an MP3.
+Each completed row keeps a fixed-width editable name followed by a truncated
+script preview and timestamp. Its transport row provides play/pause and a
+seekable progress bar; download and a three-dot menu sit at the right. The menu
+contains **Reuse transcript** and **Delete**. Reuse restores the saved script,
+voice, and language. Downloads produce an MP3. Live rows use the same compact
+name/script arrangement, with queue/progress controls instead of completed-row
+download and overflow actions.
 
 Delete opens a confirmation with **Cancel** and **Delete**. Cancel leaves the
 voiceover untouched. Confirming schedules a server delete and shows a
@@ -200,8 +236,9 @@ Undo that restores the previous script, voice, and language.
 
 Presets, completed history, and the generation queue are persisted under
 `services/voice-api/storage/` in a source checkout. Browser-local names,
-search, history-page cache, theme choice, and mascot-visibility preference are
-stored in localStorage. Queue records survive a backend restart; a running job
+search, history-page cache, history and voice page-size preferences, theme
+choice, and mascot-visibility preference are stored in localStorage. Queue
+records survive a backend restart; a running job
 restarts from the beginning of that job, not from its last chunk.
 
 During Vite development, Studio renders first and shows a persistent **Voice

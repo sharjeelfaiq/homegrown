@@ -84,8 +84,10 @@ first remove the same previous build outputs listed above.
 Complete [First-time setup](../README.md#first-time-setup) before building. It
 creates `.venv`, installs `services/voice-api/requirements.txt`, downloads the
 model, configures `services/voice-api/.env`, and installs Studio dependencies.
-The API has no authentication, including for delete actions. Use the packaged
-app only on a trusted network.
+The API has no accounts or general authentication. Ordinary actions, including
+individual deletes, are unauthenticated; permanent bulk deletion additionally
+requires `HOMEGROWN_ADMIN_PASSWORD`. Use the packaged app only on a trusted
+network and never package the local `.env` or password.
 
 ```bash
 ./.venv/Scripts/python.exe -m pip install pyinstaller
@@ -259,13 +261,25 @@ Expect, in order:
    ```
 5. The loader redirects to the app once the model has loaded.
 6. In Studio, open the header **Settings** dialog. Confirm it offers a System
-   choice and named themes, changing a choice updates Studio immediately, and
-   the **Pet animal** switch hides and restores the mascot without affecting
-   voices or voiceovers. Reload the page and confirm both preferences persist.
+   choice and every named theme in a stable order. Select each named theme and
+   confirm the options remain visible and in the same order, then select System
+   and verify it follows the OS appearance. The **Pet animal** switch should
+   hide and restore the mascot without affecting voices or voiceovers. Reload
+   the page and confirm both preferences persist.
 7. Confirm the Script editor footer shows the language selector on
    the left and the compact Generate action on the right. Check that Generate
    stays disabled until script text, voice, language, and model readiness
-   prerequisites are met; use Ctrl/Cmd+Enter after it enables. To check the
+   prerequisites are met; use Ctrl/Cmd+Enter after it enables. Confirm that
+   the textarea is focused at startup and that printable typing from a
+   non-editable surface inserts there, while searches retain their own input.
+   Use the clipboard button at the textarea's top-right. When permission has not
+   been denied, confirm the browser handles any permission prompt; then confirm
+   text inserts at the caret or replaces a selection, appends when the textarea
+   is unfocused, and stops at the script limit. Deny or block clipboard access
+   and confirm Studio shows a toast with browser-permission and Ctrl+V guidance.
+   Confirm the clear icon button below Paste is disabled for an empty textarea
+   and clears all text when enabled.
+   To check the
    startup toast and disabled-state tooltips, run `npm run dev` separately:
    Vite should render Studio before FastAPI starts, and the persistent
    **Voice model is loading** toast should show an animated spinner until the
@@ -273,18 +287,34 @@ Expect, in order:
    disabled during that interval, with tooltips explaining that model loading
    can take up to three minutes. The packaged launcher shows its browser splash
    instead and only opens Studio after readiness.
-8. In the Voices card, search with a mixed-case substring and confirm only
-   matching rows remain; select a voice, then clear the query and confirm all
-   rows return. Drag an audio file over the card and drop it there: the clone
-   should start and show its running mark. Drop another file elsewhere in
-   Studio: it must not clone, and the browser must not navigate to the file.
+8. In the Voices card, confirm the search covers cloned voices only.
+   Search with a mixed-case substring and confirm only matching rows remain;
+   check the 10/25/50/100 page-size choices, the matching total, and previous,
+   next, and numbered-page controls when the fixture has enough voices. Change
+   pages and page size, then change the query and confirm it returns to page one.
+   Clear the query and confirm all rows return. Select or drop multiple audio
+   files onto the card. The Clone
+   voice button must keep its label and Upload icon; each file should have a
+   waiting toast, then a cloning toast with a spinner, then a green success
+   tick for one second (or a file-specific error). Later files must wait their
+   turn. Drop a file elsewhere in Studio: it must not clone, and the browser
+   must not navigate to the file.
    Check preview, reference download, rename, and delete actions on cloned rows.
-9. In Voiceovers, use the filter button beside search and verify Voice, Date
-   range, Duration, and Generation status controls. Confirm the total count
-   appears in the compact, vertically centered footer alongside pagination.
+9. In Voiceovers, use the filter button beside search and verify the four
+   equal-width filter controls appear in two columns: Voice and Date range in
+   the first row, Duration and Generation status in the second. Choose a simple filter and
+   confirm the choice is applied while the filter popover stays open; **Clear**
+   should become enabled and its trigger should show an active count. Confirm
+   only clicking outside or pressing Escape closes the popover. Reopen it and
+   clear the filters. Confirm the total count appears in the
+   compact, vertically centered footer alongside pagination.
    At a narrow viewport, verify the header wraps without horizontal scrolling.
-   Confirm clicking a voiceover row does not select it or change the layout;
-   each row's individual actions remain available. Hover and keyboard-focus
+   Confirm a completed row shows its fixed-width editable name, truncated
+   script preview, timestamp, and seekable playback. The download action and
+   three-dot menu should be visible; the menu contains Reuse transcript and
+   Delete. Reuse should restore the script, voice, and language. Live rows
+   should use the same compact name/script layout with queue/progress controls,
+   without completed-row download or overflow actions. Hover and keyboard-focus
    controls to check tooltips and theme-aware styling.
 10. Drag the mascot by its artwork, then use its side arrows to cycle numbered
    mascots without moving it; Mascot 2 (the Cat sheets) should be the default.
@@ -299,6 +329,14 @@ Expect, in order:
    immediately, while a voiceover row remains until the timer expires and its
    history refresh completes. Selecting Undo preserves the item; allowing the
    timer to expire deletes it. Queue cancellation has no Undo toast.
+   To verify the Settings **Danger Zone**, use disposable test data and a
+   non-production storage directory. Configure `HOMEGROWN_ADMIN_PASSWORD` in
+   the backend `.env`, restart the backend, and open Settings. Each bulk action
+   should first show a scope confirmation, then a separate password prompt.
+   Canceling either step must leave all records and audio untouched. Entering
+   the configured password should delete the chosen collection across all
+   pages; deleting cloned voices must preserve generated voiceovers and legacy
+   built-in records. Never run this check against storage containing user data.
 12. If the backend is unavailable or startup fails, confirm the pulsing warning
    button appears at the lower left. Open it and verify the reported message
    and Retry action. With cached history present, make a background history
@@ -315,9 +353,11 @@ Then confirm the listener is on every interface:
 netstat -ano | findstr :8731    # expect 0.0.0.0:8731
 ```
 
-The app has **no authentication or multi-user isolation**. Anyone who reaches
-this port can use all API actions, including deletion, uploading voices, and
-generating audio. Trusted networks only.
+The app has no accounts or general API authentication, and no multi-user
+isolation. Anyone who reaches this port can use ordinary actions, including
+individual deletion, uploading voices, and generating audio. Permanent
+collection-wide deletion also requires the local `HOMEGROWN_ADMIN_PASSWORD`.
+Trusted networks only.
 
 If the loader never appears, the launcher exe is stale — step 4 did not rebuild.
 

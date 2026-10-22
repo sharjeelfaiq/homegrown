@@ -40,7 +40,7 @@ export default function ThemeSwitch() {
             {(['dark', 'light'] as const).map((mode) => (
               <Dropdown.Group key={mode}>
                 <Dropdown.GroupLabel className="dropdown-menu-label">{mode}</Dropdown.GroupLabel>
-                {THEMES.filter((item) => item.mode === mode && !(choice === 'system' && item.id === theme)).map((item) => (
+                {THEMES.filter((item) => item.mode === mode).map((item) => (
                   <Dropdown.RadioItem key={item.id} value={item.id} className="dropdown-menu-radio-item">
                     <span className="flex flex-col gap-px">{item.label}<span className="text-[11px] text-faint">{item.hint}</span></span>
                   </Dropdown.RadioItem>

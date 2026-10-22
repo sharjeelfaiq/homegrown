@@ -105,9 +105,9 @@ def _restore_queue_on_startup() -> None:
     with _jobs_lock:
         for record in records:
             preset = persistence_stores._find_preset(record["preset_id"])
-            if preset is None:
+            if preset is None or preset.get("is_builtin"):
                 config.logger.warning(
-                    "Skipping queued job %s on restore -- preset %s no longer exists",
+                    "Skipping queued job %s on restore -- preset %s is unavailable",
                     record["job_id"], record["preset_id"],
                 )
                 continue
@@ -140,8 +140,9 @@ def _restore_queue_on_startup() -> None:
             }
             _pending_job_ids.append(job_id)
             restored += 1
-        if restored:
-            _persist_queue_locked()
+        # Rewrite even when every record was skipped, so removed voices cannot
+        # be retried from stale queue.json on the next restart.
+        _persist_queue_locked()
     if restored:
         config.logger.info("Restored %d queued job(s) from queue.json", restored)
 

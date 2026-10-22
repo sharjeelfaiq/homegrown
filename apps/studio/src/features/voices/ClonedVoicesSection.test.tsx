@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { ExternalToast } from 'sonner'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ClonedVoicesSection from './ClonedVoicesSection'
+import * as api from '../../lib/api'
 import type { Preset } from '../../lib/api'
 
 const toastMock = vi.hoisted(() => Object.assign(
@@ -56,9 +57,77 @@ describe('ClonedVoicesSection', () => {
     expect(screen.getByRole('option', { name: /Ada/ })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /Bruno/ })).toBeInTheDocument()
     expect(container.querySelector('.cloned-voices-section.results > .voiceovers-card-header.voiceover-history-header > .mt-1 > .relative > .voiceover-search')).toBeTruthy()
-    expect(container.querySelector('.cloned-voices-section > .history-context-toolbar')).toHaveTextContent('Cloned voices · 2')
+    expect(container.querySelector('.cloned-voices-section > .history-context-toolbar')).not.toHaveTextContent('Cloned voices')
     expect(container.querySelector('.cloned-voices-section > .cloned-voices-list')).toBeTruthy()
     expect(screen.getByRole('option', { name: /Ada/ })).toHaveClass('-mx-2')
+  })
+
+  it('paginates voices, disables page boundaries, and resets to the first page on search', async () => {
+    const manyVoices = Array.from({ length: 12 }, (_, index): Preset => ({
+      ...presets[2], id: `voice-${index + 1}`, name: `Voice ${index + 1}`, created_at: index + 1,
+    }))
+    renderSection({ presets: manyVoices })
+    expect(screen.getAllByRole('option').some((option) => option.textContent?.includes('Voice 1'))).toBe(true)
+    expect(screen.getAllByRole('option').some((option) => option.textContent?.includes('Voice 11'))).toBe(false)
+    expect(screen.getByText('12 voices')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(screen.getAllByRole('option').some((option) => option.textContent?.includes('Voice 11'))).toBe(true)
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voices per page' }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: '25' }))
+    expect(screen.getAllByRole('option').some((option) => option.textContent?.includes('Voice 1'))).toBe(true)
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search cloned voices' }), { target: { value: 'voice 1' } })
+    expect(screen.getAllByRole('option').some((option) => option.textContent?.includes('Voice 1'))).toBe(true)
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled()
+  })
+
+  it('ignores an older page response after the search changes', async () => {
+    const manyVoices = Array.from({ length: 12 }, (_, index): Preset => ({
+      ...presets[2], id: `voice-${index + 1}`, name: `Voice ${index + 1}`, created_at: index + 1,
+    }))
+    let resolveInitial!: (result: { presets: Preset[]; total: number }) => void
+    let resolveSearch!: (result: { presets: Preset[]; total: number }) => void
+    vi.spyOn(api, 'listPresets')
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveInitial = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSearch = resolve }))
+
+    renderSection({ presets: manyVoices })
+    await waitFor(() => expect(api.listPresets).toHaveBeenCalledTimes(1))
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search cloned voices' }), { target: { value: 'Voice 12' } })
+    await waitFor(() => expect(api.listPresets).toHaveBeenCalledTimes(2))
+
+    await act(async () => { resolveSearch({ presets: [manyVoices[11]], total: 1 }) })
+    expect(screen.getAllByRole('option').some((option) => option.textContent?.includes('Voice 12'))).toBe(true)
+    await act(async () => { resolveInitial({ presets: manyVoices.slice(0, 10), total: 12 }) })
+    expect(screen.getAllByRole('option').some((option) => option.textContent?.includes('Voice 12'))).toBe(true)
+    expect(screen.getByText('1 voices')).toBeInTheDocument()
+  })
+
+  it('reconciles server page rows with current Studio voices after rename and pending delete', async () => {
+    let livePresets = [...presets]
+    vi.spyOn(api, 'listPresets').mockImplementation(async (options = {}) => {
+      const needle = options.q?.trim().toLowerCase() ?? ''
+      const matching = livePresets.filter((preset) => !needle || preset.name.toLowerCase().includes(needle))
+      const limit = options.limit ?? matching.length
+      return { presets: matching.slice(options.offset ?? 0, (options.offset ?? 0) + limit), total: matching.length }
+    })
+    const { props, rerender } = renderSection()
+    await waitFor(() => expect(screen.getByRole('option', { name: /Ada/ })).toBeInTheDocument())
+
+    livePresets = livePresets.map((preset) => preset.id === 'ada' ? { ...preset, name: 'Ada Renamed' } : preset)
+    rerender(<ClonedVoicesSection {...props} presets={livePresets} />)
+    await waitFor(() => expect(screen.getByRole('option', { name: /Ada Renamed/ })).toBeInTheDocument())
+    expect(screen.queryByRole('option', { name: /^Ada$/ })).not.toBeInTheDocument()
+
+    livePresets = livePresets.filter((preset) => preset.id !== 'ada')
+    rerender(<ClonedVoicesSection {...props} presets={livePresets} />)
+    await waitFor(() => expect(screen.queryByRole('option', { name: /Ada Renamed/ })).not.toBeInTheDocument())
   })
 
   it('filters cloned voices case-insensitively and selects a matching row', () => {
@@ -71,32 +140,14 @@ describe('ClonedVoicesSection', () => {
     expect(onSelect).toHaveBeenCalledWith('bruno')
   })
 
-  it('renders built-ins with preview controls and selects their rows', () => {
-    const onSelect = vi.fn()
-    renderSection({ onSelect })
-
-    const vivian = screen.getByRole('option', { name: /Vivian/ })
-    const serena = screen.getByRole('option', { name: /Serena/ })
-    expect(screen.getByText('Built-in voices')).toBeInTheDocument()
-    expect(vivian).not.toHaveAttribute('aria-disabled')
-    expect(screen.getByRole('button', { name: 'Preview Vivian' })).toBeInTheDocument()
-    expect(serena).not.toHaveAttribute('aria-disabled')
-    expect(screen.getByRole('button', { name: 'Preview Serena' })).toBeInTheDocument()
-
-    fireEvent.click(vivian)
-    fireEvent.click(serena)
-    expect(onSelect).toHaveBeenCalledTimes(2)
-    expect(onSelect).toHaveBeenNthCalledWith(1, 'qwen-vivian')
-    expect(onSelect).toHaveBeenNthCalledWith(2, 'qwen-serena')
-  })
-
-  it('searches across built-in and cloned voice groups', () => {
+  it('omits legacy built-ins from voice rows and search results', () => {
     renderSection()
+    expect(screen.getByRole('option', { name: /Ada/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Vivian|Serena/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Built-in voices')).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search cloned voices' }), { target: { value: 'viv' } })
-    expect(screen.getByRole('option', { name: /Vivian/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Vivian/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Ada/ })).not.toBeInTheDocument()
-    expect(screen.getByText('Built-in voices')).toBeInTheDocument()
-    expect(screen.queryByText('Cloned voices', { selector: 'li' })).not.toBeInTheDocument()
   })
 
   it('shows a no-results message for an unmatched query', () => {
@@ -126,7 +177,7 @@ describe('ClonedVoicesSection', () => {
     expect(container.querySelector('[data-tooltip="Voice model is loading — this can take up to 3 minutes."]')).toBeTruthy()
   })
 
-  it('keeps the original Clone voice label and upload icon while cloning', () => {
+  it('keeps Clone voice left-aligned with its original label and upload icon while cloning', () => {
     const { container } = renderSection({ onAddVoice: () => new Promise(() => {}) })
     fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['audio'], 'voice.wav', { type: 'audio/wav' })] } })
     const action = container.querySelector('.clone-voice-button')
@@ -135,8 +186,8 @@ describe('ClonedVoicesSection', () => {
     expect(screen.getByRole('button', { name: 'Clone voice' })).toHaveTextContent('Clone voice')
     expect(action?.querySelector('.lucide-upload')).toBeTruthy()
     expect(action?.querySelector('[data-status]')).toBeNull()
-    expect(action?.parentElement?.parentElement).toHaveClass('ml-auto')
-    expect(screen.getByRole('status')).toHaveTextContent('Cloned voices · 2')
+    expect(action?.parentElement?.parentElement).not.toHaveClass('ml-auto')
+    expect(screen.queryByText(/Cloned voices ·/)).not.toBeInTheDocument()
   })
 
   it('does not let a dropped file bypass the loading disablement', async () => {

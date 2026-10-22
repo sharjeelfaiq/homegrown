@@ -58,7 +58,7 @@ def estimate(req: EstimateRequest, user_id: str = Depends(dependencies.get_curre
         return result
 
     preset = persistence_stores._find_preset(req.preset_id) if req.preset_id else None
-    if preset is None or preset.get("user_id") != user_id:
+    if preset is None or preset.get("user_id") != user_id or preset.get("is_builtin"):
         return result  # no preset: chunking is unknowable
 
     facts = generation_budget._ref_facts(preset)
@@ -97,7 +97,7 @@ def generate(req: generation_schemas.GenerateRequest, user_id: str = Depends(dep
     if generation_model._tts is None:
         raise HTTPException(503, "Model not loaded yet")
     preset = persistence_stores._find_preset(req.preset_id)
-    if preset is None or preset.get("user_id") != user_id:
+    if preset is None or preset.get("user_id") != user_id or preset.get("is_builtin"):
         raise HTTPException(404, "Selected voice is unavailable. Choose a voice before generating.")
     try:
         persistence_stores._reference_path(preset)

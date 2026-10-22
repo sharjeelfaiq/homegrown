@@ -95,8 +95,16 @@ def list_history(
         filtered.append((index, entry))
     page = filtered[offset : offset + limit]
     is_filtered = preset_id is not None or any(value is not None for value in numeric) or bool(q)
+    builtin_ids = {
+        preset.get("id") for preset in persistence_stores._presets
+        if preset.get("user_id") == user_id and preset.get("is_builtin")
+    }
     history = [
-        ({**entry, "history_number": len(mine) - index} if is_filtered else entry)
+        {
+            **entry,
+            **({"history_number": len(mine) - index} if is_filtered else {}),
+            "preset_is_builtin": entry.get("preset_id") in builtin_ids,
+        }
         for index, entry in page
     ]
     return {"history": history, "total": len(filtered)}

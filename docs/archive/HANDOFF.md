@@ -6,6 +6,6 @@ notes, and open work items were removed so they cannot be mistaken for current
 instructions.
 
 Current documentation is [README.md](../../README.md),
-[workflow.md](../workflow.md), [BUILD.md](../BUILD.md), and
+[workflow.md](../workflow.md), [build.md](../build.md), and
 [gpu-notes.md](../gpu-notes.md). Consult the implementation for authoritative
 behaviour when documentation and code differ.

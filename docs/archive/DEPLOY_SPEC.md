@@ -6,5 +6,5 @@ workflow. This archive intentionally contains no executable steps,
 environment-variable guidance, or claims about current behaviour.
 
 Use [README.md](../../README.md), [workflow.md](../workflow.md), and
-[BUILD.md](../BUILD.md) for supported usage. Source code is authoritative when
+[build.md](../build.md) for supported usage. Source code is authoritative when
 documentation and implementation differ.

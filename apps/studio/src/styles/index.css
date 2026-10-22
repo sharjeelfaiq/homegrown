@@ -856,10 +856,41 @@ body {
   min-height: 0;
 }
 
+.script-paste-button {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 10px;
+  background: color-mix(in srgb, var(--surface-card) 86%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.script-clear-button {
+  position: absolute;
+  z-index: 2;
+  top: 42px;
+  right: 10px;
+  background: color-mix(in srgb, var(--surface-card) 86%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.script-clear-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .script-word-count {
   position: absolute;
+  z-index: 2;
   right: 14px;
   bottom: 10px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface-card) 86%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   pointer-events: none;
 }
 
@@ -873,13 +904,7 @@ body {
   transition: border-color var(--base) var(--ease);
 }
 
-.script-editor:focus-within .script-editor-frame {
-  border-color: var(--line-focus);
-}
-
-/* The global keyboard-focus rule uses the shared focus token. Inside this composite
-   editor it outlines only the textarea, cutting across the footer; the card's
-   focus-within hairline above is the single, quieter focus indicator instead. */
+/* Keep the editor frame steady while the textarea is active. */
 .script-editor textarea:focus-visible {
   outline: none;
 }

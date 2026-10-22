@@ -19,7 +19,8 @@ export interface Preset {
   ref_text: string
   audio_path: string
   tag: string
-  is_builtin: boolean
+  /** Legacy storage marker; current voice APIs omit built-in records. */
+  is_builtin?: boolean
   preview_url: string
   created_at: number
   /** Measured length of the reference clip, and the chunk size it leaves the
@@ -41,6 +42,8 @@ export interface HistoryEntry {
   id: string
   preset_id: string
   preset_name: string
+  /** Derived from legacy preset storage; used to keep old built-in voices out of current filters. */
+  preset_is_builtin?: boolean
   text: string
   language: string
   style: string
@@ -146,8 +149,14 @@ export function listLanguages(): Promise<{ languages: string[] }> {
   return fetch(apiUrl('/api/languages')).then(parseOrThrow<{ languages: string[] }>)
 }
 
-export function listPresets(): Promise<{ presets: Preset[] }> {
-  return fetch(apiUrl('/api/presets')).then(parseOrThrow<{ presets: Preset[] }>)
+export function listPresets(options: { limit?: number; offset?: number; q?: string } = {}): Promise<{ presets: Preset[]; total: number }> {
+  const params = new URLSearchParams()
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  if (options.offset !== undefined) params.set('offset', String(options.offset))
+  if (options.q?.trim()) params.set('q', options.q.trim())
+  const encodedParams = params.toString()
+  const query = encodedParams ? `?${encodedParams}` : ''
+  return fetch(apiUrl(`/api/presets${query}`)).then(parseOrThrow<{ presets: Preset[]; total: number }>)
 }
 
 /** `tag` is not sent: the backend accepts it, nothing in the UI ever set it to

@@ -59,7 +59,7 @@ async function ready() {
   await waitFor(() => expect(screen.getByTestId('selected').textContent).toBe('uploaded'))
 }
 
-it('clears deleted voice selection, preserves built-ins, and ignores a stale rename rollback', async () => {
+it('filters legacy built-ins from active voice choices and ignores a stale rename rollback', async () => {
   let fail!: (error: Error) => void
   mocks.rename.mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
   await ready()
@@ -69,7 +69,7 @@ it('clears deleted voice selection, preserves built-ins, and ignores a stale ren
   await act(async () => { fail(new Error('Old request failed')) })
   expect(screen.queryByText('Uploaded voice')).toBeNull()
   expect(screen.queryByText('Renamed')).toBeNull()
-  expect(screen.getByText('Built-in voice')).toBeTruthy()
+  expect(screen.queryByText('Built-in voice')).toBeNull()
 })
 
 it('does not restore deleted history from a stale individual-delete rollback', async () => {

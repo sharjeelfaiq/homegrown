@@ -50,7 +50,7 @@ def _preset_response(preset: dict) -> dict:
         preview_name = ""
         reference_error = str(exc)
     return {
-        **preset,
+        **{key: value for key, value in preset.items() if key != "is_builtin"},
         "preview_url": f"/refs/{preview_name}" if preview_name else None,
         "reference_error": reference_error,
         "ref_seconds": facts.ref_seconds,
@@ -59,8 +59,22 @@ def _preset_response(preset: dict) -> dict:
 
 
 @router.get("/api/presets")
-def list_presets(user_id: str = Depends(dependencies.get_current_user)):
-    return {"presets": [_preset_response(p) for p in persistence_stores._presets if p.get("user_id") == user_id]}
+def list_presets(
+    limit: int | None = None,
+    offset: int = 0,
+    q: str | None = None,
+    user_id: str = Depends(dependencies.get_current_user),
+):
+    presets = [p for p in persistence_stores._presets if p.get("user_id") == user_id and not p.get("is_builtin")]
+    needle = (q or "").strip().casefold()
+    if needle:
+        presets = [p for p in presets if needle in str(p.get("name", "")).casefold()]
+    total = len(presets)
+    if limit is not None or offset:
+        limit = min(100, max(1, limit if limit is not None else 100))
+        offset = max(0, offset)
+        presets = presets[offset:offset + limit]
+    return {"presets": [_preset_response(p) for p in presets], "total": total}
 
 
 @router.post("/api/presets")
@@ -272,7 +286,7 @@ def rename_preset(
     voices dialog and a different one on every voiceover it had produced.
     """
     preset = persistence_stores._find_preset(preset_id)
-    if preset is None or preset.get("user_id") != user_id:
+    if preset is None or preset.get("user_id") != user_id or preset.get("is_builtin"):
         raise HTTPException(404, "Unknown preset_id")
 
     name = req.name.strip()
@@ -301,7 +315,7 @@ def download_reference(preset_id: str, user_id: str = Depends(dependencies.get_c
     infers the media type from the suffix.
     """
     preset = persistence_stores._find_preset(preset_id)
-    if preset is None or preset.get("user_id") != user_id:
+    if preset is None or preset.get("user_id") != user_id or preset.get("is_builtin"):
         raise HTTPException(404, "Unknown preset_id")
 
     try:
@@ -319,7 +333,7 @@ def download_reference(preset_id: str, user_id: str = Depends(dependencies.get_c
 def delete_preset(preset_id: str, user_id: str = Depends(dependencies.get_current_user)):
     with persistence_stores._store_lock:
         preset = persistence_stores._find_preset(preset_id)
-        if preset is None or preset.get("user_id") != user_id:
+        if preset is None or preset.get("user_id") != user_id or preset.get("is_builtin"):
             raise HTTPException(404, "Unknown preset_id")
         persistence_stores._presets.remove(preset)
         persistence_stores._save_json(config.PRESETS_FILE, persistence_stores._presets)

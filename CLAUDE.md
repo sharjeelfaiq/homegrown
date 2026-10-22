@@ -60,15 +60,24 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - `engine/qwen/` is the vendored CUDA-graph TTS wrapper. CPU fallback exists but is
   slow.
 - There is one fixed local user (`local-user`), no accounts, and no workspaces.
-  All API actions are unauthenticated, including voice and completed-voiceover
-  deletion. Do not describe this as sign-in or multi-user isolation; bind only
-  to trusted networks.
+  Ordinary API actions, including individual voice and voiceover deletion, do
+  not require authentication. Permanent bulk deletion is additionally gated by
+  `HOMEGROWN_ADMIN_PASSWORD`; this is not account authentication or user
+  isolation. Bind only to trusted networks.
 
 ## History and cache contract
 
 - `GET /api/history` is newest-first, accepts `limit`/`offset`, and clamps a
   page to `HISTORY_PAGE_MAX` (100). It filters by preset, date, duration, and
-  canonical `q` voice-name search before pagination.
+  canonical `q` voice-name search before pagination. Legacy built-in entries
+  include a derived marker so Voiceovers filters omit them without rewriting
+  historical records.
+- `GET /api/presets` is newest-first and accepts optional `limit`, `offset`,
+  and case-insensitive voice-name `q` search. It always returns an object with
+  `presets` and `total`; `total` is the number of matching cloned voices before
+  slicing. Requests without pagination parameters retain the full-list response
+  behavior. The requested page size is clamped to 1–100 and offsets below zero
+  become zero.
 - `apps/studio/src/features/history/historyQuery.ts` owns history query keys, normalization, cache
   policy, persistence, and cache clearing. Keys are scoped to `local-user`.
 - TanStack Query retains history for 20 minutes in memory, treats it as stale
@@ -82,7 +91,7 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   data. Canonical searches cover all history; custom-name matches can narrow
   only loaded/cached pages. Voice preset names are server-side and are stamped
   into a history entry at generation time.
-- A completed job invalidates history. Voice and history deletion require the
+- A completed job invalidates history. Individual voice and history deletion require the
   shared Cancel/Delete confirmation modal, then defer the server DELETE for the
   seven-second Undo toast. History is optimistically
   removed when the request runs, rolls back on failure, and invalidates on
@@ -98,7 +107,17 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   footer; keep that element after the textarea and footer so every corner
   remains continuous when focused. The editor height uses
   `clamp(300px, 39svh, 400px)`; keep the input grid row flexible so the footer
-  stays visible.
+  stays visible. The textarea receives initial focus. `useTypeToScript` routes
+  eligible printable keys to it from non-editable Studio surfaces, but never
+  intercepts searches, other editable controls, modifier shortcuts, composition
+  input, menus, or dialogs.
+- The Script editor's top-right **Paste from clipboard** control reads clipboard
+  text, replaces the focused textarea selection or appends when it is not
+  focused, and clips insertion to the remaining `MAX_SCRIPT_CHARS` capacity.
+  Preserve caret placement. Clicking it invokes the browser clipboard API so
+  the browser can request permission. Unavailable or denied access produces a
+  toast with browser-permission and Ctrl+V guidance. The clear icon button below
+  it is disabled for an empty script and clears the entire script otherwise.
 - The Script editor footer's script-language selector uses the shared
   Base UI menu-backed dropdown, populated from `GET /api/languages` (the loaded
   checkpoint's own `codec_language_id`, read once when the model reports
@@ -117,7 +136,14 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   same table and returns 400 otherwise, so an unsupported value is a refused
   request rather than a failed job.
 - `ClonedVoicesSection.tsx` is the persistent voice-management card. It owns
-  voice search, selection, rename, preview, download, delete, and Clone voice.
+  paged server-side voice search, selection, rename, preview, download, delete,
+  pagination, and Clone voice. Only cloned voices appear in pages and the
+  total count; the card's page-size preference is stored separately from
+  Voiceovers. Keep StudioShell's full-list request for generation and
+  Voiceovers filters. Ignore stale page responses, reconcile returned records
+  with current voices, and clamp the page when results shrink. Search and page
+  size changes return to page one. Keep the empty-collection and no-match states
+  distinct.
   File drops clone only when dropped on this card; the rest of Studio only
   suppresses the browser's default file-open behavior.
   Clone voice and Generate share StudioShell's model-ready gate: they stay
@@ -164,21 +190,30 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   the dragged position, the chosen size is in-memory only and is never
   persisted.
 - `useOnboardingTour` keeps a static target sequence: header controls, voice
-  controls, Script editor, Generate, Voiceovers, then search/filters. Do not
-  add mascot, queue-row, error, or other conditional targets; the automatic
-  model-ready tour must work on an empty Studio.
+  controls, Script editor, Generate, Voiceovers, then search/filters. Its copy
+  covers theme and mascot settings, bulk deletion, voice selection and batch
+  cloning, script/language entry, generation queue behavior, playback, reuse,
+  search, and filters. Do not add mascot, queue-row, error, or other conditional
+  targets; the automatic model-ready tour must work on an empty Studio.
 - The header Settings dialog is the only settings surface. It contains the
   theme picker and the **Pet animal** switch; hiding the mascot must not alter
   mascot assets, catalog generation, or generation state. The mascot switch is
   stored as `homegrown-mascot-enabled` in localStorage and defaults to visible
-  when storage is unavailable or unset.
+  when storage is unavailable or unset. Selecting a theme must not hide or
+  remove any theme option or change their order. The resolved active theme may
+  differ from the stored **System** choice.
 - Settings also contains **Danger Zone** actions to permanently delete all
   generated voiceovers or all uploaded voices after confirmation, without Undo.
-  Bulk operations cover all pages, preserve built-in voices and shared media,
-  and refuse active generation; uploaded-voice deletion also refuses active
+  The second confirmation requires the locally configured
+  `HOMEGROWN_ADMIN_PASSWORD` from `services/voice-api/.env`; an unset password
+  makes bulk deletion unavailable. Never put the secret in source control or
+  user-facing documentation.
+  Bulk operations cover all pages, preserve legacy built-in records and shared media,
+  and refuse active generation; cloned-voice deletion also refuses active
   cloning and the browser's waiting clone queue. Media cleanup failures are
-  reported separately from successful record deletion. Focus outlines throughout
-  Studio use the Script editor's `--line-focus` token, preserving theme accents.
+  reported separately from successful record deletion. Keyboard focus styles
+  use the `--line-focus` token where provided. The Script editor textarea has no
+  active outline, and focusing it does not change the editor frame border.
 - The mascot catalog is generated from top-level numbered pairs in
   `apps/studio/public/mascots/`: `<id>a.webp` is directions and `<id>b.webp`
   is reactions. Do not hand-edit `src/features/mascots/generated/mascotCatalog.ts`; add a pair,
@@ -195,7 +230,7 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   Default display numbers must account for the server page offset.
 - Live queued/running/failed rows come from `GenerationActivityContext`; do not
   fold them into completed-history cache data.
-- Voice/history deletes are deferred behind a seven-second Undo toast; unmount
+- Individual voice/history deletes are deferred behind a seven-second Undo toast; unmount
   cancels a pending delete. The toast uses the shared amber `StatusMark` ring
   to show the remaining Undo time. At the deadline, remove Undo and show the
   spinner until the request finishes; on success, animate a green check and
@@ -208,6 +243,12 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - The Voiceovers header contains search and a compact filter popover. Its footer
   contains pagination and the total history count, vertically centered. Do not
   restore batch selection or selection-action layout shifts.
+  Filter selections apply to history immediately while the filter popover stays
+  open; the Clear action and active count update without dismissing it. Only a
+  click outside the filter popover or Escape closes it. The nested Base UI
+  option menus are portaled; their pointer events must not be mistaken for
+  outside clicks. Custom date and duration filters stay open through their
+  explicit Apply action.
 - Dropdown selectors, the theme menu, and voiceover action menus use
   `@base-ui/react/menu` through the shared `Dropdown.tsx` wrapper. Selection
   dropdowns share their raised surface, border, type, focus, and hover style
@@ -221,12 +262,19 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   `PATCH /api/presets/{id}`. Do not merge these stores.
   Voiceover names, like voice preset names, stay read-only until their pencil
   button is clicked; clicking the name itself must not enter edit mode.
+- Completed voiceover rows use a fixed-width editable name, a truncated script
+  preview, and the timestamp in place of the voice name. The transport has a
+  seekable progress bar; download and the overflow menu follow. Reuse transcript
+  and Delete are in the completed-row menu. Live rows share the compact
+  name/script layout but expose queue/progress controls instead of completed
+  download and overflow actions.
 
 ## Deployment and safety
 
 - Local development and the Windows self-extracting build are supported.
-- The app has no authentication. Any client that reaches the API can use all
-  actions, including deletion. Bind only to trusted networks.
+- The app has no accounts or general API authentication. Ordinary API actions,
+  including individual deletes, are unauthenticated; permanent bulk deletion
+  requires `HOMEGROWN_ADMIN_PASSWORD`. Bind only to trusted networks.
 - Never commit `.env`, model files, generated audio, or local storage data.
 
 ## Documentation

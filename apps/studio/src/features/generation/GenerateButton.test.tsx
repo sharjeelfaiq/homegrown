@@ -36,6 +36,12 @@ describe('GenerateButton', () => {
     expect(screen.getByRole('button', { name: 'Generate' })).toHaveAttribute('aria-keyshortcuts', 'Control+Enter')
   })
 
+  it('uses a subtler tone for the language prompt beside Generate', () => {
+    render(<GenerateButton disabled blockedReason="Select a language" busy={false} onClick={() => {}} />)
+
+    expect(screen.getByText('Select a language')).toHaveClass('text-faint')
+  })
+
   it('keeps Generate disabled and exposes the model-loading explanation', () => {
     const { container } = render(
       <GenerateButton

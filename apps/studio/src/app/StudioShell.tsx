@@ -171,10 +171,13 @@ export default function StudioShell() {
     listPresets()
       .then((r) => {
         if (revision !== presetDeletionRevision.current) return
-        setPresets(r.presets)
+        const availablePresets = r.presets.filter((preset) => !preset.is_builtin)
+        setPresets(availablePresets)
         // Default to the first voice so a new user can type and hit Generate
         // without first realising a voice must be chosen.
-        setVoiceId((current) => current ?? r.presets[0]?.id ?? null)
+        setVoiceId((current) => current && availablePresets.some((preset) => preset.id === current)
+          ? current
+          : availablePresets[0]?.id ?? null)
       })
       .catch(() => {})
   }

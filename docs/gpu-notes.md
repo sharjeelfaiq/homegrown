@@ -59,11 +59,10 @@ VRAM TIER BREAKDOWN
 
 40GB+ (A100 40GB/80GB, L40S 48GB)
   - Only worth it for local experimentation with larger context budgets. The
-    current code holds a global lock
-    serializing all generation (CUDA graphs aren't reentrant), so
-    right now a bigger GPU alone does NOT give you parallel throughput
-    -- that requires code changes (multiple model instances / a queue
-    + worker pool) before this tier pays for itself.
+    application already has a persistent job queue and one worker; a global
+    model lock serializes generation because CUDA graphs aren't reentrant.
+    A bigger GPU alone does not provide parallel throughput. That would require
+    multiple model instances and a parallel worker design.
 
 This project supports locally attached GPUs only. Use the model and chunking
 measurements below when evaluating local hardware.

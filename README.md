@@ -6,9 +6,11 @@ on the computer that runs it.
 
 ## First-time setup
 
-Use Windows 10/11 with Git Bash, Python 3.11+, Node 20.19+ (or 22.12+), and (for a packaged
-build) 7-Zip. An NVIDIA GPU is recommended; CPU fallback works but generation
-may take many minutes.
+Use Windows 10/11 with Git Bash, Python 3.13 for the tested Windows dependency
+set (the API package metadata requires Python 3.11 or newer, but pinned native
+dependencies may not publish wheels for the newest Python versions), Node
+20.19+ (or 22.12+), and (for a packaged build) 7-Zip. An NVIDIA GPU is
+recommended; CPU fallback works but generation may take many minutes.
 
 ```bash
 git clone git@github.com:sharjeelfaiq/homegrown.git
@@ -23,6 +25,10 @@ npm install                       # root orchestration (concurrently)
 npm install --prefix apps/studio  # Studio dependencies
 cp services/voice-api/.env.example services/voice-api/.env
 ```
+
+Set `HOMEGROWN_ADMIN_PASSWORD` to a private value in that local `.env` if you
+need the permanent bulk-delete actions in Settings. Leave it out of source
+control; without it, bulk deletion is disabled.
 
 Download the model once (the default location is the ignored `models/`
 directory), then set `MODEL_PATH` in `services/voice-api/.env` to its absolute
@@ -77,9 +83,10 @@ its startup state, then starts FastAPI on `127.0.0.1:8000`; FastAPI probes for
 a usable NVIDIA GPU and loads Qwen3-TTS before reporting ready. Vite proxies
 `/api`, `/audio`, and `/refs`, so Studio always uses same-origin API paths. It
 prints a LAN address when available.
-There is no sign-in or authentication. Use only a trusted network; anyone who
-can reach the API can delete voices and completed voiceovers as well as use the
-other API actions.
+There are no accounts or general API authentication. Ordinary actions,
+including individual deletes, are unauthenticated. Permanent bulk deletion
+from Settings additionally requires the locally configured
+`HOMEGROWN_ADMIN_PASSWORD`; keep it private and never commit `.env`.
 
 For manual startup, start Studio first in one terminal, wait until Vite is
 serving at `http://localhost:5173`, then start FastAPI in a second terminal.
@@ -99,26 +106,32 @@ model initializes, Studio shows a persistent **Voice model is loading** toast
 with an animated spinner; it disappears when startup succeeds or fails. The
 full-screen startup overlay also reports the backend phase.
 
-Clone a voice from the persistent Voices card or drop an audio file directly
-onto that card. Dropping a file elsewhere does not clone it. During upload, the
-Clone voice icon changes to an animated lifecycle mark: amber while work is
-running, green on success, and red on failure. The completed result remains
-visible for two seconds before the Upload icon returns.
+Clone voices from the persistent Voices card by selecting one or more files, or
+drop multiple audio files directly onto that card. Dropping files elsewhere
+does not clone them. The **Clone voice** button keeps its label and Upload icon
+while files are processed. Toasts show waiting uploads, the current clone, and
+file-specific errors; success changes the spinner to an animated green tick and
+dismisses after one second. Uploads are processed one at a time in selection
+order.
 
 If the backend is unavailable, Studio shows a pulsing warning button at the
 lower left. Open it to read the backend message and retry startup. A failed
 background refresh keeps cached voiceovers visible without adding an inline
 warning above the list.
 
-Use the header **Settings** button to choose a Studio theme or follow the
-system theme. The same dialog can hide or show the mascot. Both choices are
-stored in this browser; hiding the mascot does not remove its assets or change
-voice generation.
+Use the header **Settings** button to choose **System** or a named Studio
+theme. The theme options remain visible in a stable order after selection;
+choosing a theme does not remove it from the list. The same dialog can hide or
+show the mascot. Both choices are stored in this browser; hiding the mascot
+does not remove its assets or change voice generation.
 
 Settings also has a **Danger Zone** to permanently delete all generated
 voiceovers or all uploaded voices, including their audio, after confirmation.
-Built-in voices are preserved. Finish or cancel generation first; uploaded-voice
-deletion also requires the cloning queue to finish. Bulk deletion has no Undo.
+Finish or cancel generation first; cloned-voice
+deletion also requires the cloning queue to finish. The second confirmation
+requires the `HOMEGROWN_ADMIN_PASSWORD` configured in
+`services/voice-api/.env`; if it is unset, bulk deletion is unavailable. Bulk
+deletion has no Undo.
 
 The Studio mascot is a session-local viewport companion. On wide screens it
 rests at the Voiceovers section's lower-left corner, and on narrow screens at
@@ -156,20 +169,43 @@ option (for example, **Select language**); fields with an existing setting
 continue to show that setting. The language control keeps a fixed 190px width
 so voice-name changes do not shift the editor footer.
 
-The persistent Voices card includes a compact, case-insensitive search field.
-Clicking a row selects that voice; cloned-voice names are editable with their
-pencil control, while preview, reference download, and delete actions remain
-on each row. In the Voiceovers section, filters are in the filter popover next
-to search and the total count is in the compact footer. Menus share the Base UI
+The textarea has a **Paste from clipboard** button in its top-right corner.
+Clicking it calls the browser clipboard API, which can show the browser's own
+permission prompt. Pasting inserts at the current selection, or appends when
+the textarea is not focused, and clips the inserted text to the 60,000-character
+limit. If clipboard access is unavailable or denied, Studio shows a toast with
+guidance to use Ctrl+V or check this site's browser permission. The clear
+button below Paste is disabled for an empty textarea and clears all script text
+when enabled.
+
+Studio initially focuses the Script textarea. Typing a printable character
+elsewhere returns focus there, while search fields and other editable controls
+keep their normal typing behavior. Modifiers, composition input, menus, and
+dialogs are not intercepted.
+
+The persistent Voices card includes a compact, case-insensitive server search
+and paginates cloned voices. Page sizes are 10, 25, 50,
+and 100 (default 10); the preference is stored independently from Voiceovers.
+The footer shows page navigation and the count of matching cloned voices. Clicking a
+row selects that voice; cloned-voice names are editable with their pencil
+control, while preview, reference download, and delete actions remain on each
+row. In completed Voiceovers rows, the fixed-width editable name is
+followed by a truncated script preview and timestamp; playback has a seekable
+progress bar. Download is beside the three-dot menu, which contains Reuse
+transcript and Delete. Live rows keep the compact name/script layout and show
+queue or generation controls. Filters are in the popover beside search, and
+the total count is in the compact footer. Menus share the Base UI
 dropdown primitives, tooltips use the shared Base UI tooltip, and interface
 icons use `lucide-react`. Animated status and undo countdown rings remain
 custom visuals.
 
-On the first model-ready launch, Studio offers a short, read-only tour of the
-theme/help controls, reusable voice creation, the Script editor, Generate, and
-the Voiceovers search/filter workflow. Press Escape or close it to dismiss it;
-use the header help button to replay it. It intentionally excludes the mascot,
-queue rows, errors, and other state that may not exist at startup.
+On the first model-ready launch, Studio offers a short, read-only tour of
+Settings (theme, mascot visibility, and Danger Zone), voice selection and batch
+cloning, script and language entry, generation and its queue, and Voiceovers
+playback, reuse, search, and filters. The tour explains queue behavior without
+depending on queue rows being present. Press Escape or close it to dismiss it;
+use the header help button to replay it. It does not target transient queue
+rows or error states.
 
 ## Packaged Windows app
 
@@ -180,8 +216,9 @@ npm run build
 This creates `dist/Homegrown-<version>.exe`. Run that self-extracting archive,
 then run the extracted `Homegrown.exe`; its browser loader appears before the
 local API initializes Qwen3-TTS. The packaged backend listens on port 8731 for
-trusted LAN use. No API actions are authenticated, so never expose it to an
-untrusted network. The detailed,
+trusted LAN use. Ordinary API actions are unauthenticated; permanent bulk
+deletion also requires the local `HOMEGROWN_ADMIN_PASSWORD`. Never expose it to
+an untrusted network. The detailed,
 recoverable build procedure is in [docs/build.md](docs/build.md).
 
 The build prints a numbered ten-stage overview without a separate `PLAN`
@@ -230,8 +267,9 @@ docs/workflow.md   day-to-day Studio workflow
 
 - Do not commit `.env` files, model snapshots, generated audio, or local
   storage.
-- There is no sign-in, authentication, or multi-user isolation. Any client that
-  can reach the API can use all actions, including deletion. Never expose the
+- There are no accounts or general API authentication. Individual deletion and
+  other ordinary API actions are unauthenticated; permanent bulk deletion
+  additionally requires `HOMEGROWN_ADMIN_PASSWORD`. Never expose the
   development or packaged app to an untrusted network.
 - See [docs/gpu-notes.md](docs/gpu-notes.md) for local-GPU measurements and
   [engine/qwen/README.md](engine/qwen/README.md) for the vendored wrapper.

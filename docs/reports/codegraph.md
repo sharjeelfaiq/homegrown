@@ -1,5 +1,12 @@
 # Graph Report - homegrown  (2026-10-21)
 
+> **Historical snapshot, not a current code map.** This generated report was
+> built from commit `e0b07f41` before later reorganizations and feature changes.
+> Its symbol counts, file paths, communities, and dependency links describe that
+> revision only. Use the current source and `docs/architecture.md` for present
+> ownership; regenerate this report from a fresh CodeGraph index before relying
+> on graph findings. The index is not checked into this checkout.
+
 ## Corpus Check
 - 127 files · ~197,041 words
 - Verdict: corpus is large enough that graph structure adds value.

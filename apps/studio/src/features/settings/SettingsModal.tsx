@@ -115,7 +115,7 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
       title={confirm === 'history' ? 'Delete all generated voiceovers?' : 'Delete all uploaded voices?'}
       description={confirm === 'history'
         ? 'Permanently delete every generated voiceover, its transcript and audio, across all pages. Uploaded voices will be kept. Finish or cancel generation first. This cannot be undone.'
-        : 'Permanently delete every uploaded voice and its reference audio. Built-in voices and generated voiceovers will be kept. Finish cloning and finish or cancel generation first. This cannot be undone.'}
+        : 'Permanently delete every cloned voice and its reference audio. Generated voiceovers will be kept. Finish cloning and finish or cancel generation first. This cannot be undone.'}
       onClose={closeConfirmation}
       onConfirm={() => setPasswordStep(true)}
       closeOnConfirm={false}

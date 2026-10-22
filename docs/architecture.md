@@ -10,20 +10,41 @@ separate static site.
 mounts `app/App.tsx` inside `app/providers.tsx`. Provider order is Tooltip,
 Theme, QueryClient, BrowserRouter, AudioActivity, then GenerationActivity.
 
-`app/StudioShell.tsx` coordinates the feature modules under `features/`.
+`app/StudioShell.tsx` coordinates the feature modules under `features/` and
+owns Studio-level keyboard behavior. `hooks/useTypeToScript.ts` focuses the
+Script textarea on load and forwards eligible printable keys to it without
+intercepting searches, editable controls, menus, dialogs, modifiers, or IME
+composition. The Script editor owns clipboard paste and applies the remaining
+`MAX_SCRIPT_CHARS` capacity before reporting the new controlled value. Clipboard
+reads invoke the browser clipboard API directly; unavailable or denied reads
+produce a toast, while permission prompts are controlled by the browser. The
+editor's clear control is disabled for an empty script and clears its controlled
+value otherwise.
 `features/voices/useVoiceCloneQueue.tsx` owns the browser-local FIFO of selected
 reference files and their toast lifecycles. It serializes requests through the
 shell's upload callback, pauses while the model is unavailable, and releases
-waiting files on unmount. The API remains a single-file upload endpoint.
+waiting files on unmount. Multi-file selection and card drop feed this queue;
+the API remains a single-file upload endpoint. The queue is not persisted across
+page reloads.
 Feature tests live beside their implementation. Shared controls live under
 `components/ui`, playback views under `components/audio`, and canvas/WebGL
 effects under `components/effects`; their CSS is colocated. Shared hooks live
 under `hooks/`, while feature-specific hooks live with their feature.
 
-`lib/api.ts` uses same-origin API and media paths. `features/history` owns
-history query keys, persistence and pagination. `lib/audio` owns shared
-playback state; `lib/theme` owns theme state. `styles/tokens.css` is the palette
-source of truth.
+`lib/api.ts` uses same-origin API and media paths. `features/voices` owns the
+server-paged voice search and controls while `StudioShell` keeps the complete
+voice list for generation and Voiceovers filters. `GET /api/presets` searches
+case-insensitively and returns a matching total before slicing; only cloned
+voices are included. Legacy built-in rows remain stored for compatibility but
+are omitted from current voice choices. History responses mark entries tied to
+legacy built-in rows so filters omit them while history retains its original
+voice name, transcript, and audio. `features/history` owns history query keys,
+persistence, pagination, and the presentation of live generation rows beside
+paginated completed history. Completed rows use the
+shared audio player and compact script preview; their overflow menu owns
+transcript reuse and individual deletion. `lib/audio` owns shared playback
+state; `lib/theme` owns theme state. `styles/tokens.css` is the palette source
+of truth.
 
 Mascot sheets remain at `/mascots/`. The catalog generator writes
 `features/mascots/generated/mascotCatalog.ts`. Boneyard fixtures live under
@@ -38,8 +59,10 @@ Install dependencies using the existing `requirements.txt`. `pyproject.toml`
 declares package metadata; it does not replace or duplicate dependency pins.
 
 - `app.py` composes middleware, API routers, media mounts and the SPA fallback.
-- `config.py` resolves the existing `.env`, paths and generation limits.
-- `dependencies.py` supplies the fixed local-user dependency. There is no authentication.
+- `config.py` resolves the existing `.env`, paths, generation limits, and the
+  optional local bulk-delete password.
+- `dependencies.py` supplies the fixed local-user dependency and password gate
+  for permanent collection-wide deletion. There is no account authentication.
 - `lifespan.py` coordinates model probing/loading, queue restoration, worker
   startup and shutdown, and boot-status publication.
 - `generation/model.py` owns model and device state; `generation/worker.py`
@@ -56,6 +79,11 @@ declares package metadata; it does not replace or duplicate dependency pins.
   submissions whose preflight overlaps a bulk clear. Removed records are saved
   before media cleanup; responses identify deleted IDs and any files that could
   not be removed, allowing the UI to report partial cleanup accurately.
+- Ordinary API actions, including individual deletes, use the fixed local user
+  without a password. Only permanent collection-wide DELETE requests require
+  the configured `HOMEGROWN_ADMIN_PASSWORD` through a constant-time comparison;
+  an unset password rejects those requests. The Settings UI asks for it only in
+  the second confirmation step.
 - `routes/` exposes health, presets, generation, history, queue and download APIs.
 
 Mutable state is accessed through its owning module, so replacing a model or
@@ -78,6 +106,9 @@ Source organization does not migrate runtime data. Development `.env` and
 `storage/` remain under `services/voice-api`. Packaged storage and model paths
 retain their existing environment overrides and layout. Models, caches,
 virtual environments and generated audio are local data, not source files.
+The `.env.example` documents variable names only; the administrator password
+must remain in the ignored local `.env` and must never be copied into docs or
+committed.
 
 See [build.md](build.md) for release steps, [workflow.md](workflow.md) for usage,
 and [archive/](archive/) for historical context.

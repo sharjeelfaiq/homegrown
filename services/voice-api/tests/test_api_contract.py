@@ -95,6 +95,67 @@ class ApiContractTests(unittest.TestCase):
         actual = {p: set(methods) for p, methods in paths.items() if p.startswith('/api/')}
         self.assertEqual(actual, expected)
 
+    def test_presets_list_supports_search_and_bounded_pagination(self):
+        (config.REF_DIR / 'voice.mp3').write_bytes(b'audio')
+        names = ['Alpha', 'Bravo', 'Alpine', 'Charlie', 'ALTO']
+        stores._presets.extend({
+            'id': f'voice-{index}', 'name': name, 'user_id': 'local-user',
+            'language': 'English', 'audio_path': 'references/voice.mp3',
+            'ref_text': '',
+        } for index, name in enumerate(names))
+        stores._presets.append({
+            'id': 'unowned', 'name': 'Albatross', 'user_id': 'someone-else',
+            'language': 'English', 'audio_path': 'references/voice.mp3',
+            'ref_text': '',
+        })
+        stores._presets.append({
+            'id': 'builtin', 'name': 'Legacy speaker', 'user_id': 'local-user',
+            'is_builtin': True, 'language': 'English', 'audio_path': 'references/voice.mp3',
+            'ref_text': '',
+        })
+
+        full = self.client.get('/api/presets').json()
+        self.assertEqual([preset['name'] for preset in full['presets']], names)
+        self.assertEqual(full['total'], 5)
+        self.assertNotIn('Legacy speaker', [preset['name'] for preset in full['presets']])
+        self.assertNotIn('is_builtin', full['presets'][0])
+
+        page = self.client.get('/api/presets', params={'limit': 2, 'offset': 1}).json()
+        self.assertEqual([preset['name'] for preset in page['presets']], ['Bravo', 'Alpine'])
+        self.assertEqual(page['total'], 5)
+
+        matching = self.client.get('/api/presets', params={'q': '  al ', 'limit': 2, 'offset': 1}).json()
+        self.assertEqual([preset['name'] for preset in matching['presets']], ['Alpine', 'ALTO'])
+        self.assertEqual(matching['total'], 3)
+        self.assertEqual(self.client.get('/api/presets', params={'q': 'missing'}).json()['total'], 0)
+        self.assertEqual(self.client.get('/api/presets', params={'limit': 200}).json()['presets'].__len__(), 5)
+        self.assertEqual(self.client.get('/api/presets', params={'limit': 1, 'offset': 1000}).json()['presets'], [])
+        self.assertEqual(self.client.get('/api/presets', params={'q': 'legacy'}).json()['total'], 0)
+
+    def test_legacy_builtin_cannot_be_used_for_generation_or_managed_as_a_voice(self):
+        self.ready_voice()
+        stores._presets.append({
+            'id': 'builtin', 'name': 'Legacy speaker', 'user_id': 'local-user',
+            'is_builtin': True, 'language': 'English', 'audio_path': 'references/voice.mp3',
+            'ref_text': '',
+        })
+        payload = {'preset_id': 'builtin', 'text': 'A script.', 'language': 'English'}
+        response = self.client.post('/api/generate', json=payload)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()['detail'], 'Selected voice is unavailable. Choose a voice before generating.')
+        self.assertEqual(self.client.patch('/api/presets/builtin', json={'name': 'Changed'}).status_code, 404)
+        self.assertEqual(self.client.delete('/api/presets/builtin').status_code, 404)
+        self.assertEqual(self.client.get('/api/presets/builtin/download').status_code, 404)
+
+    def test_history_marks_legacy_builtin_without_rewriting_historical_entry(self):
+        stores._presets.append({'id': 'builtin', 'name': 'Legacy speaker', 'user_id': 'local-user', 'is_builtin': True})
+        historical = {'id': 'old', 'user_id': 'local-user', 'preset_id': 'builtin', 'preset_name': 'Legacy speaker', 'text': 'Old script.'}
+        stores._history.append(historical.copy())
+        response = self.client.get('/api/history')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['history'][0]['preset_is_builtin'])
+        self.assertEqual(stores._history[0], historical)
+
     def test_bulk_history_covers_all_pages_and_preserves_shared_and_unowned_media(self):
         shared = config.GEN_DIR / 'shared.wav'
         shared.write_bytes(b'audio')
@@ -242,6 +303,22 @@ class ApiContractTests(unittest.TestCase):
         self.assertNotIn(first, worker._jobs)
         self.assertEqual(worker._jobs[replacement]['attempt'], 2)
         self.assertEqual(worker._pending_job_ids, [second, replacement])
+
+    def test_startup_drops_queued_jobs_for_legacy_builtin_voices(self):
+        self.ready_voice()
+        stores._presets[0]['is_builtin'] = True
+        job_id = 'legacy-builtin-job'
+        config.QUEUE_FILE.write_text(json.dumps([{
+            'job_id': job_id, 'user_id': 'local-user', 'preset_id': 'voice',
+            'text': 'Must remain ungenerated.', 'language': 'English', 'style': 'natural',
+            'stability': 'balanced', 'submitted_at': 1,
+        }]))
+
+        worker._restore_queue_on_startup()
+
+        self.assertNotIn(job_id, worker._jobs)
+        self.assertEqual(worker._pending_job_ids, [])
+        self.assertEqual(json.loads(config.QUEUE_FILE.read_text()), [])
 
     def test_running_cancellation_closes_stream_without_publishing_audio(self):
         fake = self.ready_voice()

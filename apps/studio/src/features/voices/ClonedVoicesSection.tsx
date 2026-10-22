@@ -1,13 +1,14 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { Download as DownloadIcon, Ellipsis as EllipsisIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon, Upload as UploadIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download as DownloadIcon, Ellipsis as EllipsisIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon, Upload as UploadIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatToastTitle } from '../../lib/messageFormatting'
-import { mediaUrl, presetDownloadUrl, type Preset } from '../../lib/api'
+import { listPresets, mediaUrl, presetDownloadUrl, type Preset } from '../../lib/api'
 import { useAudioActivity } from '../../lib/audio/AudioActivityContext'
 import { useGenerationActivity } from '../generation/GenerationActivityContext'
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 import { Dropdown } from '../../components/ui/Dropdown'
+import DropdownSelect from '../../components/ui/DropdownSelect'
 import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
 import InlineName from '../../components/ui/InlineName'
 import { useVoiceCloneQueue } from './useVoiceCloneQueue'
@@ -40,6 +41,15 @@ export default function ClonedVoicesSection({
   onCloneBusyChange,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('')
+  const [pageSize, setPageSize] = useState(() => {
+    try {
+      const stored = Number(localStorage.getItem('homegrown.voicePageSize'))
+      return [10, 25, 50, 100].includes(stored) ? stored : 10
+    } catch { return 10 }
+  })
+  const [page, setPage] = useState(0)
+  const [pageResult, setPageResult] = useState<{ key: string; presets: Preset[]; total: number } | null>(null)
+  const pageRequest = useRef(0)
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
   const rootRef = useRef<HTMLElement | null>(null)
@@ -109,10 +119,47 @@ export default function ClonedVoicesSection({
   }
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase()
-  const filteredPresets = normalizedSearchQuery
-    ? presets.filter((preset) => preset.name.toLowerCase().includes(normalizedSearchQuery))
-    : presets
-  const cloneCount = presets.filter((preset) => !preset.is_builtin).length
+  const clonedPresets = presets.filter((preset) => !preset.is_builtin)
+  const allFilteredPresets = normalizedSearchQuery
+    ? clonedPresets.filter((preset) => preset.name.toLowerCase().includes(normalizedSearchQuery))
+    : clonedPresets
+  const pageKey = `${normalizedSearchQuery}\u0000${page}\u0000${pageSize}`
+  const activeResult = pageResult?.key === pageKey ? pageResult : null
+  const pageCount = Math.max(1, Math.ceil((activeResult?.total ?? allFilteredPresets.length) / pageSize))
+  const pageStart = pageCount <= 4 ? 0 : Math.max(0, Math.min(page - 2, pageCount - 5))
+  const pageButtons = Array.from({ length: Math.min(pageCount, pageCount <= 4 ? 4 : 5) }, (_, index) => pageStart + index)
+  const liveById = new Map(clonedPresets.map((preset) => [preset.id, preset]))
+  const serverRecords = activeResult?.presets
+    .map((preset) => liveById.get(preset.id))
+    .filter((preset): preset is Preset => preset !== undefined && (!normalizedSearchQuery || preset.name.toLowerCase().includes(normalizedSearchQuery))) ?? null
+  const firstServerPresetId = serverRecords?.[0]?.id
+  const firstServerIndex = firstServerPresetId ? clonedPresets.findIndex((preset) => preset.id === firstServerPresetId) : -1
+  const localAdditions = page === 0 && firstServerIndex > 0
+    ? allFilteredPresets.slice(0, firstServerIndex).filter((preset) => !serverRecords?.some((record) => record.id === preset.id))
+    : []
+  const visiblePresets = (serverRecords ? [...localAdditions, ...serverRecords] : allFilteredPresets.slice(page * pageSize, (page + 1) * pageSize)).slice(0, pageSize)
+  const voiceTotal = activeResult?.total ?? allFilteredPresets.length
+  useEffect(() => {
+    let current = true
+    const requestId = ++pageRequest.current
+    listPresets({ limit: pageSize, offset: page * pageSize, q: normalizedSearchQuery })
+      .then((result) => {
+        if (!current || requestId !== pageRequest.current) return
+        setPageResult({ key: pageKey, presets: result.presets, total: result.total })
+        const lastPage = Math.max(0, Math.ceil(result.total / pageSize) - 1)
+        setPage((active) => Math.min(active, lastPage))
+      })
+      .catch(() => {
+        if (current && requestId === pageRequest.current) setPageResult(null)
+      })
+    return () => { current = false }
+  }, [page, pageSize, normalizedSearchQuery, presets, pageKey])
+  useEffect(() => { setPage((current) => Math.min(current, pageCount - 1)) }, [pageCount])
+  useEffect(() => { setPage(0) }, [normalizedSearchQuery, pageSize])
+  function changePageSize(value: number) {
+    setPageSize(value)
+    try { localStorage.setItem('homegrown.voicePageSize', String(value)) } catch { /* Storage may be unavailable. */ }
+  }
   const cloneDisabled = !modelReady
   const cloneTooltip = modelLoading
     ? 'Voice model is loading — this can take up to 3 minutes.'
@@ -158,7 +205,6 @@ export default function ClonedVoicesSection({
         </div>
       </div>
       <div className="history-context-toolbar cloned-voices-toolbar flex shrink-0 items-center gap-2 text-[11px] text-muted" role="toolbar" aria-label="Cloned voice actions">
-        <span role="status">Cloned voices · {cloneCount}</span>
         <input
           ref={voiceUploadRef}
           type="file"
@@ -172,7 +218,7 @@ export default function ClonedVoicesSection({
             enqueueVoiceFiles(files)
           }}
         />
-        <span className="ml-auto inline-flex shrink-0">
+        <span className="inline-flex shrink-0">
           <AppTooltip content={cloneTooltip}>
             <button
               type="button"
@@ -188,19 +234,14 @@ export default function ClonedVoicesSection({
           </AppTooltip>
         </span>
       </div>
-      {presets.length === 0 ? (
+      {clonedPresets.length === 0 ? (
         <p className="cloned-voices-empty m-0 text-[12px] text-faint">{loading ? 'Loading your voices…' : 'No voices yet — add one to get started.'}</p>
       ) : (
+        <>
         <ul className="result-list cloned-voices-list" role="listbox" onKeyDown={onListKeyDown}>
-          {filteredPresets.length === 0 ? (
+          {visiblePresets.length === 0 ? (
             <li className="list-none px-2 py-3 text-[12px] text-faint" role="presentation">No matching voices.</li>
-          ) : filteredPresets.map((preset, index) => (
-            <Fragment key={preset.id}>
-            {preset.is_builtin && (index === 0 || preset.is_builtin !== filteredPresets[index - 1].is_builtin) && (
-              <li key={`${preset.id}-heading`} className="list-none px-2 py-2 text-[11px] font-medium uppercase tracking-[0.12em] text-faint" role="presentation">
-                Built-in voices
-              </li>
-            )}
+          ) : visiblePresets.map((preset) => (
             <li
               key={preset.id}
               className={`voice-menu-pick -mx-2 flex min-h-9 items-center gap-1 border-b border-hairline px-2 last:border-b-0 hover:bg-surface-hover focus:bg-surface-hover focus:outline-none ${preset.id === selectedPresetId ? 'voice-menu-pick-selected' : ''}`}
@@ -217,13 +258,12 @@ export default function ClonedVoicesSection({
             >
               <span className="flex min-w-0 flex-1 items-center">
                 <span className="min-w-0 flex-1" onKeyDown={(event) => event.stopPropagation()}>
-                  {preset.is_builtin ? <span className="result-name voice-picker-name">{preset.name}</span> : <InlineName value={preset.name} placeholder="Name this voice" ariaLabel={`Name of voice ${preset.name}`} title={`“${preset.name}” — use the pencil to edit voice name`} onCommit={(next, opts) => onRename(preset.id, next, opts)} minChars={1} className="result-name voice-picker-name" editOnPencil />}
+                  <InlineName value={preset.name} placeholder="Name this voice" ariaLabel={`Name of voice ${preset.name}`} title={`“${preset.name}” — use the pencil to edit voice name`} onCommit={(next, opts) => onRename(preset.id, next, opts)} minChars={1} className="result-name voice-picker-name" editOnPencil />
                 </span>
                 {runningPresetIds.has(preset.id) && <span className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`} aria-hidden="true" />}
               </span>
               <span className="ml-auto flex flex-none items-center gap-0.5" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                 <AppTooltip content={previewingId === preset.id ? 'Stop preview' : 'Preview voice'}><button type="button" className="icon-btn" aria-label={previewingId === preset.id ? `Stop preview of ${preset.name}` : `Preview ${preset.name}`} onClick={() => void togglePreview(preset)}>{previewingId === preset.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}</button></AppTooltip>
-                {!preset.is_builtin && <>
                 <AppTooltip content="Download reference clip"><a href={presetDownloadUrl(preset.id)} download className="icon-btn" aria-label={`Download ${preset.name} reference clip`}><DownloadIcon size={13} /></a></AppTooltip>
                 <Dropdown.Root>
                   <AppTooltip content="More voice actions">
@@ -232,11 +272,54 @@ export default function ClonedVoicesSection({
                   <Dropdown.Content side="bottom" align="end" sideOffset={4} className="row-actions-menu">
                     <Dropdown.Item className="dropdown-menu-item dropdown-menu-item-danger gap-2" onClick={() => { stopPreview(); setDeletePreset(preset) }}><TrashIcon size={14} aria-hidden="true" /> Delete</Dropdown.Item>
                   </Dropdown.Content>
-                </Dropdown.Root></>}
+                </Dropdown.Root>
               </span>
-            </li></Fragment>
+            </li>
           ))}
         </ul>
+        <div className="voiceover-pager cloned-voices-pager" aria-label="Voice pagination">
+          <label className="flex items-center gap-1.5 text-[10px] text-faint">
+            <span className="mono uppercase tracking-[0.08em]">Per page</span>
+            <DropdownSelect
+              className="dropdown-select-compact px-1.5"
+              value={String(pageSize)}
+              ariaLabel="Voices per page"
+              placeholder="Select page size"
+              options={[10, 25, 50, 100].map((size) => ({ value: String(size), label: String(size) }))}
+              onValueChange={(value) => changePageSize(Number(value))}
+            />
+          </label>
+          <nav
+            aria-label="Cloned voice pages"
+            className={pageCount > 1 ? undefined : 'is-disabled'}
+            aria-disabled={pageCount > 1 ? undefined : true}
+            inert={pageCount <= 1}
+          >
+            <ul className="voiceover-pager-list">
+              <li className="voiceover-pager-prev">
+                <AppTooltip content="Previous page">
+                  <button type="button" aria-label="Previous page" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>
+                    <ChevronLeft size={14} aria-hidden="true" />
+                  </button>
+                </AppTooltip>
+              </li>
+              {pageButtons.map((index) => (
+                <li key={index} className={`voiceover-pager-page ${page === index ? 'is-active' : ''}`}>
+                  <button type="button" aria-label={`Page ${index + 1}`} aria-current={page === index ? 'page' : undefined} onClick={() => setPage(index)}>{index + 1}</button>
+                </li>
+              ))}
+              <li className="voiceover-pager-next">
+                <AppTooltip content="Next page">
+                  <button type="button" aria-label="Next page" disabled={page >= pageCount - 1} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}>
+                    <ChevronRight size={14} aria-hidden="true" />
+                  </button>
+                </AppTooltip>
+              </li>
+            </ul>
+          </nav>
+          <span className="voiceover-pager-count" aria-label="Total voices">{voiceTotal} voices</span>
+        </div>
+        </>
       )}
       <ConfirmDeleteModal
         open={deletePreset !== null}
