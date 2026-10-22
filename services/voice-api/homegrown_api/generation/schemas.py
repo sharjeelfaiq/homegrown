@@ -36,6 +36,7 @@ class QueueEntry(BaseModel):
     # and matching on NAME alone mismarks the wrong voice as soon as two share
     # one -- renaming is free in this app, so that is not a hypothetical.
     preset_id: str
+    language: str
     preset_name: str
     text_preview: str
     status: str
@@ -55,6 +56,7 @@ class QueueScriptResponse(BaseModel):
     """The full script for an explicitly requested pending-job reuse."""
     text: str
     preset_id: str
+    language: str
 
 
 class ReorderRequest(BaseModel):

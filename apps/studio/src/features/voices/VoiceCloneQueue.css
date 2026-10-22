@@ -1,0 +1,11 @@
+.voice-clone-waiting .status-mark__glyph {
+  animation: voice-clone-wait 2.4s linear infinite;
+}
+
+@keyframes voice-clone-wait {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-clone-waiting .status-mark__glyph { animation: none; }
+}

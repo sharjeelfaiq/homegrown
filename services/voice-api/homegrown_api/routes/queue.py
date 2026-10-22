@@ -47,7 +47,7 @@ def get_queue_script(
         job = generation_worker._jobs.get(job_id)
         if job is None or job.get("user_id") != user_id:
             raise HTTPException(404, "Unknown job_id")
-        return generation_schemas.QueueScriptResponse(text=job["text"], preset_id=job["preset_id"])
+        return generation_schemas.QueueScriptResponse(text=job["text"], preset_id=job["preset_id"], language=job["language"])
 
 
 @router.post("/api/queue/{job_id}/cancel")

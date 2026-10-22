@@ -7,14 +7,14 @@ import HistoryList from '../features/history/HistoryList'
 import { restoreVoiceoverFilters, type VoiceoverFilterState } from '../features/history/VoiceoverFilters'
 import GenerateButton from '../features/generation/GenerateButton'
 import MascotPicker from '../features/mascots/MascotPicker'
-import { UNDO_MS } from '../lib/constants'
 import { MAX_SCRIPT_CHARS } from '../features/generation/constants'
 import { presetNameFromFile } from '../lib/format'
-import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Settings as SettingsIcon, Trash2 as TrashIcon } from 'lucide-react'
+import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Settings as SettingsIcon } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
 import { useGenerationActivity } from '../features/generation/GenerationActivityContext'
 import { useJobToasts } from '../features/generation/useJobToasts'
 import { usePersistedDraft } from '../features/generation/usePersistedDraft'
+import { useReuseVoiceover } from '../features/generation/useReuseVoiceover'
 import { useErrorToast } from '../hooks/useErrorToast'
 import { useTheme } from '../lib/theme/ThemeContext'
 import { themeMode } from '../lib/theme/theme'
@@ -25,7 +25,7 @@ import Modal from '../components/ui/Modal'
 import CursorGrid from '../components/effects/CursorGrid'
 import BootOverlay from '../features/startup/BootOverlay'
 import StatusMark from '../components/ui/StatusMark'
-import UndoCountdown from '../components/ui/UndoCountdown'
+import { showUndoDeleteToast } from '../components/ui/UndoDeleteToast'
 import { useOnboardingTour } from '../features/onboarding/useOnboardingTour'
 import {
   ApiError,
@@ -81,17 +81,13 @@ export default function StudioShell() {
   const [faultSeenAt, setFaultSeenAt] = useState<number | null>(null)
 
   const [presets, setPresets] = useState<Preset[]>([])
-  const voiceDeleteTimers = useRef(new Map<number, string | number>())
+  const voiceDeleteTimers = useRef(new Set<() => void>())
   useEffect(() => () => {
-    for (const [timer, toastId] of voiceDeleteTimers.current) {
-      window.clearTimeout(timer)
-      toast.dismiss(toastId)
-    }
+    for (const cancel of voiceDeleteTimers.current) cancel()
     voiceDeleteTimers.current.clear()
   }, [])
   const [voiceId, setVoiceId] = useState<string | null>(null)
 
-  const [creatingPreset, setCreatingPreset] = useState(false)
   // Separate from the composer's `error` so upload failures can keep their
   // specific toast title.
   const [voiceError, setVoiceError] = useState<string | null>(null)
@@ -139,13 +135,13 @@ export default function StudioShell() {
   const scriptRef = useRef<HTMLTextAreaElement>(null)
 
   // Keep one persistent toast visible throughout the initial model load. Use
-  // the same indeterminate StatusMark spinner shown by the Clone voice action.
+  // the same indeterminate StatusMark spinner shown by the voice-cloning toast.
   useEffect(() => {
     if (modelStatus === 'checking') {
       toast('Voice model is loading', {
         id: MODEL_LOADING_TOAST_ID,
         duration: Infinity,
-        icon: <StatusMark status="running" size={16} strokeWidth={2.2} color="var(--progress)" strike={false} />,
+        icon: <StatusMark status="running" size={18} strokeWidth={2.2} color="var(--progress)" strike={false} />,
       })
     } else {
       toast.dismiss(MODEL_LOADING_TOAST_ID)
@@ -285,27 +281,16 @@ export default function StudioShell() {
     // The Clone voice button is not the only route to this operation: a file
     // can also be dropped over the page. Keep that path behind the same model
     // readiness gate so it cannot bypass the disabled button during startup.
-    if (creatingPreset || modelStatus !== 'ready' || warmingUp) return 'failed'
-    setCreatingPreset(true)
+    if (modelStatus !== 'ready' || warmingUp) return 'failed'
     setVoiceError(null)
-    try {
-      // Language is a fallback, not a choice: the backend replaces it with
-      // whatever faster-whisper detected in the recording itself.
-      const preset = await createPreset(
-        presetNameFromFile(file.name),
-        file,
-        '',
-        LANGUAGE_FALLBACK,
-      )
-      setPresets((prev) => [preset, ...prev])
-      setVoiceId(preset.id) // a voice you just made is the one you want to use
-      return 'done'
-    } catch (e) {
-      setVoiceError(e instanceof ApiError ? e.message : 'Failed to add the voice')
-      return 'failed'
-    } finally {
-      setCreatingPreset(false)
-    }
+    // The queue owns per-file feedback and continues after a rejected request.
+    // Language falls back to what faster-whisper detects in the recording.
+    const preset = await createPreset(
+      presetNameFromFile(file.name), file, '', LANGUAGE_FALLBACK,
+    )
+    setPresets((prev) => [preset, ...prev])
+    setVoiceId(preset.id)
+    return 'done'
   }
 
   async function handleRenamePreset(id: string, name: string, opts?: { unloading?: boolean }) {
@@ -351,26 +336,17 @@ export default function StudioShell() {
         : [...prev.slice(0, Math.min(index, prev.length)), doomed, ...prev.slice(Math.min(index, prev.length))])
       if (wasSelected) setVoiceId(id)
     }
-    const timer = window.setTimeout(() => {
-      voiceDeleteTimers.current.delete(timer)
-      void deletePreset(id).catch((e: unknown) => {
+    const cancel = showUndoDeleteToast({
+      label: doomed.name,
+      onDelete: () => deletePreset(id).then(() => {}),
+      onUndo: restoreVoice,
+      onError: (e) => {
         restoreVoice()
         setError(e instanceof ApiError ? e.message : 'Failed to delete voice')
-      })
-    }, UNDO_MS)
-    const toastId = toast(`${doomed.name} deleted`, {
-      duration: UNDO_MS,
-      icon: <TrashIcon size={15} />,
-      action: {
-        label: <span className="inline-flex items-center gap-1.5">Undo<UndoCountdown ms={UNDO_MS} /></span>,
-        onClick: () => {
-          window.clearTimeout(timer)
-          voiceDeleteTimers.current.delete(timer)
-          restoreVoice()
-        },
       },
+      onSettled: () => voiceDeleteTimers.current.delete(cancel),
     })
-    voiceDeleteTimers.current.set(timer, toastId)
+    voiceDeleteTimers.current.add(cancel)
   }
 
   async function handleDeleteHistory(id: string) {
@@ -390,30 +366,19 @@ export default function StudioShell() {
     }
   }
 
-  function reuseScript(text: string, presetId: string) {
-    const previous = script
-    const replacing = previous.trim() !== '' && previous !== text
-    setScript(text)
-    setVoiceId(presetId)
-    scriptRef.current?.focus()
-    if (!replacing) {
-      toast('Transcript ready to reuse')
-      return
-    }
-    toast('Script replaced', {
-      description: 'The script you had written was swapped out.',
-      action: { label: 'Undo', onClick: () => setScript(previous) },
-    })
-  }
+  const reuseScript = useReuseVoiceover({
+    script, voiceId, language: languageOverride, languages,
+    setScript, setVoiceId, setLanguage: setLanguageOverride, textareaRef: scriptRef,
+  })
 
   function handleRequeue(entry: HistoryEntry) {
-    reuseScript(entry.text, entry.preset_id)
+    reuseScript(entry.text, entry.preset_id, entry.language)
   }
 
   async function handleReuseQueued(job: import('../lib/api').QueueEntry) {
     try {
       const script = await getQueueScript(job.job_id)
-      reuseScript(script.text, script.preset_id)
+      reuseScript(script.text, script.preset_id, script.language)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Failed to load queued script')
     }
@@ -434,6 +399,10 @@ export default function StudioShell() {
             ? 'Pick a voice before generating.'
             : 'Write a script before generating.',
       )
+      return
+    }
+    if (languageOverride == null) {
+      setError('Select a language before generating.')
       return
     }
     setError(null)
@@ -464,7 +433,7 @@ export default function StudioShell() {
       await startGenerate({
         presetId: selectedVoice.id,
         text: script,
-        language: languageOverride ?? selectedVoice.language ?? LANGUAGE_FALLBACK,
+        language: languageOverride,
       })
       setScript('')
       refreshQueue()
@@ -640,7 +609,6 @@ export default function StudioShell() {
             loading={modelStatus === 'checking'}
             modelReady={modelReady}
             modelLoading={modelLoading}
-            creatingVoice={creatingPreset}
             onAddVoice={handleAddVoice}
             onDelete={handleDeletePreset}
           />
@@ -808,8 +776,8 @@ export default function StudioShell() {
           unstyled: true,
           classNames: {
             toast:
-              'flex w-full items-start gap-2.5 rounded-md border border-control bg-surface-card px-3.5 py-3 text-[13px] leading-[1.45] text-ink shadow-(--shadow-menu)',
-            content: 'flex min-w-0 flex-1 flex-col gap-0.5',
+              'flex w-full items-center gap-2.5 rounded-md border border-control bg-surface-card px-3.5 py-3 text-[13px] leading-[1.45] text-ink shadow-(--shadow-menu)',
+            content: 'flex min-w-0 flex-1 flex-col justify-center gap-0.5',
             title: 'text-[13px] font-medium text-ink',
             // text-muted! -- the important modifier is load-bearing, and this is
             // the one place `unstyled` does NOT win outright. Sonner gates its
@@ -820,13 +788,11 @@ export default function StudioShell() {
             // out rgb(232,232,232) at 13.4:1 -- brighter than the muted tone it
             // was meant to be, so the title lost its lead.
             description: 'text-[12px] leading-[1.45] text-muted!',
-            // mt-px nudges the icon onto the title's optical baseline; the cap
-            // height of 13px text does not start at the top of its line box.
-            icon: 'mt-px flex size-[15px] flex-none items-center justify-center',
+            icon: 'flex size-[18px] flex-none items-center justify-center',
             success: '[&_[data-icon]]:text-green',
             error: '[&_[data-icon]]:text-danger',
-            actionButton: 'ghost-btn ml-2 h-7 flex-none px-2.5 text-[12px]',
-            closeButton: 'icon-btn ml-1 flex-none self-start',
+            actionButton: 'ghost-btn ml-2 inline-flex h-7 flex-none items-center justify-center px-2.5 text-[12px]',
+            closeButton: 'icon-btn ml-1 flex-none self-center',
           },
         }}
       />

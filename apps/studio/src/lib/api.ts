@@ -76,6 +76,8 @@ export interface QueueEntry {
   /** Matched against a voice's id. The name is NOT a safe key -- two voices
    *  can share one, and renaming is free here. */
   preset_id: string
+  /** Generation language; absent only on older backend responses. */
+  language?: string
   preset_name: string
   text_preview: string
   status: JobStatusValue
@@ -96,6 +98,8 @@ export interface QueueEntry {
 interface QueueScript {
   text: string
   preset_id: string
+  /** Generation language; absent only on older backend responses. */
+  language?: string
 }
 
 interface ApiErrorBody {

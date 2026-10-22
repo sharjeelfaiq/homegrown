@@ -22,10 +22,9 @@ import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 import { Dropdown } from '../../components/ui/Dropdown'
 import DropdownSelect from '../../components/ui/DropdownSelect'
 import { AppTooltip } from '../../components/ui/Tooltip'
-import { UNDO_MS } from '../../lib/constants'
 import InlineName from '../../components/ui/InlineName'
 import VoiceoverPlayer from '../../components/audio/VoiceoverPlayer'
-import UndoCountdown from '../../components/ui/UndoCountdown'
+import { showUndoDeleteToast } from '../../components/ui/UndoDeleteToast'
 import { ArrowDown as ArrowDownIcon, ArrowUp as ArrowUpIcon, Check as CheckIcon, ChevronLeft, ChevronRight, X as CrossIcon, Download as DownloadIcon, Ellipsis as MoreIcon, Play as PlayIcon, Trash2 as TrashIcon, WandSparkles as WandIcon } from 'lucide-react'
 import type { VoiceoverFilterState } from './VoiceoverFilters'
 import VoiceoverFilters from './VoiceoverFilters'
@@ -835,13 +834,10 @@ export default function HistoryList({
   const [reordering, setReordering] = useState(false)
 
   const [deleteRequest, setDeleteRequest] = useState<{ id: string; label: string } | null>(null)
-  const deleteTimers = useRef(new Map<number, string | number>())
+  const deleteTimers = useRef(new Set<() => void>())
 
   useEffect(() => () => {
-    for (const [timer, toastId] of deleteTimers.current) {
-      window.clearTimeout(timer)
-      toast.dismiss(toastId)
-    }
+    for (const cancel of deleteTimers.current) cancel()
     deleteTimers.current.clear()
   }, [])
 
@@ -1129,29 +1125,16 @@ export default function HistoryList({
   function confirmDelete() {
     if (!deleteRequest) return
     const { id, label } = deleteRequest
-    const timer = window.setTimeout(() => {
-      deleteTimers.current.delete(timer)
-      void (async () => {
-        try {
-          await onDelete(id)
-          removeFileName(id)
-        } catch (e) {
-          onError(e instanceof ApiError ? e.message : `Failed to delete ${label}`)
-        }
-      })()
-    }, UNDO_MS)
-    const toastId = toast(`${label} deleted`, {
-      duration: UNDO_MS,
-      icon: <TrashIcon size={15} />,
-      action: {
-        label: <span className="inline-flex items-center gap-1.5">Undo<UndoCountdown ms={UNDO_MS} /></span>,
-        onClick: () => {
-          window.clearTimeout(timer)
-          deleteTimers.current.delete(timer)
-        },
+    const cancel = showUndoDeleteToast({
+      label,
+      onDelete: async () => {
+        await onDelete(id)
+        removeFileName(id)
       },
+      onError: (e) => onError(e instanceof ApiError ? e.message : `Failed to delete ${label}`),
+      onSettled: () => deleteTimers.current.delete(cancel),
     })
-    deleteTimers.current.set(timer, toastId)
+    deleteTimers.current.add(cancel)
     setDeleteRequest(null)
   }
 

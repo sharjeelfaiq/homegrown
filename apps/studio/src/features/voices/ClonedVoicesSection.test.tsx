@@ -2,9 +2,16 @@
 import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import type { ExternalToast } from 'sonner'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ClonedVoicesSection from './ClonedVoicesSection'
 import type { Preset } from '../../lib/api'
+
+const toastMock = vi.hoisted(() => Object.assign(
+  vi.fn((_message: string, options: ExternalToast): string => String(options.id ?? `cloning-toast-${toastMock.mock.calls.length}`)),
+  { dismiss: vi.fn(), error: vi.fn() },
+))
+vi.mock('sonner', () => ({ toast: toastMock }))
 
 vi.mock('framer-motion', () => ({ AnimatePresence: ({ children }: { children: ReactNode }) => children, motion: { div: 'div', ul: 'ul' } }))
 vi.mock('../../hooks/usePrefersReducedMotion', () => ({ usePrefersReducedMotion: () => false }))
@@ -33,14 +40,13 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof ClonedVoic
     onDelete: vi.fn(async () => {}),
     modelReady: true,
     modelLoading: false,
-    creatingVoice: false,
     onAddVoice: vi.fn().mockResolvedValue('done'),
     ...overrides,
   }
-  return render(<ClonedVoicesSection {...props} />)
+  return { ...render(<ClonedVoicesSection {...props} />), props }
 }
 
-afterEach(() => { cleanup(); vi.useRealTimers() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks() })
 
 describe('ClonedVoicesSection', () => {
   it('keeps the search input and all cloned voices visible', () => {
@@ -120,12 +126,15 @@ describe('ClonedVoicesSection', () => {
     expect(container.querySelector('[data-tooltip="Voice model is loading — this can take up to 3 minutes."]')).toBeTruthy()
   })
 
-  it('keeps the cloning status in the right-aligned Clone voice action slot', () => {
-    const { container } = renderSection({ creatingVoice: true })
+  it('keeps the original Clone voice label and upload icon while cloning', () => {
+    const { container } = renderSection({ onAddVoice: () => new Promise(() => {}) })
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['audio'], 'voice.wav', { type: 'audio/wav' })] } })
     const action = container.querySelector('.clone-voice-button')
-    expect(action).toBeDisabled()
-    expect(action).toHaveAttribute('aria-busy', 'true')
-    expect(screen.getByText('Cloning…')).toBeInTheDocument()
+    expect(action).toBeEnabled()
+    expect(action).not.toHaveAttribute('aria-busy')
+    expect(screen.getByRole('button', { name: 'Clone voice' })).toHaveTextContent('Clone voice')
+    expect(action?.querySelector('.lucide-upload')).toBeTruthy()
+    expect(action?.querySelector('[data-status]')).toBeNull()
     expect(action?.parentElement?.parentElement).toHaveClass('ml-auto')
     expect(screen.getByRole('status')).toHaveTextContent('Cloned voices · 2')
   })
@@ -164,16 +173,64 @@ describe('ClonedVoicesSection', () => {
     expect(onAddVoice).toHaveBeenCalledWith(file)
   })
 
-  it.each(['done', 'failed'] as const)('shows %s briefly after cloning a voice', async (result) => {
-    vi.useFakeTimers()
-    const onAddVoice = vi.fn().mockResolvedValue(result)
+  it.each(['done', 'failed'] as const)('keeps the button unchanged and completes the cloning toast after %s', async (result) => {
+    let finish!: (value: 'done' | 'failed') => void
+    const onAddVoice = vi.fn(() => new Promise<'done' | 'failed'>((resolve) => { finish = resolve }))
     const { container } = renderSection({ onAddVoice })
-    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['audio'], 'voice.wav', { type: 'audio/wav' })] } })
-    expect(container.querySelector('[data-status="running"]')).toBeTruthy()
-    await act(async () => { await Promise.resolve() })
+    const button = screen.getByRole('button', { name: 'Clone voice' })
+    const originalContents = button.innerHTML
+    const input = container.querySelector('input[type="file"]')!
+    const file = new File(['audio'], 'voice.wav', { type: 'audio/wav' })
+    fireEvent.change(input, { target: { files: [file] } })
+    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is getting cloned.', expect.objectContaining({ duration: Infinity }))
+    expect(toastMock.mock.calls.find(([message]) => message === 'Your uploaded voice is getting cloned.')![1].icon).toMatchObject({ props: { status: 'running', size: 18, color: 'var(--progress)' } })
+    expect(button.innerHTML).toBe(originalContents)
+    expect(toastMock.dismiss).not.toHaveBeenCalled()
     expect(onAddVoice).toHaveBeenCalledTimes(1)
-    expect(container.querySelector(`[data-status="${result}"]`)).toBeTruthy()
-    act(() => { vi.advanceTimersByTime(2000) })
-    expect(container.querySelector('[data-status]')).toBeNull()
+    await act(async () => { finish(result) })
+    if (result === 'done') {
+      expect(toastMock.dismiss).not.toHaveBeenCalled()
+      expect(toastMock).toHaveBeenLastCalledWith('Your voice has been cloned.', expect.objectContaining({
+        id: 'cloning-toast-1', duration: 1000,
+        icon: expect.objectContaining({ props: expect.objectContaining({ status: 'done', doneColor: 'var(--green)' }) }),
+      }))
+    } else {
+      expect(toastMock.dismiss).toHaveBeenCalledWith('cloning-toast-1')
+      expect(toastMock).toHaveBeenCalledTimes(2)
+    }
+    expect(button.innerHTML).toBe(originalContents)
   })
+
+  it('shows the same cloning toast for a dropped file and clears it on unmount', async () => {
+    let finish!: (value: 'done') => void
+    const onAddVoice = vi.fn(() => new Promise<'done'>((resolve) => { finish = resolve }))
+    const { container, unmount } = renderSection({ onAddVoice })
+    const file = new File(['audio'], 'voice.wav', { type: 'audio/wav' })
+    fireEvent.drop(container.querySelector('.cloned-voices-section')!, { dataTransfer: { types: ['Files'], files: [file] } })
+    expect(onAddVoice).toHaveBeenCalledWith(file)
+    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is getting cloned.', expect.anything())
+    unmount()
+    expect(toastMock.dismiss).toHaveBeenCalledWith('cloning-toast-1')
+    await act(async () => { finish('done') })
+    expect(toastMock).toHaveBeenCalledTimes(2) // Never recreate a toast after unmount.
+  })
+  it.each(['picker', 'drop'] as const)('accepts multiple audio files from the %s and clones them in order', async (source) => {
+    const finish: Array<(result: 'done') => void> = []
+    const onAddVoice = vi.fn(() => new Promise<'done'>((resolve) => { finish.push(resolve) }))
+    const { container } = renderSection({ onAddVoice })
+    const input = container.querySelector('input[type="file"]')!
+    expect(input).toHaveAttribute('multiple')
+    const first = new File(['audio'], 'first.wav', { type: 'audio/wav' })
+    const second = new File(['audio'], 'second.mp3', { type: 'audio/mpeg' })
+    const files = [first, new File(['text'], 'notes.txt', { type: 'text/plain' }), second]
+    if (source === 'picker') fireEvent.change(input, { target: { files } })
+    else fireEvent.drop(container.querySelector('.cloned-voices-section')!, { dataTransfer: { types: ['Files'], files } })
+    expect(onAddVoice).toHaveBeenCalledExactlyOnceWith(first)
+    expect(screen.getByRole('button', { name: 'Clone voice' })).toBeEnabled()
+    expect(toastMock).toHaveBeenCalledWith('Your uploaded voice is waiting to be cloned.', expect.objectContaining({ description: second.name }))
+    await act(async () => { finish[0]('done') })
+    expect(onAddVoice).toHaveBeenNthCalledWith(2, second)
+    await act(async () => { finish[1]('done') })
+  })
+
 })

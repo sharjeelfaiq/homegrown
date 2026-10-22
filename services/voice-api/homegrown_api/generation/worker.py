@@ -378,6 +378,7 @@ def _queue_entry_locked(job_id: str) -> generation_schemas.QueueEntry:
     return generation_schemas.QueueEntry(
         job_id=job_id,
         preset_id=job["preset_id"],
+        language=job["language"],
         preset_name=job["preset_name"],
         text_preview=(text[:80] + "...") if len(text) > 80 else text,
         status=job["status"],

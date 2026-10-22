@@ -11,6 +11,10 @@ mounts `app/App.tsx` inside `app/providers.tsx`. Provider order is Tooltip,
 Theme, QueryClient, BrowserRouter, AudioActivity, then GenerationActivity.
 
 `app/StudioShell.tsx` coordinates the feature modules under `features/`.
+`features/voices/useVoiceCloneQueue.tsx` owns the browser-local FIFO of selected
+reference files and their toast lifecycles. It serializes requests through the
+shell's upload callback, pauses while the model is unavailable, and releases
+waiting files on unmount. The API remains a single-file upload endpoint.
 Feature tests live beside their implementation. Shared controls live under
 `components/ui`, playback views under `components/audio`, and canvas/WebGL
 effects under `components/effects`; their CSS is colocated. Shared hooks live

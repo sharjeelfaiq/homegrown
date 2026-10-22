@@ -108,8 +108,12 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   page size or System theme) selected instead of replacing them with prompts.
   Generation requires a non-empty script,
   an available voice, an explicitly selected script language, and a ready
-  model. The language choice is in-memory only — do not persist it or reset it
-  when the voice changes. `POST /api/generate` validates `language` against the
+  model. The composer language choice stays in memory and does not reset when the
+  voice changes. Each generated job and history entry retains its selected
+  language alongside its voice and transcript. Queue metadata exposes that
+  language too. Reuse restores all three fields; Undo restores the previous
+  composer snapshot. Legacy entries without a supported language require a
+  fresh selection. `POST /api/generate` validates `language` against the
   same table and returns 400 otherwise, so an unsupported value is a refused
   request rather than a failed job.
 - `ClonedVoicesSection.tsx` is the persistent voice-management card. It owns
@@ -123,11 +127,22 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   that fallback is ready only after its model initialization completes.
   While Studio is checking startup, it keeps a **Voice model is loading** toast
   with an indeterminate `StatusMark` spinner until readiness or failure.
-- Inline voice upload uses the ReactBits-style `StatusMark`: amber while
-  running, green after success, and red after failure. The final success or
-  failure mark is intentionally retained for two seconds before restoring the
-  Upload icon. Keep the status attributes (`data-status`) and that timing in
-  sync with `ClonedVoicesSection.test.tsx`.
+- Voice uploads keep the Clone voice label and Upload icon unchanged, and the
+  action stays available while cloning. File selection and card drops accept
+  multiple audio files and append them to a browser-local FIFO. Only one clone
+  request runs at a time; selecting more files never interrupts that request.
+- Each queued file has a persistent toast saying **Your uploaded voice is
+  waiting to be cloned.** with its filename and an animated dashed `StatusMark`.
+  When its turn starts, update that same toast to **Your uploaded voice is
+  getting cloned.** with the amber spinner. On success, update it to **Your
+  voice has been cloned.** with the animated green tick and dismiss after one
+  second. Start the next file as soon as the request settles, without waiting
+  for the success toast to expire. Errors identify the file and do not block
+  subsequent uploads. Waiting animation respects reduced motion.
+- Cloning cannot start before model readiness. Existing waiting files pause if
+  readiness is lost and resume when it returns. Unmounting drops pending files
+  and dismisses their toasts; an already submitted server request may finish.
+  The upload queue is not persisted across page reloads.
 - Backend startup failures are reported through a fixed, pulsing warning button
   at the lower-left of Studio; its modal shows the relevant message and Retry
   action when available. Do not put a failure banner above the Script editor.
@@ -174,7 +189,11 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - Live queued/running/failed rows come from `GenerationActivityContext`; do not
   fold them into completed-history cache data.
 - Voice/history deletes are deferred behind a seven-second Undo toast; unmount
-  cancels a pending delete. Queue cancellation is different:
+  cancels a pending delete. The toast uses the shared amber `StatusMark` ring
+  to show the remaining Undo time. At the deadline, remove Undo and show the
+  spinner until the request finishes; on success, animate a green check and
+  dismiss after one second. Toast hover must not pause the deletion deadline.
+  Queue cancellation is different:
   after the user confirms it, send it immediately and do not show an Undo timer
   toast. Keep this distinction in sync across the UI and API.
   A running job checks for cancellation between streamed audio pieces (about

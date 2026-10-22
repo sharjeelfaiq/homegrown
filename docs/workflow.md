@@ -55,8 +55,9 @@ presets, generated audio, or other clients.
 
 ## Create and manage voices
 
-Choose **Clone voice** in the Voices card or drop an audio file directly onto
-that card. Dropping a file elsewhere does not clone it. Uploads up to 30 minutes
+Choose **Clone voice** in the Voices card to select one or more audio files,
+or drag and drop multiple audio files directly onto that card. Dropping files
+elsewhere does not clone them. Uploads up to 30 minutes
 are accepted; clips longer
 than 40 seconds are shortened to the first 40 seconds of speech. A
 10–20-second, dry, close-mic recording is a useful starting point. The voice
@@ -80,7 +81,7 @@ pencil icon button to edit a name; it hides during editing and returns when
 editing ends. Use the row's **Play**,
 download, and **Delete** actions. Delete opens a confirmation with **Cancel** and
 **Delete**. Cancel leaves the voice untouched. Confirming hides the row and
-shows a seven-second **Undo** toast; Undo restores it. If the toast expires,
+shows a seven-second **Undo** toast; Undo restores it. When the countdown ends,
 the server deletes the preset and its reference audio. Preset deletion can make
 queued jobs using that voice fail.
 
@@ -89,10 +90,22 @@ locally and case-insensitively. Clicking a matching row selects it. An
 unmatched query shows **No matching voices.** without changing the stored voice
 selection.
 
-During an upload, the control replaces its icon with an animated lifecycle
-mark. It is amber while uploading, green after a successful upload, and red
-after a failed one. The green or red result stays visible for two seconds, then
-the control returns to its Upload icon.
+During cloning, the **Clone voice** label and Upload icon remain unchanged,
+and you can keep selecting or dropping more files. Each file joins the end of
+a queue; one voice is cloned at a time, in the order files were added.
+
+Waiting files show a **Your uploaded voice is waiting to be cloned.** toast
+with an animated dashed icon. When a file starts, the same toast changes to
+**Your uploaded voice is getting cloned.** with the amber spinner. Each toast
+includes its filename. Success changes the spinner into a green tick and says
+**Your voice has been cloned.** for one second. The next file starts immediately
+after the previous request finishes; a failed file shows an error and does not
+stop the remaining queue.
+
+The queue belongs to this open Studio page. Leaving or reloading the page drops
+files that have not started. A request already sent to the server can still
+finish. If the model temporarily becomes unavailable, waiting files pause
+until it is ready again.
 
 Voice names are stored by the API and appear on future voiceovers. Renaming a
 voice does not rewrite names already recorded in history. Reference downloads
@@ -158,13 +171,23 @@ Delete opens a confirmation with **Cancel** and **Delete**. Cancel leaves the
 voiceover untouched. Confirming schedules a server delete and shows a
 seven-second Undo toast. The row remains until the timer expires and the
 refreshed history no longer includes it. Undo cancels the pending request.
+Both voice and voiceover delete toasts use the same amber status ring as voice
+cloning. The ring shows remaining Undo time; hovering the toast does not extend
+that deadline. After seven seconds, Undo disappears and the ring spins while
+the server deletes the item. Successful deletion animates a green tick, then
+the toast disappears after one second. Failed requests keep the existing error
+feedback and rollback behavior.
+
 Leaving the page before the timer expires cancels the pending client-side delete;
 the history entry remains on the server. Each delete is a separate action; there
 is no batch-selection workflow.
 
-Reusing a finished voiceover's script fills the composer with that script and
-voice. If this replaces text already in the composer, the app offers a separate
-Undo for the text replacement.
+Reusing a finished voiceover's script fills the composer with its saved script,
+voice, and generation language. Reusing a queued job restores the same three
+fields. Each voiceover retains the language chosen for that generation, which
+can differ from the reference voice's language. Older entries without a saved
+language require choosing a language again. If this replaces text already in the composer, the app offers a separate
+Undo that restores the previous script, voice, and language.
 
 ## Persistence and startup
 

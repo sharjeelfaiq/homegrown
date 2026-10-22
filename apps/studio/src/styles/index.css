@@ -158,23 +158,6 @@
   }
 }
 
-/* The undo countdown ring, depleting over UNDO_MS.
-   
-   No shorthand in @theme above, unlike the other three: the duration is not a
-   constant here, it is UNDO_MS passed in from TypeScript as an inline
-   animation. Baking 7s into CSS would give the ring its own copy of a number
-   that lives in HistoryList, and the two would drift the first time anyone
-   retuned the undo window.
-   
-   The dasharray is set on the element from the same radius the SVG uses, so
-   this only has to move the offset from 0 to one full circumference
-   (50.265 at r=8). */
-@keyframes undo-sweep {
-  to {
-    stroke-dashoffset: 50.265;
-  }
-}
-
 @keyframes lattice-pulse {
   50% { opacity: 0.3; transform: scale(0.64); }
 }

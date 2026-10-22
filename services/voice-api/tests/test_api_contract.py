@@ -50,21 +50,21 @@ class ApiContractTests(unittest.TestCase):
     def ready_voice(self):
         fake = SimpleNamespace(sample_rate=24000)
         fake.model = SimpleNamespace(model=SimpleNamespace(config=SimpleNamespace(
-            talker_config=SimpleNamespace(codec_language_id={'english': 0})
+            talker_config=SimpleNamespace(codec_language_id={'english': 0, 'german': 1})
         )))
         model._tts = fake
         reference = config.REF_DIR / 'voice.mp3'
         reference.write_bytes(b'fixture')
         stores._presets.append({
-            'id': 'voice', 'name': 'Voice', 'user_id': 'local-user',
+            'id': 'voice', 'name': 'Voice', 'user_id': 'local-user', 'language': 'English',
             'audio_path': 'references/voice.mp3', 'ref_text': 'Reference speech.',
         })
         self.stack.enter_context(patch.object(budget, '_seq_budget', return_value=budget._Budget(200, 700, 1)))
         return fake
 
-    def submit(self, text='A script to generate.'):
+    def submit(self, text='A script to generate.', language='English'):
         response = self.client.post('/api/generate', json={
-            'preset_id': 'voice', 'text': text, 'language': 'English',
+            'preset_id': 'voice', 'text': text, 'language': language,
         })
         self.assertEqual(response.status_code, 202, response.text)
         return response.json()['job_id']
@@ -167,6 +167,38 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(json.loads(config.HISTORY_FILE.read_text()), [])
         self.assertFalse((config.GEN_DIR / 'clip.mp3').exists())
+
+    def test_selected_language_survives_queue_restart_generation_and_history_reload(self):
+        fake = self.ready_voice()  # Reference voice is English; request German narration.
+        transcript = 'Guten Tag. Dies ist ein deutscher Text.'
+        job_id = self.submit(transcript, language='German')
+        self.assertEqual(json.loads(config.QUEUE_FILE.read_text())[0]['language'], 'German')
+        worker._jobs.clear()
+        worker._pending_job_ids.clear()
+        worker._restore_queue_on_startup()
+        self.assertEqual(self.client.get('/api/queue').json()['queue'][0]['language'], 'German')
+        self.assertEqual(self.client.get(f'/api/queue/{job_id}/script').json(), {
+            'text': transcript, 'preset_id': 'voice', 'language': 'German',
+        })
+        # Run the real worker and persistence with a stubbed model/audio encoder.
+        from unittest.mock import Mock
+        fake.generate_voice_clone_streaming = Mock(return_value=iter([(np.ones(24000, dtype=np.float32), 24000, {})]))
+        worker._pending_job_ids.remove(job_id)
+        with patch.object(budget, '_chunk_duration_is_sane', return_value=True), patch.object(
+            worker.audio_stitcher, 'trim_edge_silence', side_effect=lambda audio, _sr: audio,
+        ), patch.object(
+            worker.audio_stitcher, 'stitch_audio', side_effect=lambda pieces, _sr, **_kwargs: np.concatenate(pieces),
+        ), patch.object(
+            worker.audio_convert, 'write_mp3', side_effect=lambda _audio, _sr, target: Path(target).write_bytes(b'mp3'),
+        ):
+            worker._process_job(job_id)
+        self.assertEqual(fake.generate_voice_clone_streaming.call_args.kwargs['language'], 'German')
+        stores._history = stores._load_json(config.HISTORY_FILE)
+        entry = self.client.get('/api/history').json()['history'][0]
+        self.assertEqual(entry['language'], 'German')
+        self.assertEqual(entry['preset_id'], 'voice')
+        self.assertEqual(entry['text'], transcript)
+        self.assertEqual(worker._jobs[job_id]['status'], 'done')
 
     def test_development_paths_stay_outside_the_package(self):
         service = Path(__file__).resolve().parents[1]

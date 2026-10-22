@@ -9,7 +9,7 @@ import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 import { Dropdown } from '../../components/ui/Dropdown'
 import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
 import InlineName from '../../components/ui/InlineName'
-import StatusMark, { type StatusMarkStatus } from '../../components/ui/StatusMark'
+import { useVoiceCloneQueue } from './useVoiceCloneQueue'
 import { AppTooltip } from '../../components/ui/Tooltip'
 
 interface Props {
@@ -20,7 +20,6 @@ interface Props {
   loading?: boolean
   modelReady: boolean
   modelLoading: boolean
-  creatingVoice: boolean
   onAddVoice: (file: File) => Promise<'done' | 'failed'>
   onDelete: (id: string) => Promise<void>
 }
@@ -34,41 +33,25 @@ export default function ClonedVoicesSection({
   loading = false,
   modelReady,
   modelLoading,
-  creatingVoice,
   onAddVoice,
   onDelete,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('')
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
-  const [uploadStatus, setUploadStatus] = useState<StatusMarkStatus | 'idle'>('idle')
   const rootRef = useRef<HTMLElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const previewRequestRef = useRef(0)
   const previewObjectUrlRef = useRef<string | null>(null)
   const voiceUploadRef = useRef<HTMLInputElement>(null)
-  const completionTimerRef = useRef<number | null>(null)
-  const inlineUploadRef = useRef(false)
+  const enqueueVoiceFiles = useVoiceCloneQueue({ modelReady, onAddVoice })
   const { setActiveAudio, releaseAudio } = useAudioActivity()
   const { runningPresetIds } = useGenerationActivity()
   const reduced = usePrefersReducedMotion()
 
   useEffect(() => () => {
-    if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current)
     if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current)
   }, [])
-
-  useEffect(() => {
-    if (creatingVoice) {
-      if (completionTimerRef.current !== null) {
-        window.clearTimeout(completionTimerRef.current)
-        completionTimerRef.current = null
-      }
-      setUploadStatus('running')
-    } else if (!inlineUploadRef.current && completionTimerRef.current === null) {
-      setUploadStatus('idle')
-    }
-  }, [creatingVoice])
 
   const stopPreview = useCallback(() => {
     previewRequestRef.current += 1
@@ -85,30 +68,6 @@ export default function ClonedVoicesSection({
     if (previewingId && !presets.some((preset) => preset.id === previewingId)) stopPreview()
   }, [presets, previewingId, stopPreview])
 
-  function showUploadResult(result: 'done' | 'failed') {
-    setUploadStatus(result)
-    if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current)
-    completionTimerRef.current = window.setTimeout(() => {
-      completionTimerRef.current = null
-      setUploadStatus('idle')
-    }, 2000)
-  }
-
-  async function handleVoiceFile(file: File) {
-    if (!modelReady || creatingVoice) return
-    inlineUploadRef.current = true
-    if (completionTimerRef.current !== null) {
-      window.clearTimeout(completionTimerRef.current)
-      completionTimerRef.current = null
-    }
-    setUploadStatus('running')
-    try {
-      showUploadResult(await onAddVoice(file))
-    } finally {
-      inlineUploadRef.current = false
-    }
-  }
-
   const [isDraggingVoiceFile, setIsDraggingVoiceFile] = useState(false)
 
   function hasFiles(event: { dataTransfer: DataTransfer | null }) {
@@ -119,11 +78,7 @@ export default function ClonedVoicesSection({
     if (!hasFiles(event)) return
     event.preventDefault()
     setIsDraggingVoiceFile(false)
-    if (!modelReady || creatingVoice) return
-    const file = event.dataTransfer.files?.[0]
-    if (file && (file.type.startsWith('audio/') || /\.(wav|mp3|m4a|flac|ogg|opus|webm|aac)$/i.test(file.name))) {
-      void handleVoiceFile(file)
-    }
+    enqueueVoiceFiles(Array.from(event.dataTransfer.files ?? []))
   }
 
   async function togglePreview(preset: Preset) {
@@ -155,8 +110,7 @@ export default function ClonedVoicesSection({
     ? presets.filter((preset) => preset.name.toLowerCase().includes(normalizedSearchQuery))
     : presets
   const cloneCount = presets.filter((preset) => !preset.is_builtin).length
-  const visibleUploadStatus = creatingVoice ? 'running' : uploadStatus
-  const cloneDisabled = creatingVoice || !modelReady
+  const cloneDisabled = !modelReady
   const cloneTooltip = modelLoading
     ? 'Voice model is loading — this can take up to 3 minutes.'
     : !modelReady
@@ -206,12 +160,13 @@ export default function ClonedVoicesSection({
           ref={voiceUploadRef}
           type="file"
           accept="audio/*"
+          multiple
           className="hidden"
           disabled={cloneDisabled}
           onChange={(event) => {
-            const file = event.target.files?.[0]
+            const files = Array.from(event.target.files ?? [])
             event.target.value = ''
-            if (file) void handleVoiceFile(file)
+            enqueueVoiceFiles(files)
           }}
         />
         <span className="ml-auto inline-flex shrink-0">
@@ -219,16 +174,13 @@ export default function ClonedVoicesSection({
             <button
               type="button"
               className="clone-voice-button inline-flex items-center gap-1.5 p-0 text-[11px] text-muted transition-colors hover:text-audio hover:underline disabled:cursor-default disabled:no-underline"
-              aria-label={creatingVoice ? 'Cloning voice' : 'Clone voice'}
-              aria-busy={creatingVoice}
+              aria-label="Clone voice"
               disabled={cloneDisabled}
               data-tour="add-voice"
               onClick={() => voiceUploadRef.current?.click()}
             >
-              {visibleUploadStatus === 'running' || visibleUploadStatus === 'done' || visibleUploadStatus === 'failed' ? (
-                <StatusMark status={visibleUploadStatus} size={14} strokeWidth={2.2} color="var(--progress)" doneColor="var(--green)" errorColor="var(--danger)" />
-              ) : <UploadIcon size={14} />}
-              <span>{creatingVoice ? 'Cloning…' : 'Clone voice'}</span>
+              <UploadIcon size={14} />
+              <span>Clone voice</span>
             </button>
           </AppTooltip>
         </span>
