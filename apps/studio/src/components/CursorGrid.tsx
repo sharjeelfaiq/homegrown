@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import './CursorGrid.css'
 
-export type CursorGridFalloff = 'linear' | 'smooth'
+type CursorGridFalloff = 'linear' | 'smooth'
 
-export interface CursorGridProps {
+interface CursorGridProps {
   /** A CSS colour or token. `var(--accent)` is resolved before Canvas draws. */
   color?: string
   cellSize?: number

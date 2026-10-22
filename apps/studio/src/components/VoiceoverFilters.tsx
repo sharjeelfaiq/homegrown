@@ -4,7 +4,7 @@ import type { HistoryEntry, Preset } from '../api'
 import DropdownSelect from './DropdownSelect'
 import { AppTooltip } from './Tooltip'
 
-export type VoiceoverStatus = 'all' | 'completed' | 'active' | 'failed'
+type VoiceoverStatus = 'all' | 'completed' | 'active' | 'failed'
 
 export interface VoiceoverFilterState {
   status: VoiceoverStatus
@@ -15,7 +15,7 @@ export interface VoiceoverFilterState {
   durationMax?: number
 }
 
-export const EMPTY_VOICEOVER_FILTERS: VoiceoverFilterState = { status: 'all' }
+const EMPTY_VOICEOVER_FILTERS: VoiceoverFilterState = { status: 'all' }
 
 export function restoreVoiceoverFilters(): VoiceoverFilterState {
   try {

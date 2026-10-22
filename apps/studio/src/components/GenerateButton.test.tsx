@@ -20,7 +20,7 @@ beforeEach(() => {
 describe('GenerateButton', () => {
   it('keeps the compact action and auxiliary feedback together for the editor footer', () => {
     const { container } = render(
-      <GenerateButton disabled blockedReason="Choose a voice first" busy={false} count={0} onClick={() => {}} />,
+      <GenerateButton disabled blockedReason="Choose a voice first" busy={false} onClick={() => {}} />,
     )
 
     const layout = container.querySelector('.generate-action')
@@ -38,7 +38,6 @@ describe('GenerateButton', () => {
       <GenerateButton
         disabled
         busy={false}
-        count={1}
         tooltip="Voice model is loading — this can take up to 3 minutes."
         onClick={() => {}}
       />,
@@ -52,7 +51,7 @@ describe('GenerateButton', () => {
   })
 
   it('enables Generate when its normal prerequisites have already been met', () => {
-    render(<GenerateButton disabled={false} busy={false} count={1} onClick={() => {}} />)
+    render(<GenerateButton disabled={false} busy={false} onClick={() => {}} />)
     expect(screen.getByRole('button', { name: 'Generate' })).toBeEnabled()
   })
 })

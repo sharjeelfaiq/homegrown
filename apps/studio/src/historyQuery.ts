@@ -4,11 +4,11 @@ import { persistQueryClient } from '@tanstack/react-query-persist-client'
 import { listHistory, type HistoryFilters, type HistoryPage } from './api'
 
 export const HISTORY_SCOPE = 'local-user'
-export const HISTORY_CACHE_VERSION = 'voiceover-history.v1'
-export const HISTORY_STALE_MS = 60_000
-export const HISTORY_GC_MS = 20 * 60_000
+const HISTORY_CACHE_VERSION = 'voiceover-history.v1'
+const HISTORY_STALE_MS = 60_000
+const HISTORY_GC_MS = 20 * 60_000
 
-export interface HistoryRequest extends HistoryFilters { limit: number; offset: number }
+interface HistoryRequest extends HistoryFilters { limit: number; offset: number }
 
 export function normalizeHistoryRequest(request: Partial<HistoryRequest>): HistoryRequest {
   const finite = (value: number | undefined) => value !== undefined && Number.isFinite(value) ? value : undefined
@@ -69,9 +69,4 @@ export function fetchHistoryPage(request: Partial<HistoryRequest>): Promise<Hist
 
 export function invalidateHistory() {
   return historyQueryClient.invalidateQueries({ queryKey: ['voiceover-history', HISTORY_SCOPE] })
-}
-
-/** Reserved for future account/workspace transitions. */
-export function clearHistoryCache() {
-  return historyQueryClient.removeQueries({ queryKey: ['voiceover-history'] })
 }

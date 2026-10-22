@@ -28,7 +28,7 @@ export type ThemeId =
 /** What the user picked. 'system' is a real choice, not a theme. */
 export type ThemeChoice = ThemeId | 'system'
 
-export interface ThemeMeta {
+interface ThemeMeta {
   id: ThemeId
   label: string
   mode: 'dark' | 'light'
@@ -47,8 +47,6 @@ export const THEMES: readonly ThemeMeta[] = [
   { id: 'tide', label: 'Tide', mode: 'dark', hint: 'Midnight navy and teal' },
   { id: 'score', label: 'Score', mode: 'light', hint: 'Paper white, high contrast' },
 ] as const
-
-export const DEFAULT_THEME: ThemeId = 'studio'
 
 const BY_ID = new Map(THEMES.map((t) => [t.id, t]))
 

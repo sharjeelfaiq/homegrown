@@ -1,6 +1,6 @@
 import { getHealth } from './api'
 
-export type WakeStatus = 'starting' | 'ready' | 'error'
+type WakeStatus = 'starting' | 'ready' | 'error'
 
 interface WakeResponse {
   status: WakeStatus

@@ -671,7 +671,6 @@ export default function StudioShell() {
               tooltip={modelLoading ? MODEL_LOADING_TOOLTIP : modelStatus === 'down' ? 'The voice model is unavailable. Open the backend warning for details.' : undefined}
               busy={submitting}
               warming={warmingUp}
-              count={scriptReady ? 1 : 0}
               onClick={handleGenerate}
             />}
           />

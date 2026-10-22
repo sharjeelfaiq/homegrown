@@ -2,7 +2,7 @@ import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { Dropdown } from './Dropdown'
 
-export interface DropdownSelectOption {
+interface DropdownSelectOption {
   value: string
   label: string
 }

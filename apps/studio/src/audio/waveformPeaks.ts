@@ -1,6 +1,6 @@
 import { audioEngine } from './AudioEngine'
 
-export interface PeaksResult {
+interface PeaksResult {
   peaks: Float32Array
   sampleRate: number
   duration: number

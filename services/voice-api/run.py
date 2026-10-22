@@ -14,7 +14,6 @@ import fnmatch
 import os
 import sys
 import threading
-import time
 from pathlib import Path
 
 import boot_status

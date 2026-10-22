@@ -8,15 +8,6 @@ export function timeAgo(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleDateString()
 }
 
-export function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null || !isFinite(seconds)) return '--'
-  const s = Math.max(0, Math.round(seconds))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  const rem = s % 60
-  return rem > 0 ? `${m}m ${rem}s` : `${m}m`
-}
-
 /** A first-guess voice name from a reference clip's filename.
  *
  * Separators become spaces, because the raw stem is usually a slug --
@@ -32,13 +23,7 @@ export function presetNameFromFile(fileName: string): string {
     .slice(0, 40)
 }
 
-/** m:ss, for a transport position readout.
- *
- * Separate from formatDuration on purpose -- and formatDuration itself is now
- * UNREFERENCED, the elapsed readouts that used it having been removed. It is
- * kept rather than deleted. "1m 6s" is right for "this voiceover
- * is about a minute long" and wrong for a clock that ticks. Only the transport
- * uses this; every other duration in the app stays formatDuration. */
+/** m:ss, for a transport position readout. */
 export function formatClock(seconds: number | null | undefined): string {
   const s = Math.max(0, Math.floor(seconds == null || !isFinite(seconds) ? 0 : seconds))
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`

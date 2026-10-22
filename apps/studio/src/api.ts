@@ -1,4 +1,4 @@
-export interface HealthResponse {
+interface HealthResponse {
   model_loaded: boolean
   sample_rate: number | null
   /** 'cuda' | 'cpu'. Optional: older backends don't send it. */
@@ -63,24 +63,13 @@ export interface HistoryFilters {
   query?: string
 }
 
-export interface GenerateJobStart {
+interface GenerateJobStart {
   job_id: string
   total_chunks: number
   queue_position: number
 }
 
-export type JobStatusValue = 'queued' | 'running' | 'canceling' | 'done' | 'error' | 'canceled'
-
-export interface JobStatus {
-  status: JobStatusValue
-  chunks_done: number
-  total_chunks: number
-  audio_url: string | null
-  sample_rate: number | null
-  error: string | null
-  elapsed_s: number | null
-  queue_position: number | null
-}
+type JobStatusValue = 'queued' | 'running' | 'canceling' | 'done' | 'error' | 'canceled'
 
 export interface QueueEntry {
   job_id: string
@@ -103,17 +92,13 @@ export interface QueueEntry {
 
 /** The complete script is deliberately fetched on demand rather than carried by
  * the queue poll -- text_preview rides that instead, so long scripts do not
- * travel on every one-second refresh.
- *
- * Currently UNREACHABLE from the UI: a pending row's Reuse control is disabled
- * until the voiceover exists (HistoryList's PendingRow). The route and this
- * client are left wired, because re-enabling it is deleting one word. */
-export interface QueueScript {
+ * travel on every one-second refresh. Pending rows fetch it when Reuse is clicked. */
+interface QueueScript {
   text: string
   preset_id: string
 }
 
-export interface ApiErrorBody {
+interface ApiErrorBody {
   detail: string
 }
 
@@ -142,13 +127,6 @@ async function parseOrThrow<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-// No external auth service -- the backend treats every request as the same
-// local user, so this is just a plain fetch kept as a named wrapper to avoid
-// touching every call site below.
-async function authFetch(url: string, opts: RequestInit = {}): Promise<Response> {
-  return fetch(url, opts)
-}
-
 export function getHealth(): Promise<HealthResponse> {
   return fetch(apiUrl('/api/health')).then(parseOrThrow<HealthResponse>)
 }
@@ -165,7 +143,7 @@ export function listLanguages(): Promise<{ languages: string[] }> {
 }
 
 export function listPresets(): Promise<{ presets: Preset[] }> {
-  return authFetch(apiUrl('/api/presets')).then(parseOrThrow<{ presets: Preset[] }>)
+  return fetch(apiUrl('/api/presets')).then(parseOrThrow<{ presets: Preset[] }>)
 }
 
 /** `tag` is not sent: the backend accepts it, nothing in the UI ever set it to
@@ -183,7 +161,7 @@ export function createPreset(
   form.append('name', name)
   form.append('ref_text', refText)
   form.append('language', language)
-  return authFetch(apiUrl('/api/presets'), { method: 'POST', body: form }).then(parseOrThrow<Preset>)
+  return fetch(apiUrl('/api/presets'), { method: 'POST', body: form }).then(parseOrThrow<Preset>)
 }
 
 /** Rename a voice.
@@ -198,7 +176,7 @@ export function renamePreset(
   name: string,
   opts: { keepalive?: boolean } = {},
 ): Promise<Preset> {
-  return authFetch(apiUrl(`/api/presets/${presetId}`), {
+  return fetch(apiUrl(`/api/presets/${presetId}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -227,7 +205,7 @@ export function presetDownloadUrl(presetId: string): string {
 }
 
 export function deletePreset(presetId: string): Promise<{ ok: boolean }> {
-  return authFetch(apiUrl(`/api/presets/${presetId}`), {
+  return fetch(apiUrl(`/api/presets/${presetId}`), {
     method: 'DELETE',
   }).then(parseOrThrow<{ ok: boolean }>)
 }
@@ -238,7 +216,7 @@ export interface HistoryPage {
   total: number
 }
 
-export const HISTORY_INITIAL_COUNT = 20
+const HISTORY_INITIAL_COUNT = 20
 
 /** One newest-first, server-filtered history page. */
 export function listHistory(
@@ -253,25 +231,25 @@ export function listHistory(
   if (filters.durationMin !== undefined) query.set('duration_min', String(filters.durationMin))
   if (filters.durationMax !== undefined) query.set('duration_max', String(filters.durationMax))
   if (filters.query?.trim()) query.set('q', filters.query.trim())
-  return authFetch(apiUrl(`/api/history?${query}`)).then(
+  return fetch(apiUrl(`/api/history?${query}`)).then(
     parseOrThrow<HistoryPage>,
   )
 }
 
 export function deleteHistoryEntry(entryId: string): Promise<{ ok: boolean }> {
-  return authFetch(apiUrl(`/api/history/${entryId}`), {
+  return fetch(apiUrl(`/api/history/${entryId}`), {
     method: 'DELETE',
   }).then(parseOrThrow<{ ok: boolean }>)
 }
 
-export interface GenerateParams {
+interface GenerateParams {
   presetId: string
   text: string
   language: string
 }
 
 export function startGenerate(params: GenerateParams): Promise<GenerateJobStart> {
-  return authFetch(apiUrl('/api/generate'), {
+  return fetch(apiUrl('/api/generate'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -280,10 +258,6 @@ export function startGenerate(params: GenerateParams): Promise<GenerateJobStart>
       language: params.language,
     }),
   }).then(parseOrThrow<GenerateJobStart>)
-}
-
-export function getJobStatus(jobId: string): Promise<JobStatus> {
-  return authFetch(apiUrl(`/api/jobs/${jobId}`)).then(parseOrThrow<JobStatus>)
 }
 
 export interface Estimate {
@@ -304,7 +278,7 @@ export interface Estimate {
  * cannot be computed on the client; an earlier attempt to mirror the backend
  * constant reported "1 chunk" for a 3-chunk script. */
 export function getEstimate(text: string, presetId: string | null): Promise<Estimate> {
-  return authFetch(apiUrl('/api/estimate'), {
+  return fetch(apiUrl('/api/estimate'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, preset_id: presetId }),
@@ -319,53 +293,19 @@ export function downloadUrl(audioUrl: string, name: string): string {
   return apiUrl(`/api/download/${filename}?name=${encodeURIComponent(name)}`)
 }
 
-/** Several voiceovers as one .zip.
- *
- * Returns a Blob rather than a URL, so the request goes through the same
- * error handling as everything else here -- a link would surface a failure as
- * a browser error page with no way to catch it.
- *
- * `names` carries the display names, because the server has never seen them:
- * they are a localStorage override per browser. Anything omitted falls back
- * server-side to the voice name.
- */
-export async function zipHistory(
-  ids: string[],
-  names: Record<string, string>,
-): Promise<Blob> {
-  const res = await authFetch(apiUrl('/api/history/zip'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ids, names }),
-  })
-  if (!res.ok) {
-    // Mirrors parseOrThrow, which cannot be reused here: the SUCCESS body is a
-    // zip, not JSON, so this path only exists for the failure case.
-    let detail = res.statusText
-    try {
-      const body = (await res.json()) as { detail?: string }
-      if (body.detail) detail = body.detail
-    } catch {
-      // ignore -- fall back to statusText
-    }
-    throw new ApiError(detail)
-  }
-  return res.blob()
-}
-
 export function listQueue(): Promise<{ queue: QueueEntry[] }> {
-  return authFetch(apiUrl('/api/queue')).then(parseOrThrow<{ queue: QueueEntry[] }>)
+  return fetch(apiUrl('/api/queue')).then(parseOrThrow<{ queue: QueueEntry[] }>)
 }
 
 export function getQueueScript(jobId: string): Promise<QueueScript> {
-  return authFetch(apiUrl(`/api/queue/${jobId}/script`)).then(parseOrThrow<QueueScript>)
+  return fetch(apiUrl(`/api/queue/${jobId}/script`)).then(parseOrThrow<QueueScript>)
 }
 
 export function cancelQueuedJob(
   jobId: string,
   opts: { keepalive?: boolean } = {},
 ): Promise<{ ok: boolean }> {
-  return authFetch(apiUrl(`/api/queue/${jobId}/cancel`), {
+  return fetch(apiUrl(`/api/queue/${jobId}/cancel`), {
     method: 'POST',
     // Keepalive is reserved for explicit callers that must finish while the
     // document unloads; ordinary UI cancellation is sent immediately.
@@ -379,19 +319,19 @@ export function cancelQueuedJob(
  * the same validation as /api/generate, so a voice deleted since the failure
  * comes back as a 404 rather than as a second failure. */
 export function retryQueueJob(jobId: string): Promise<GenerateJobStart> {
-  return authFetch(apiUrl(`/api/queue/${jobId}/retry`), { method: 'POST' }).then(
+  return fetch(apiUrl(`/api/queue/${jobId}/retry`), { method: 'POST' }).then(
     parseOrThrow<GenerateJobStart>,
   )
 }
 
 export function deleteQueueJob(jobId: string): Promise<{ ok: boolean }> {
-  return authFetch(apiUrl(`/api/queue/${jobId}`), { method: 'DELETE' }).then(
+  return fetch(apiUrl(`/api/queue/${jobId}`), { method: 'DELETE' }).then(
     parseOrThrow<{ ok: boolean }>,
   )
 }
 
 export function reorderQueue(jobIds: string[]): Promise<{ ok: boolean }> {
-  return authFetch(apiUrl('/api/queue/reorder'), {
+  return fetch(apiUrl('/api/queue/reorder'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ job_ids: jobIds }),

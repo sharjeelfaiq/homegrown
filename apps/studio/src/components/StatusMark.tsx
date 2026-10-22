@@ -3,7 +3,7 @@ import { animate, useMotionValue, useReducedMotion } from 'motion/react'
 import './StatusMark.css'
 
 export type StatusMarkStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
-export interface StatusMarkProps { status?: StatusMarkStatus; progress?: number; label?: ReactNode; color?: string; doneColor?: string; errorColor?: string; size?: number; strokeWidth?: number; dashes?: number; fontSize?: number; spinDuration?: number; arcLength?: number; drawDuration?: number; fillOpacity?: number; strike?: boolean; strikeDelay?: number; className?: string; style?: CSSProperties }
+interface StatusMarkProps { status?: StatusMarkStatus; progress?: number; label?: ReactNode; color?: string; doneColor?: string; errorColor?: string; size?: number; strokeWidth?: number; dashes?: number; fontSize?: number; spinDuration?: number; arcLength?: number; drawDuration?: number; fillOpacity?: number; strike?: boolean; strikeDelay?: number; className?: string; style?: CSSProperties }
 const UI = { type: 'spring' as const, duration: 0.3, bounce: 0 }
 const MORPH = { duration: 0.3, ease: [0.77, 0, 0.175, 1] as [number, number, number, number] }
 const CHECK = 'M7.5 12.25 10.5 15.25 16.75 8.75'

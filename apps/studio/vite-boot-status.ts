@@ -26,7 +26,7 @@ import type { Plugin } from 'vite'
  */
 const ROOT = dirname(fileURLToPath(import.meta.url))
 
-export const BOOT_STATUS_ROUTE = '/__boot-status'
+const BOOT_STATUS_ROUTE = '/__boot-status'
 
 function storageDir(): string {
   // Mirror services/voice-api/main.py's dev branch: STORAGE_DIR = services/voice-api/storage, with

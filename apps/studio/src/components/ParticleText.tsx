@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import './ParticleText.css'
 
-export type ParticleTextTrigger = 'hover' | 'click' | 'none'
+type ParticleTextTrigger = 'hover' | 'click' | 'none'
 
-export interface ParticleTextProps {
+interface ParticleTextProps {
   text: string
   fontSize?: string | number
   fontWeight?: string | number

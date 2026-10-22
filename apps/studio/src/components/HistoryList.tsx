@@ -1122,54 +1122,6 @@ export default function HistoryList({
   }
 
 
-  /*
-    if (selectedCount === 0 || zipping) return
-    if (selectedDownloadKind(selectedCount) === 'mp3') {
-      const selectedId = selectedIds[0]
-      const item = visible.find(({ entry }) => entry.id === selectedId)
-      if (!item) return
-      const a = document.createElement('a')
-      a.href = downloadUrl(item.entry.audio_url, downloadName(item.name, item.entry.created_at))
-      a.setAttribute('download', '')
-      a.click()
-      toast('Download started')
-      return
-    }
-    setZipping(true)
-    try {
-      // The display names go with the request: they are a localStorage
-      // override the server has never seen, so without them every file in the
-      // zip would be named after its voice instead.
-      const names: Record<string, string> = {}
-      for (const { entry, name } of visible) {
-        if (selected.has(entry.id)) names[entry.id] = name
-      }
-      const blob = await zipHistory(selectedIds, names)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'voiceovers.zip'
-      a.click()
-      // Revoking immediately can cancel the download in some browsers; one
-      // frame is enough for the click to have been taken.
-      requestAnimationFrame(() => URL.revokeObjectURL(url))
-    } catch (e) {
-      // Keep the server's own detail, but never show it alone. This endpoint
-      // failing with a bare "Method Not Allowed" is the signature of a backend
-      // started before /api/history/zip existed -- the path falls through to
-      // DELETE /api/history/{entry_id} with "zip" read as an id -- and that
-      // message on its own tells the user nothing about what to do.
-      onError(
-        e instanceof ApiError
-          ? `Could not download those voiceovers — ${e.message}. If the backend was started before this feature, restart it.`
-          : 'Could not download those voiceovers.',
-      )
-    } finally {
-      setZipping(false)
-    }
-  }
-
-  */
   function handleDelete(id: string, label: string) {
     setDeleteRequest({ id, label })
   }

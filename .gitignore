@@ -47,3 +47,12 @@ models/
 .env*
 !*.env.example
 !*.env.local.example
+
+# Regenerable analysis output; retain intentional reports
+**/graphify-out/*
+!**/graphify-out/*.md
+
+# Temporary test output and backup environments
+.test-tmp/
+.venv.backup*/
+.venv-py*/
