@@ -1,0 +1,191 @@
+"""Regression coverage for package boundaries, routes and shared queue state."""
+import io
+import json
+import tempfile
+import threading
+import unittest
+from contextlib import ExitStack
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import numpy as np
+from fastapi.testclient import TestClient
+
+from homegrown_api import config
+from homegrown_api.app import app
+from homegrown_api.generation import budget, model, worker
+from homegrown_api.persistence import stores
+
+
+class ApiContractTests(unittest.TestCase):
+    def setUp(self):
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.root = Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
+        for name, value in {
+            'STORAGE_DIR': self.root,
+            'REF_DIR': self.root / 'references',
+            'GEN_DIR': self.root / 'generated',
+            'QUEUE_FILE': self.root / 'queue.json',
+            'PRESETS_FILE': self.root / 'presets.json',
+            'HISTORY_FILE': self.root / 'history.json',
+        }.items():
+            self.stack.enter_context(patch.object(config, name, value))
+        config.REF_DIR.mkdir()
+        config.GEN_DIR.mkdir()
+        for module, name, value in [
+            (worker, '_jobs', {}), (worker, '_pending_job_ids', []),
+            (worker, '_current_running_job_id', None),
+            (worker, '_queue_event', threading.Event()),
+            (worker, '_stop_event', threading.Event()),
+            (stores, '_presets', []), (stores, '_history', []),
+            (model, '_tts', None), (model, '_gpu_fault', None),
+        ]:
+            self.stack.enter_context(patch.object(module, name, value))
+        # Do not enter TestClient's lifespan: these HTTP tests must not load a model.
+        self.client = TestClient(app)
+        self.addCleanup(self.client.close)
+
+    def ready_voice(self):
+        fake = SimpleNamespace(sample_rate=24000)
+        fake.model = SimpleNamespace(model=SimpleNamespace(config=SimpleNamespace(
+            talker_config=SimpleNamespace(codec_language_id={'english': 0})
+        )))
+        model._tts = fake
+        reference = config.REF_DIR / 'voice.mp3'
+        reference.write_bytes(b'fixture')
+        stores._presets.append({
+            'id': 'voice', 'name': 'Voice', 'user_id': 'local-user',
+            'audio_path': 'references/voice.mp3', 'ref_text': 'Reference speech.',
+        })
+        self.stack.enter_context(patch.object(budget, '_seq_budget', return_value=budget._Budget(200, 700, 1)))
+        return fake
+
+    def submit(self, text='A script to generate.'):
+        response = self.client.post('/api/generate', json={
+            'preset_id': 'voice', 'text': text, 'language': 'English',
+        })
+        self.assertEqual(response.status_code, 202, response.text)
+        return response.json()['job_id']
+
+    def test_all_existing_api_routes_remain_registered(self):
+        expected = {
+            '/api/download/{filename}': {'get'}, '/api/health': {'get'},
+            '/api/languages': {'get'}, '/api/estimate': {'post'},
+            '/api/presets': {'get', 'post'},
+            '/api/presets/{preset_id}': {'patch', 'delete'},
+            '/api/presets/{preset_id}/download': {'get'},
+            '/api/history': {'get'}, '/api/history/zip': {'post'},
+            '/api/history/{entry_id}': {'delete'}, '/api/generate': {'post'},
+            '/api/jobs/{job_id}': {'get'}, '/api/queue': {'get'},
+            '/api/queue/{job_id}/script': {'get'},
+            '/api/queue/{job_id}/cancel': {'post'},
+            '/api/queue/{job_id}/retry': {'post'},
+            '/api/queue/{job_id}': {'delete'}, '/api/queue/reorder': {'post'},
+        }
+        paths = app.openapi()['paths']
+        actual = {p: set(methods) for p, methods in paths.items() if p.startswith('/api/')}
+        self.assertEqual(actual, expected)
+
+    def test_health_validation_and_unknown_api_do_not_fall_through_to_spa(self):
+        self.assertFalse(self.client.get('/api/health').json()['model_loaded'])
+        self.assertEqual(self.client.get('/api/languages').status_code, 503)
+        self.assertEqual(self.client.post('/api/generate', json={}).status_code, 422)
+        self.assertEqual(self.client.get('/api/does-not-exist').status_code, 404)
+        self.assertEqual(self.client.post('/api/history/zip', json={'ids': []}).status_code, 400)
+
+    def test_submission_reorder_cancellation_and_retry_share_one_queue(self):
+        self.ready_voice()
+        first, second = self.submit('First script.'), self.submit('Second script.')
+        persisted = json.loads(config.QUEUE_FILE.read_text())
+        self.assertEqual([j['job_id'] for j in persisted], [first, second])
+        self.assertEqual(self.client.get(f'/api/jobs/{first}').json()['status'], 'queued')
+        response = self.client.post('/api/queue/reorder', json={'job_ids': [second, first]})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(worker._pending_job_ids, [second, first])
+        response = self.client.post(f'/api/queue/{first}/cancel')
+        self.assertEqual(response.json(), {'ok': True})
+        self.assertEqual(worker._jobs[first]['status'], 'canceled')
+        self.assertNotIn(first, worker._pending_job_ids)
+        self.assertEqual(self.client.get(f'/api/queue/{first}/script').json()['text'], 'First script.')
+        response = self.client.post(f'/api/queue/{first}/retry')
+        self.assertEqual(response.status_code, 202, response.text)
+        replacement = response.json()['job_id']
+        self.assertNotIn(first, worker._jobs)
+        self.assertEqual(worker._jobs[replacement]['attempt'], 2)
+        self.assertEqual(worker._pending_job_ids, [second, replacement])
+
+    def test_running_cancellation_closes_stream_without_publishing_audio(self):
+        fake = self.ready_voice()
+        job_id = self.submit()
+        worker._pending_job_ids.remove(job_id)
+        closed = []
+
+        def stream(**_kwargs):
+            try:
+                # Simulate the HTTP cancel arriving while a stream is producing audio.
+                response = self.client.post(f'/api/queue/{job_id}/cancel')
+                self.assertEqual(response.status_code, 200)
+                yield np.ones(100, dtype=np.float32), 24000, {}
+                self.fail('A canceled stream must not request another piece')
+            finally:
+                closed.append(True)
+
+        fake.generate_voice_clone_streaming = stream
+        with patch.object(worker.audio_convert, 'write_mp3') as write:
+            worker._process_job(job_id)
+        self.assertEqual(closed, [True])
+        self.assertEqual(worker._jobs[job_id]['status'], 'canceled')
+        self.assertIsNone(worker._current_running_job_id)
+        self.assertEqual(stores._history, [])
+        write.assert_not_called()
+
+    def test_restart_restores_fifo_with_existing_json_format(self):
+        self.ready_voice()
+        ids = [self.submit('First script.'), self.submit('Second script.')]
+        worker._jobs.clear()
+        worker._pending_job_ids.clear()
+        worker._restore_queue_on_startup()
+        self.assertEqual(worker._pending_job_ids, ids)
+        self.assertTrue(all(worker._jobs[j]['status'] == 'queued' for j in ids))
+        self.assertEqual(self.client.get('/api/queue').json()['queue'][0]['job_id'], ids[0])
+
+    def test_history_zip_and_delete_keep_existing_media_behavior(self):
+        import zipfile
+
+        (config.GEN_DIR / 'clip.mp3').write_bytes(b'audio-fixture')
+        stores._history.append({
+            'id': 'entry', 'user_id': 'local-user', 'preset_name': 'Voice',
+            'audio_url': '/audio/clip.mp3', 'created_at': 1,
+        })
+        response = self.client.post('/api/history/zip', json={'ids': ['entry'], 'names': {'entry': 'Narration'}})
+        self.assertEqual(response.status_code, 200, response.text)
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            self.assertEqual(archive.read('Narration.mp3'), b'audio-fixture')
+        response = self.client.delete('/api/history/entry')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(config.HISTORY_FILE.read_text()), [])
+        self.assertFalse((config.GEN_DIR / 'clip.mp3').exists())
+
+    def test_development_paths_stay_outside_the_package(self):
+        service = Path(__file__).resolve().parents[1]
+        self.assertEqual(config.BACKEND_DIR, service)
+        self.assertEqual(config.REPO_ROOT / 'apps/studio', service.parents[1] / 'apps/studio')
+
+    def test_spa_serves_files_and_client_routes_without_shadowing_api(self):
+        # The production build is an optional input in a source-only checkout.
+        if not any(getattr(route, 'path', None) == '/{full_path:path}' for route in app.routes):
+            self.skipTest('Build Studio first to register the SPA route')
+        frontend = self.root / 'frontend'
+        frontend.mkdir()
+        (frontend / 'index.html').write_text('<html>studio</html>')
+        (frontend / 'asset.js').write_text('console.log("studio")')
+        with patch.object(config, 'FRONTEND_DIST', frontend):
+            self.assertEqual(self.client.get('/studio').text, '<html>studio</html>')
+            self.assertEqual(self.client.get('/asset.js').text, 'console.log("studio")')
+            self.assertEqual(self.client.get('/api/missing').status_code, 404)
+
+
+if __name__ == '__main__':
+    unittest.main()

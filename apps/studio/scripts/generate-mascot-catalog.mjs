@@ -80,7 +80,7 @@ async function main() {
   const studioDirectory = path.resolve(scriptDirectory, '..')
   const catalog = await generateMascotCatalog({
     mascotDirectory: path.join(studioDirectory, 'public', 'mascots'),
-    outputFile: path.join(studioDirectory, 'src', 'generated', 'mascotCatalog.ts'),
+    outputFile: path.join(studioDirectory, 'src', 'features', 'mascots', 'generated', 'mascotCatalog.ts'),
   })
   console.log(`Generated mascot catalog with ${catalog.length} mascot${catalog.length === 1 ? '' : 's'}.`)
 }

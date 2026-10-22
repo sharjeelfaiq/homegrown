@@ -30,7 +30,7 @@ cd apps/studio && npm run dev
 ```
 
 ```bash
-cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn homegrown_api.app:app --host 127.0.0.1 --port 8000
 ```
 
 Set `MODEL_PATH` in `services/voice-api/.env` to the downloaded local model.
@@ -115,7 +115,7 @@ by drag or arrow keys; that size, like its dragged position, lasts only for
 the browser tab. Mascot 2 (the Cat sheets) is the default.
 To add one, commit `<id>a.webp` (directions) and `<id>b.webp` (reactions) in
 `apps/studio/public/mascots/`; normal Studio commands regenerate and validate
-`src/generated/mascotCatalog.ts`, which must be committed with the pair.
+`src/features/mascots/generated/mascotCatalog.ts`, which must be committed with the pair.
 Generation is serial: one job runs at a time under the model's generation lock;
 additional jobs queue. Reference audio and script text share the model context
 window, so the available chunk size depends on the selected voice. Long scripts

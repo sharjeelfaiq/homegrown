@@ -101,7 +101,7 @@ const { result, commands } = concurrently(
       name: 'backend',
       prefixColor: 'blue',
       cwd: atRoot('services', 'voice-api'),
-      command: `node "${atRoot('scripts', 'start-backend-after-studio.mjs')}" "${python}" -m uvicorn main:app --host 127.0.0.1 --port 8000`,
+      command: `node "${atRoot('scripts', 'dev', 'start-backend-after-studio.mjs')}" "${python}" -m uvicorn homegrown_api.app:app --host 127.0.0.1 --port 8000`,
     },
     {
       name: 'studio',

@@ -137,7 +137,7 @@
                    should be learnable -- the same reasoning that keeps
                    --danger red and --queued violet everywhere.
 
-     scripts/check_palette.py holds both apart from --danger and from each
+     scripts/checks/check_palette.py holds both apart from --danger and from each
      other; see its docstring for what it caught. */
   --accent: #80e3f4;
   --progress: #ffb43a;
@@ -350,7 +350,7 @@
 /* ==== Layer 1: the other four themes ===================================
    Each block restates the full raw contract.
 
-   Contrast is computed, not eyeballed: `python scripts/check_contrast.py`
+   Contrast is computed, not eyeballed: `python scripts/checks/check_contrast.py`
    measures all three text tokens against all three surfaces they can land
    on, plus the accents and status colours, for every theme. It is the
    authority -- do not copy its numbers into comments here, they drift.

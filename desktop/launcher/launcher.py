@@ -55,7 +55,7 @@ BASE_URL = f"http://localhost:{PORT}"
 HEALTH_URL = f"http://127.0.0.1:{PORT}/api/health"
 # The app root, same host rule as HEALTH_URL. /api/health alone cannot tell
 # this backend from any other FastAPI app on the port -- including a dev uvicorn
-# of this same project that imported main.py while apps/studio/dist was missing,
+# of this same project that imported the API while apps/studio/dist was missing,
 # which answers health 200 but has no SPA route at all. Adopting one of those
 # sent the browser to a bare {"detail": "Not Found"} and skipped starting
 # backend.exe.
@@ -89,8 +89,8 @@ ERROR_LINGER_S = 15 * 60
 # Grace period after `ready` for the page to poll once more and redirect.
 REDIRECT_GRACE_S = 8
 
-# The loading page lives in launcher/splash.html + splash.css and is
-# compiled by scripts/build_splash.py, which inlines the Tailwind output
+# The loading page lives in launcher/splash/index.html + splash/styles.css and is
+# compiled by scripts/build/build_splash.py, which inlines the Tailwind output
 # and writes _splash.py. It is a module rather than a data file on
 # purpose: launcher.spec declares datas=[], and PyInstaller follows
 # imports, so this needs no spec change.
@@ -404,7 +404,7 @@ def wait_for_backend(state: BootState, storage_dir: Path, log_path: Path, proc):
     while True:
         if is_backend_healthy(quick=True):
             # The backend keeps serving with model_loaded=False when the model
-            # fails to load (main.py's deliberate fail-soft path), so a 200
+            # fails to load (the lifespan's deliberate fail-soft path), so a 200
             # alone isn't success -- the flag file distinguishes the two.
             if cuda_flag.exists():
                 message = cuda_flag.read_text(encoding="utf-8")

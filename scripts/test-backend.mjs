@@ -19,7 +19,7 @@ if (!python) {
 
 const result = spawnSync(
   python,
-  ['-m', 'unittest', 'discover', '-s', 'services/voice-api', '-p', 'test_*.py'],
-  { cwd: root, stdio: 'inherit' },
+  ['-m', 'unittest', 'discover', '-s', 'services/voice-api/tests', '-p', 'test_*.py'],
+  { cwd: root, stdio: 'inherit', env: { ...process.env, PYTHONPATH: [path.join(root, 'services', 'voice-api'), process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) } },
 )
 process.exit(result.status ?? 1)

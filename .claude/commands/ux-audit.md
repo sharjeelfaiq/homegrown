@@ -20,7 +20,7 @@ add hosted deployment, analytics, sign-up, pricing, or cloud-service flows.
 Measure before changing UI. For changes to Studio, run its tests, lint, and
 production build plus the repository design gates. For changes to the marketing
 page, open `apps/marketing/index.html` directly and run
-`scripts/measure_landing.sh`.
+`scripts/marketing/measure_landing.sh`.
 
 Report measurable findings, changes made, verification performed, and anything
 requiring human visual or GPU-backed QA.

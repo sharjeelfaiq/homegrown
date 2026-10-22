@@ -1,7 +1,7 @@
 # Homegrown contributor guide
 
 This document describes the checked-in application. User-facing usage is in
-`README.md`; build and packaging instructions are in `docs/BUILD.md`.
+`README.md`; build and packaging instructions are in `docs/build.md`.
 
 ## Commands
 
@@ -21,7 +21,7 @@ cd ../..
 cd apps/studio && npm run bones:build
 
 # Backend syntax check
-python -m py_compile services/voice-api/main.py
+python -m compileall -q services/voice-api/homegrown_api
 ```
 
 `npm run build` is a ten-stage packaging pipeline with a numbered overview
@@ -45,15 +45,16 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 
 ## Architecture
 
-- `services/voice-api/main.py` is the FastAPI API, job queue, local JSON persistence, and
-  static `apps/studio/dist` host when that build exists. Vite serves the live Studio during dev.
-- `apps/studio/src/components/StudioShell.tsx` composes voices, generation, and
+- `services/voice-api/homegrown_api/app.py` composes the API routers and static Studio host.
+  `generation/model.py` owns model state, `generation/worker.py` owns the queue, and
+  `persistence/stores.py` owns JSON stores. See `docs/architecture.md` for boundaries.
+- `apps/studio/src/app/StudioShell.tsx` composes voices, generation, and
   queue activity. `SettingsModal.tsx` owns the header Settings dialog:
   `ThemeSwitch.tsx` persists the System or named theme choice, while the
   mascot-visibility switch persists only a browser-local preference.
   `HistoryList.tsx` renders completed and live voiceovers.
 - `boneyard-js` supplies generated, source-controlled loading layouts in
-  `apps/studio/src/bones/`. `studio-startup` covers model initialization and
+  `apps/studio/src/skeletons/generated/`. `studio-startup` covers model initialization and
   `voiceover-history` covers only an uncached initial history query; do not use
   Boneyard's Suspense wrapper because history uses ordinary React Query.
 - `engine/qwen/` is the vendored CUDA-graph TTS wrapper. CPU fallback exists but is
@@ -68,7 +69,7 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - `GET /api/history` is newest-first, accepts `limit`/`offset`, and clamps a
   page to `HISTORY_PAGE_MAX` (100). It filters by preset, date, duration, and
   canonical `q` voice-name search before pagination.
-- `apps/studio/src/historyQuery.ts` owns history query keys, normalization, cache
+- `apps/studio/src/features/history/historyQuery.ts` owns history query keys, normalization, cache
   policy, persistence, and cache clearing. Keys are scoped to `local-user`.
 - TanStack Query retains history for 20 minutes in memory, treats it as stale
   after one minute, and persists only `voiceover-history` queries in
@@ -158,7 +159,7 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   when storage is unavailable or unset.
 - The mascot catalog is generated from top-level numbered pairs in
   `apps/studio/public/mascots/`: `<id>a.webp` is directions and `<id>b.webp`
-  is reactions. Do not hand-edit `src/generated/mascotCatalog.ts`; add a pair,
+  is reactions. Do not hand-edit `src/features/mascots/generated/mascotCatalog.ts`; add a pair,
   run a normal Studio command, and commit the assets with its regenerated
   catalog. Mascot 2 (the Cat sheets) is the default when it exists.
 - Generate is a compact right-aligned action in the Script editor footer; the
@@ -205,7 +206,7 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 ## Documentation
 
 Keep `README.md`, `docs/workflow.md`, and this file in agreement with source.
-`docs/history/` is archived context, not current operational guidance.
+`docs/archive/` is archived context, not current operational guidance.
 After a skeleton fixture or app-shell layout change, regenerate the bones at
 375, 768, 1025, and 1280px with `npm run bones:build`; do not hand-edit the
 generated JSON or registry.

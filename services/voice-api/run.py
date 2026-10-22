@@ -1,10 +1,10 @@
 """
 PyInstaller entrypoint for the Homegrown backend.
 
-In dev, nobody runs this -- `python -m uvicorn main:app` (or the Vite dev
+In dev, nobody runs this -- `python -m uvicorn homegrown_api.app:app` (or the Vite dev
 flow) is used instead. This file only matters once frozen into backend.exe:
 it wires up the installed-machine paths (model dir, storage dir, .env) that
-main.py can't derive from a real repo layout anymore, then starts uvicorn.
+the API can't derive from a real repo layout anymore, then starts uvicorn.
 
 Everything slow happens here before uvicorn exists, so each step publishes its
 progress through `boot_status` -- the launcher's browser loader is the only UI
@@ -16,7 +16,7 @@ import sys
 import threading
 from pathlib import Path
 
-import boot_status
+from homegrown_api import boot_status
 
 # Not 8000, deliberately. 8000 belongs to dev (`npm run dev`); this build is the only one whose port nobody types,
 # because it serves the API and the SPA from the same loopback origin and the
@@ -164,7 +164,7 @@ def _download_model_if_needed() -> None:
 if getattr(sys, "frozen", False):
     _configure_frozen_env()
     _download_model_if_needed()
-    # `import main` (via uvicorn, below) faults in ~3.8GB of torch DLLs off
+    # `import homegrown_api.app` (via uvicorn, below) faults in ~3.8GB of torch DLLs off
     # disk -- tens of seconds cold, and silent. Say so before it happens.
     boot_status.write(_storage_dir(), boot_status.PHASE_IMPORTING)
 
@@ -197,5 +197,5 @@ if __name__ == "__main__":
     #    is recoverable. Bind this only on networks you trust.
     #
     # PORT stays 8731: desktop/launcher/launcher.py polls the same number and
-    # scripts/check_desktop_port.py is what stops the two drifting.
-    uvicorn.run("main:app", host="0.0.0.0", port=PORT, log_level="info")
+    # scripts/checks/check_desktop_port.py is what stops the two drifting.
+    uvicorn.run("homegrown_api.app:app", host="0.0.0.0", port=PORT, log_level="info")

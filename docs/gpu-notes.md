@@ -3,7 +3,7 @@ LOCAL GPU NOTES — Homegrown (Qwen3-TTS-12Hz-0.6B)
 
 These are dated measurements and tuning notes from specific local GPUs, not a
 live inventory or guarantees about another machine. Runtime constants can
-change; check `services/voice-api/main.py` for the values currently in source.
+change; check `services/voice-api/homegrown_api/config.py` for the values currently in source.
 The capacity notes below are observations, not a tested compatibility or
 performance guarantee.
 
@@ -70,7 +70,7 @@ measurements below when evaluating local hardware.
 
 WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
 ----------------------------------------
-- Raise max_seq_len in services/voice-api/main.py (currently 1024) only after
+- Raise max_seq_len in services/voice-api/homegrown_api/config.py (currently 1024) only after
   measuring peak VRAM and generation quality on the target hardware. Larger
   context values listed above are experimental targets, not guarantees.
 - Raise CHUNK_MAX_CHARS accordingly (currently 800, tuned specifically
@@ -81,7 +81,7 @@ WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
   prerequisite; check compatibility and benchmark before making performance
   claims. The application defaults to PyTorch SDPA.
 - MAX_REF_AUDIO_SECS is not the binding limit and never was a quality
-  number. It is 1800.0 (thirty minutes) in services/voice-api/main.py today, and
+  number. It is 1800.0 (thirty minutes) in services/voice-api/homegrown_api/config.py today, and
   it guards create_preset buffering the upload in memory. What bounds
   the clip is REF_TRIM_SECS = 40.0: anything longer is trimmed to the
   first 40 seconds of speech rather than rejected, so raising the
@@ -89,7 +89,7 @@ WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
   _seq_budget() derives the real per-preset budget from what the
   trimmed clip leaves of max_seq_len, so on a bigger card raise
   max_seq_len first, then REF_TRIM_SECS, re-solving the table in the
-  REF_TRIM_SECS comment in services/voice-api/main.py as you go. Note also that
+  REF_TRIM_SECS comment in services/voice-api/homegrown_api/config.py as you go. Note also that
   the practical ceiling is quality, not capacity: clips over ~23s have
   produced garbled output on this card regardless of budget, and 10-20s
   remains the recommended range. See also the 2026-09-12 sweep below.

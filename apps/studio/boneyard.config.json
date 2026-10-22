@@ -1,6 +1,6 @@
 {
   "breakpoints": [375, 768, 1025, 1280],
-  "out": "./src/bones",
+  "out": "./src/skeletons/generated",
   "wait": 1200,
   "skeletons": {
     "studio-startup": { "route": "/" },

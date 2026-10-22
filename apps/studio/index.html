@@ -5,7 +5,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Studio's --bg-nav. Repointed at the live theme by applyTheme() in
-         src/theme.ts, which reads it off the resolved token rather than
+         src/lib/theme/theme.ts, which reads it off the resolved token rather than
          mirroring five more hexes into this file. The address bar is
          therefore Studio-coloured for the ~100ms before React mounts; that
          is a fair trade against a sixth hand-mirror. -->
@@ -46,10 +46,10 @@
          blocking classic script picks one before the parser moves on.
 
          Both lists below are hand-mirrors: the backgrounds mirror --bg-base
-         in tokens.css, the theme names mirror THEMES in src/theme.ts. Hand-
+         in tokens.css, the theme names mirror THEMES in src/lib/theme/theme.ts. Hand-
          mirroring is unavoidable (a blocking script cannot import a module
          and stay blocking) but silent drift is not, so this file is scanned
-         by scripts/check_design_tokens.py -- same guard, same reason, as
+         by scripts/checks/check_design_tokens.py -- same guard, same reason, as
          launcher.py. Adding a theme means touching both lists here. -->
     <style>
       html { background: #14151a }

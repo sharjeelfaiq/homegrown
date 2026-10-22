@@ -1,7 +1,7 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { bootStatusPlugin } from './vite-boot-status.js'
+import { bootStatusPlugin } from './tooling/vite-boot-status.js'
 
 // https://vite.dev/config/
 //
@@ -18,6 +18,13 @@ import { bootStatusPlugin } from './vite-boot-status.js'
 // the backend has no bound port to proxy TO. See vite-boot-status.ts.
 export default defineConfig({
   plugins: [react(), tailwindcss(), bootStatusPlugin()],
+  test: {
+    // Browser tests need jsdom's per-window storage, not Node's native global.
+    // Older supported Node versions may not expose this flag.
+    execArgv: process.allowedNodeEnvironmentFlags.has('--no-experimental-webstorage')
+      ? ['--no-experimental-webstorage']
+      : [],
+  },
   server: {
     host: true, // bind to all network interfaces, not just localhost -- lets you reach the dev server via the machine's LAN IP (e.g. from another device)
     proxy: {

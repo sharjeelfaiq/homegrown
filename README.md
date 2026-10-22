@@ -43,6 +43,29 @@ snapshot_download(
 PYEOF
 ```
 
+## Repairing a broken Python environment
+
+If `.venv/Scripts/python.exe` reports `did not find executable at ...`, the
+base Python installation recorded in `.venv/pyvenv.cfg` is missing. The build
+checks this in stage 3 before attempting to install PyInstaller.
+
+Restore the Python version listed in that file, or recreate the environment
+with that version installed. For an environment created with Python 3.13,
+run these commands in Git Bash (choose an unused backup name):
+
+```bash
+py -3.13 --version
+mv .venv .venv.backup
+py -3.13 -m venv .venv
+.venv/Scripts/python.exe -m pip install --upgrade pip
+.venv/Scripts/python.exe -m pip install -r services/voice-api/requirements.txt
+npm run build
+```
+
+If the first command fails, install Python 3.13 before continuing. Keep the
+backup until the new environment works. Changing `pyvenv.cfg` to point at a
+different Python minor version does not rebuild its installed dependencies.
+
 ## Local development
 
 ```bash
@@ -68,7 +91,7 @@ cd apps/studio && npm run dev
 ```
 
 ```bash
-cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn homegrown_api.app:app --host 127.0.0.1 --port 8000
 ```
 
 Keep `apps/studio/.env.local` empty for supported local workflows. While the
@@ -105,7 +128,7 @@ Mascot 2 (the Cat sheets) is the default.
 To add a mascot, place a numbered pair in `apps/studio/public/mascots/`:
 `<id>a.webp` for directions and `<id>b.webp` for reactions. Run Studio normally
 (`npm run dev`, `npm run test`, `npm run lint`, or `npm run build`); each command
-regenerates `apps/studio/src/generated/mascotCatalog.ts`. Commit the two assets
+regenerates `apps/studio/src/features/mascots/generated/mascotCatalog.ts`. Commit the two assets
 and that generated catalog together.
 
 Run `npm run test` for the Studio and backend unit suites. Backend tests use
@@ -154,7 +177,7 @@ then run the extracted `Homegrown.exe`; its browser loader appears before the
 local API initializes Qwen3-TTS. The packaged backend listens on port 8731 for
 trusted LAN use. No API actions are authenticated, so never expose it to an
 untrusted network. The detailed,
-recoverable build procedure is in [docs/BUILD.md](docs/BUILD.md).
+recoverable build procedure is in [docs/build.md](docs/build.md).
 
 The build prints a numbered ten-stage overview without a separate `PLAN`
 heading. Each row begins with its stage-specific timing, such as
@@ -182,14 +205,19 @@ apps/
   marketing/       standalone static marketing page
   studio/          React + Vite Studio
 services/
-  voice-api/       FastAPI service and PyInstaller spec
+  voice-api/
+    homegrown_api/ FastAPI package: routes, generation, audio, persistence
+    tests/         backend tests
+    backend.spec   frozen backend build
 engine/
   qwen/            vendored FasterQwen3TTS wrapper
 desktop/
   launcher/        browser loader and launcher executable
   installer/       legacy NSIS source (not the supported packaging path)
   assets/          desktop icon assets
-docs/BUILD.md      detailed frozen-build procedure
+scripts/           development, build, checks, marketing, migrations
+docs/architecture.md  module ownership and runtime paths
+docs/build.md      detailed frozen-build procedure
 docs/workflow.md   day-to-day Studio workflow
 ```
 
@@ -202,5 +230,5 @@ docs/workflow.md   day-to-day Studio workflow
   development or packaged app to an untrusted network.
 - See [docs/gpu-notes.md](docs/gpu-notes.md) for local-GPU measurements and
   [engine/qwen/README.md](engine/qwen/README.md) for the vendored wrapper.
-- `docs/history/` is archival material only; it documents superseded cloud and
+- `docs/archive/` is archival material only; it documents superseded cloud and
   pre-migration workflows and is not executable guidance.

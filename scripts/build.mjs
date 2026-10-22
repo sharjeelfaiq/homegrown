@@ -8,7 +8,7 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_STAGE_ETAS, RollingTail, formatDuration, renderOverview, renderOverviewLine, renderProgress, stageDescription, stripAnsi, TOTAL_STAGES } from './build-progress.mjs';
+import { DEFAULT_STAGE_ETAS, RollingTail, formatDuration, renderOverview, renderOverviewLine, renderProgress, stageDescription, stripAnsi, TOTAL_STAGES } from './build/progress.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const atRoot = (...parts) => path.join(ROOT, ...parts);
@@ -205,16 +205,26 @@ async function main() {
     if (!isFile(atRoot('desktop', 'launcher', 'launcher.spec'))) die('desktop/launcher/launcher.spec is missing.');
   });
   let PY;
-  await stage(3, async () => { PY = atRoot('.venv', 'Scripts', 'python.exe'); if (!isFile(PY)) PY = atRoot('.venv', 'bin', 'python'); if (!isFile(PY)) die('no virtualenv interpreter. Follow README.md: First-time setup.'); });
+  await stage(3, async () => {
+    PY = atRoot('.venv', 'Scripts', 'python.exe');
+    if (!isFile(PY)) PY = atRoot('.venv', 'bin', 'python');
+    if (!isFile(PY)) die('no virtualenv interpreter. Follow README.md: First-time setup.');
+    // Windows venv launchers can remain after their base Python is removed.
+    // Probe before treating an import failure as a missing build dependency.
+    try { await run(PY, ['-c', 'import sys; print(sys.executable)']); }
+    catch (error) {
+      throw new BuildError('The .venv interpreter cannot run. Its base Python may have been removed or the environment moved. Restore that Python installation or recreate .venv and reinstall services/voice-api/requirements.txt. See README.md: Repairing a broken Python environment.', error.details);
+    }
+  });
   await stage(4, async () => { if (!await run(PY, ['-c', 'import PyInstaller'], { allowFailure: true })) await run(PY, ['-m', 'pip', 'install', '--quiet', 'pyinstaller']); });
   await stage(5, async () => {
-    for (const check of ['check_design_tokens.py', 'check_contrast.py', 'check_palette.py', 'check_orphan_css.py', 'check_desktop_port.py']) await run('python', [path.join('scripts', check)]);
-    const studio = atRoot('apps', 'studio'); await runNpm(['install', '--no-fund', '--no-audit', '--loglevel=error'], { cwd: studio }); await runNpm(['run', 'test'], { cwd: studio }); await runNpm(['run', 'lint'], { cwd: studio }); await run('python', [path.join('scripts', 'build_splash.py'), '--check']);
+    for (const check of ['check_design_tokens.py', 'check_contrast.py', 'check_palette.py', 'check_orphan_css.py', 'check_desktop_port.py']) await run('python', [path.join('scripts', 'checks', check)]);
+    const studio = atRoot('apps', 'studio'); await runNpm(['install', '--no-fund', '--no-audit', '--loglevel=error'], { cwd: studio }); await runNpm(['run', 'test'], { cwd: studio }); await runNpm(['run', 'lint'], { cwd: studio }); await run('python', [path.join('scripts', 'build', 'build_splash.py'), '--check']);
   });
   await stage(6, async () => { fs.mkdirSync(TMP_DIR, { recursive: true }); if (isFile(ENV_LOCAL)) fs.renameSync(ENV_LOCAL, ENV_STASH); });
   const studio = atRoot('apps', 'studio'); await stage(7, () => runNpm(['run', 'build'], { cwd: studio }));
   const freezeEnv = { ...process.env, TMP: TMP_DIR, TEMP: TMP_DIR }; await stage(8, () => run(PY, ['-m', 'PyInstaller', 'backend.spec', '--clean', '--noconfirm'], { cwd: atRoot('services', 'voice-api'), env: freezeEnv }));
-  await stage(9, async () => { await run('python', [path.join('scripts', 'build_splash.py')]); await run(PY, ['-m', 'PyInstaller', 'launcher.spec', '--clean', '--noconfirm'], { cwd: atRoot('desktop', 'launcher'), env: freezeEnv }); });
+  await stage(9, async () => { await run('python', [path.join('scripts', 'build', 'build_splash.py')]); await run(PY, ['-m', 'PyInstaller', 'launcher.spec', '--clean', '--noconfirm'], { cwd: atRoot('desktop', 'launcher'), env: freezeEnv }); });
   await stage(10, async () => {
     fs.rmSync(STAGE_DIR, { recursive: true, force: true }); fs.mkdirSync(STAGE_DIR, { recursive: true });
     fs.copyFileSync(atRoot('desktop', 'launcher', 'dist', 'Homegrown.exe'), path.join(STAGE_DIR, 'Homegrown.exe')); fs.cpSync(atRoot('services', 'voice-api', 'dist', 'backend'), path.join(STAGE_DIR, 'backend'), { recursive: true });

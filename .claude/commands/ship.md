@@ -6,7 +6,7 @@ description: Reconcile active documentation with the local desktop codebase and 
 
 Audit every current Markdown document against the local/desktop application,
 including `README.md`, `CLAUDE.md`, contributor commands under
-`.claude/commands/`, `docs/*.md`, and `engine/qwen/*.md`. `docs/history/` is
+`.claude/commands/`, `docs/*.md`, and `engine/qwen/*.md`. `docs/archive/` is
 archival: preserve its historical body and keep a prominent non-current banner.
 
 Current source roots are `apps/studio`, `apps/marketing`,
@@ -20,12 +20,12 @@ and `node --check scripts/build.mjs` separately, the Studio tests/lint/build,
 Python compilation, and these gates:
 
 ```bash
-python scripts/check_design_tokens.py
-python scripts/check_contrast.py
-python scripts/check_palette.py
-python scripts/check_orphan_css.py
-python scripts/check_desktop_port.py
-python scripts/build_splash.py --check
+python scripts/checks/check_design_tokens.py
+python scripts/checks/check_contrast.py
+python scripts/checks/check_palette.py
+python scripts/checks/check_orphan_css.py
+python scripts/checks/check_desktop_port.py
+python scripts/build/build_splash.py --check
 ```
 
 Current UI details worth keeping accurate in the docs: the lower-left warning

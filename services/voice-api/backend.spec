@@ -79,8 +79,8 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports + [
-        "main", "auth", "audio_convert", "audio_stitcher", "text_chunker",
-        "boot_status",
+        "homegrown_api.app", "homegrown_api.dependencies",
+        "homegrown_api.boot_status",
         "uvicorn.logging",
         "uvicorn.loops", "uvicorn.loops.auto",
         "uvicorn.protocols", "uvicorn.protocols.http", "uvicorn.protocols.http.auto",
