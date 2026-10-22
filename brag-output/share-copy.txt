@@ -1,0 +1,2 @@
+Introducing Homegrown: make recurring voiceovers with a voice that stays yours.
+Clone a voice, write a script, generate, and keep your history, all on your own Windows machine. No account. No subscription. No hosted service.

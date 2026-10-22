@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Archivo Variable";
+        src: url("assets/fonts/archivo.woff2") format("woff2");
+        font-weight: 100 900;
+      }
+      :root {
+        --bg: #08090b;
+        --text: #f5f6f8;
+        --muted: #a9adba;
+        --accent: #80e3f4;
+        --accent2: #1cc5e3;
+        --amber: #f5b942;
+        --font-display: "Archivo Variable", system-ui, sans-serif;
+        --font-body: "Inter", system-ui, sans-serif;
+        --font-mono: "IBM Plex Mono", monospace;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+      #root { position: absolute; inset: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); overflow: hidden; }
+      .scene { position: absolute; inset: 0; }
+      /* The camera: a 1680x899 screenshot space moved and scaled with GSAP. */
+      #cam { position: absolute; left: 0; top: 0; width: 1680px; height: 899px; transform-origin: 0 0; }
+      #cam img { position: absolute; left: 0; top: 0; width: 1680px; height: 899px; }
+      .ring { position: absolute; border: 2px solid var(--accent); border-radius: 6px; opacity: 0; box-shadow: 0 0 0 2px rgba(128, 227, 244, 0.15); }
+      .ring.amber { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(245, 185, 66, 0.15); }
+      #bar { position: absolute; left: 0; right: 0; top: 700px; height: 380px; background: linear-gradient(180deg, rgba(8, 9, 11, 0) 0, rgba(8, 9, 11, 0.92) 70px, var(--bg) 110px); }
+      .cap { position: absolute; left: 140px; right: 140px; bottom: 72px; opacity: 0; }
+      .cap .t { font-family: var(--font-display); font-weight: 650; letter-spacing: -0.03em; font-size: 64px; line-height: 1.05; }
+      .cap .s { margin-top: 14px; font-size: 34px; line-height: 1.3; color: var(--muted); }
+      .cap .t b { color: var(--accent); font-weight: 650; }
+      .mono { font-family: var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent2); }
+      .h { font-family: var(--font-display); font-weight: 650; letter-spacing: -0.03em; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="24.5" data-width="1920" data-height="1080">
+
+      <!-- Product scenes: real Studio screenshots, voice names replaced with fictional ones -->
+      <div id="studio" class="scene clip" data-start="0" data-duration="20.9" data-track-index="1">
+        <div id="cam">
+          <img id="shot2" src="assets/shots/s2.png" alt="Homegrown Studio" />
+          <img id="shot3" src="assets/shots/s3.png" alt="Homegrown Studio with a script" />
+          <img id="shot4" src="assets/shots/s4.png" alt="Homegrown Studio generating" />
+          <div id="r-clone" class="ring" style="left:252px;top:177px;width:96px;height:24px;"></div>
+          <div id="r-row" class="ring" style="left:250px;top:216px;width:570px;height:36px;"></div>
+          <div id="r-lang" class="ring" style="left:877px;top:422px;width:194px;height:36px;"></div>
+          <div id="r-gen" class="ring" style="left:1322px;top:422px;width:98px;height:36px;"></div>
+          <div id="r-live" class="ring amber" style="left:860px;top:548px;width:571px;height:72px;"></div>
+          <div id="r-search" class="ring" style="left:864px;top:499px;width:562px;height:40px;"></div>
+          <div id="r-act" class="ring" style="left:1360px;top:652px;width:70px;height:28px;"></div>
+        </div>
+        <div id="bar"></div>
+        <div id="c0" class="cap"><div class="t">Make recurring voiceovers<br />with a voice that <b>stays yours.</b></div></div>
+        <div id="c1" class="cap"><div class="t">Choose or add a voice.</div><div class="s">Clone voice, or drop audio files here.</div></div>
+        <div id="c2" class="cap"><div class="t">Write the script.</div><div class="s">Type or paste. Choose a language in the footer.</div></div>
+        <div id="c3" class="cap"><div class="t">Generate a voiceover.</div><div class="s">Extra requests join the generation queue.</div></div>
+        <div id="c4" class="cap"><div class="t">Voiceover history.</div><div class="s">Reuse restores the script, voice, and language.</div></div>
+      </div>
+
+      <!-- Outro -->
+      <div id="outro" class="scene clip" data-start="20.52" data-duration="3.98" data-track-index="2">
+        <div id="o-lines" class="scene">
+          <div class="h" id="o-a" style="position:absolute;left:200px;top:310px;font-size:128px;">No account.</div>
+          <div class="h" id="o-b" style="position:absolute;left:200px;top:460px;font-size:128px;">No subscription.</div>
+          <div class="h" id="o-c" style="position:absolute;left:200px;top:610px;font-size:128px;color:var(--accent);">No hosted service.</div>
+        </div>
+        <div id="o-mark" class="scene">
+          <div class="h" id="o-word" style="position:absolute;left:0;right:0;top:400px;text-align:center;font-size:190px;letter-spacing:-0.04em;">Homegrown</div>
+          <div id="o-uline" style="position:absolute;left:760px;width:400px;top:630px;height:4px;background:var(--accent2);border-radius:2px;transform-origin:center;"></div>
+          <div class="mono" id="o-tag" style="position:absolute;left:0;right:0;top:670px;text-align:center;font-size:28px;">Local voice generation for Windows</div>
+        </div>
+      </div>
+
+      <audio id="music" src="assets/music/bed.mp3" data-start="0" data-duration="24.5" data-track-index="10" data-volume="0.35" data-fade-in="0.6" data-fade-out="2.2"></audio>
+      <audio id="sfx-ring1" src="assets/sfx/switch_002.ogg" data-start="4.02" data-duration="0.6" data-track-index="12" data-volume="0.35"></audio>
+      <audio id="sfx-ring2" src="assets/sfx/switch_002.ogg" data-start="6.02" data-duration="0.6" data-track-index="12" data-volume="0.3"></audio>
+      <audio id="sfx-gen" src="assets/sfx/click2.ogg" data-start="11.0" data-duration="0.06" data-track-index="12" data-volume="0.8"></audio>
+      <audio id="sfx-live" src="assets/sfx/switch1.ogg" data-start="12.52" data-duration="0.3" data-track-index="12" data-volume="0.5"></audio>
+      <audio id="sfx-end" src="assets/sfx/bong_001.ogg" data-start="22.45" data-duration="0.12" data-track-index="12" data-volume="0.5"></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      const IN = "power3.out";
+
+      // Frame a rectangle of the screenshot (1680x899 space) in the top 780px; captions live below.
+      const view = (rx, ry, rw, rh) => {
+        const s = Math.min(1920 / rw, 780 / rh);
+        return { scale: s, x: (1920 - rw * s) / 2 - rx * s, y: (780 - rh * s) / 2 - ry * s };
+      };
+      const move = (v, t, d = 0.9) => tl.to("#cam", { ...v, duration: d, ease: "power3.inOut" }, t);
+
+      // Start wide on the whole Studio (the real header, particle wordmark and three cards)
+      const wide = { scale: 1920 / 1680, x: 0, y: 0 };
+      gsap.set("#cam", wide);
+      gsap.set("#shot3,#shot4", { opacity: 0 });
+      gsap.set(".ring", { opacity: 0 });
+      gsap.set(".cap", { opacity: 0 });
+      gsap.set("#c0", { opacity: 1 });
+
+      const capIn = (id, t) => tl.fromTo(id, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.45, ease: IN }, t);
+      const capOut = (id, t) => tl.to(id, { opacity: 0, duration: 0.3, ease: "power2.in" }, t);
+      const ringOn = (id, t, t2) => {
+        tl.fromTo(id, { opacity: 0 }, { opacity: 1, duration: 0.3 }, t);
+        tl.to(id, { opacity: 0, duration: 0.3 }, t2);
+      };
+
+      // 0 - 3.52  Hook: slow push toward the wordmark with the headline already on screen
+      tl.fromTo("#cam", wide, { ...view(330, 0, 1020, 520), duration: 3.4, ease: "power1.inOut" }, 0);
+      capOut("#c0", 3.2);
+
+      // 3.52 - 8.02  Voices card  // beat-locked: cut at 3.52
+      move(view(226, 112, 640, 330), 3.52);
+      capIn("#c1", 4.0);
+      ringOn("#r-clone", 4.02, 5.9);
+      ringOn("#r-row", 6.02, 7.7);
+      capOut("#c1", 7.7);
+
+      // 8.02 - 12.02  Script editor: empty -> script entered
+      move(view(846, 112, 600, 350), 8.02);
+      capIn("#c2", 8.5);
+      tl.to("#shot3", { opacity: 1, duration: 0.5, ease: "power1.out" }, 9.5);
+      ringOn("#r-lang", 10.0, 10.8);
+      ringOn("#r-gen", 10.9, 12.0);
+      capOut("#c2", 11.7);
+
+      // 12.02 - 16.02  Generate: the amber live row with Cancel
+      move(view(850, 520, 600, 220), 12.02);
+      tl.to("#shot4", { opacity: 1, duration: 0.3 }, 12.1);
+      capIn("#c3", 12.5);
+      ringOn("#r-live", 12.6, 15.7);
+      capOut("#c3", 15.7);
+
+      // 16.02 - 20.52  Voiceovers history
+      move(view(850, 490, 600, 360), 16.02);
+      capIn("#c4", 16.5);
+      ringOn("#r-search", 16.7, 18.2);
+      ringOn("#r-act", 18.4, 20.2);
+      capOut("#c4", 20.1);
+      tl.to("#studio", { opacity: 0, duration: 0.35, ease: "power2.in" }, 20.5);
+
+      // 20.52 - 24.5  Outro  // beat-locked: 20.52 grid; lines on every beat, held until 22.4
+      gsap.set("#o-mark", { opacity: 0 });
+      tl.fromTo("#o-a", { opacity: 0, x: -40 }, { opacity: 1, x: 0, duration: 0.5, ease: IN }, 20.52);
+      tl.fromTo("#o-b", { opacity: 0, x: -40 }, { opacity: 1, x: 0, duration: 0.5, ease: IN }, 21.02);
+      tl.fromTo("#o-c", { opacity: 0, x: -40 }, { opacity: 1, x: 0, duration: 0.5, ease: IN }, 21.52);
+      tl.to("#o-lines", { opacity: 0, duration: 0.2, ease: "power2.in" }, 22.25);
+      tl.fromTo("#o-mark", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: IN }, 22.45);
+      tl.fromTo("#o-uline", { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: "power3.out" }, 22.75);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
