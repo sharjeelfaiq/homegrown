@@ -6,17 +6,18 @@ import './VoiceCloneQueue.css'
 interface QueueItem { file: File; toastId: string | number }
 
 /** Browser-local FIFO: hold selected files until the previous clone request settles. */
-export function useVoiceCloneQueue({ modelReady, onAddVoice }: {
+export function useVoiceCloneQueue({ modelReady, onAddVoice, onBusyChange }: {
   modelReady: boolean
   onAddVoice: (file: File) => Promise<'done' | 'failed'>
+  onBusyChange?: (busy: boolean) => void
 }) {
-  const latest = useRef({ modelReady, onAddVoice })
+  const latest = useRef({ modelReady, onAddVoice, onBusyChange })
   const queue = useRef<QueueItem[]>([])
   const running = useRef(false)
   const mounted = useRef(true)
   const toastIds = useRef(new Set<string | number>())
 
-  useLayoutEffect(() => { latest.current = { modelReady, onAddVoice } }, [modelReady, onAddVoice])
+  useLayoutEffect(() => { latest.current = { modelReady, onAddVoice, onBusyChange } }, [modelReady, onAddVoice, onBusyChange])
 
   useEffect(() => {
     mounted.current = true
@@ -65,6 +66,7 @@ export function useVoiceCloneQueue({ modelReady, onAddVoice }: {
       }
     } finally {
       running.current = false
+      if (mounted.current) latest.current.onBusyChange?.(queue.current.length > 0)
     }
   }, [])
 
@@ -81,6 +83,7 @@ export function useVoiceCloneQueue({ modelReady, onAddVoice }: {
       })
       toastIds.current.add(toastId)
       queue.current.push({ file, toastId })
+      latest.current.onBusyChange?.(true)
     }
     void drain()
   }, [drain])

@@ -4,6 +4,7 @@ import json
 import shutil
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 from filelock import FileLock
@@ -11,6 +12,73 @@ from filelock import FileLock
 import homegrown_api.persistence.media_paths as persistence_media_paths
 
 _store_lock = threading.Lock()
+_active_reference_uploads = 0
+
+
+@contextmanager
+def reference_upload():
+    """Track uploads through persistence so bulk deletion cannot race transcription."""
+    global _active_reference_uploads
+    with _store_lock:
+        _active_reference_uploads += 1
+    try:
+        yield
+    finally:
+        with _store_lock:
+            _active_reference_uploads -= 1
+
+
+def reference_upload_dependency():
+    with reference_upload():
+        yield
+
+
+def _owned_media(record: dict, kind: str) -> set[Path]:
+    if kind == "presets":
+        try:
+            path = persistence_media_paths.resolve_stored_media_path(record.get("audio_path"), config.STORAGE_DIR)
+        except persistence_media_paths.StoredMediaPathError:
+            return set()  # Missing/unsafe legacy paths never authorize filesystem deletion.
+        return {path}
+    url = record.get("audio_url") or ""
+    if not url.startswith("/audio/"):
+        return set()
+    path = (config.GEN_DIR / url.removeprefix("/audio/")).resolve()
+    if config.GEN_DIR.resolve() not in path.parents:
+        return set()
+    return {path, path.with_suffix(".mp3")}
+
+
+def delete_collection(kind: str, user_id: str) -> dict:
+    """Persist removal first; report cleanup failures without losing other records.
+
+    Caller holds the worker lock. No directory scans: only validated, explicitly
+    referenced files are eligible, and references retained by other records win.
+    """
+    with _store_lock:
+        if kind == "presets" and _active_reference_uploads:
+            from fastapi import HTTPException
+            raise HTTPException(409, "Wait for voice cloning to finish before deleting uploaded voices.")
+        records = _presets if kind == "presets" else _history
+        targets = [r for r in records if r.get("user_id") == user_id and not (kind == "presets" and r.get("is_builtin"))]
+        target_records = {id(r) for r in targets}
+        remaining = [r for r in records if id(r) not in target_records]
+        paths = set().union(*(_owned_media(r, kind) for r in targets))
+        media_root = (config.REF_DIR if kind == "presets" else config.GEN_DIR).resolve()
+        paths = {path for path in paths if media_root in path.parents}
+        # References may be shared by a protected preset or a historical record.
+        retained = set().union(*(_owned_media(r, "presets") for r in _presets if id(r) not in target_records))
+        retained.update(set().union(*(_owned_media(r, "history") for r in _history if id(r) not in target_records)))
+        _save_json(config.PRESETS_FILE if kind == "presets" else config.HISTORY_FILE, remaining)
+        records[:] = remaining
+        cleanup_failed = []
+        for path in paths - retained:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                config.logger.exception("Bulk deletion could not remove media %s", path)
+                cleanup_failed.append(path.name)
+        return {"deleted_ids": [r["id"] for r in targets], "cleanup_failed": cleanup_failed}
 
 
 def _load_json(path: Path) -> list:

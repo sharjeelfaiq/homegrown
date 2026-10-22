@@ -42,6 +42,81 @@
    scanner into it would also mean scanning the inlined theme CSS. */
 @source '../**/*.{ts,tsx}';
 
+/* Settings keeps its panel dimensions stable as preferences are added. The
+   title bar stays outside the independently scrolling settings body. */
+.settings-modal-panel {
+  width: min(480px, 100%);
+  height: min(560px, calc(100svh - var(--gutter) - var(--gutter)));
+}
+
+.settings-modal-panel .modal-body {
+  gap: 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.settings-section {
+  border-top: 1px solid var(--line);
+  padding-block: 18px;
+}
+
+.settings-modal-panel .modal-body > .settings-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.settings-preference-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.settings-section-description {
+  margin: 10px 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-danger-section {
+  border-top-color: var(--danger);
+}
+
+.settings-danger-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-block: 11px;
+}
+
+.settings-row-label,
+.settings-row-description {
+  display: block;
+}
+
+.settings-row-label {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.settings-row-description {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (max-width: 380px) {
+  .settings-preference-row,
+  .settings-danger-row {
+    gap: 8px;
+  }
+}
+
 /* ==== The Tailwind bridge ==============================================
    Maps Tailwind's --color-* / --breakpoint-* namespaces onto the design
    tokens in styles/tokens.css, which is where the actual palettes live.
@@ -275,7 +350,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--audio);
+    outline: 2px solid var(--line-focus);
     outline-offset: 2px;
   }
 
@@ -311,7 +386,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--audio);
+    outline: 2px solid var(--line-focus);
     outline-offset: 2px;
   }
 }
@@ -365,7 +440,7 @@
 .homegrown-tour .driver-popover-footer button:focus-visible {
   background: var(--bg-hover);
   color: var(--text-primary);
-  outline: 2px solid var(--audio);
+  outline: 2px solid var(--line-focus);
   outline-offset: 2px;
 }
 .homegrown-tour .driver-popover-next-btn { background: var(--accent); color: var(--bg-base) !important; text-shadow: none; }
@@ -796,7 +871,7 @@ body {
   border-color: var(--line-focus);
 }
 
-/* The global keyboard-focus rule uses the audio accent. Inside this composite
+/* The global keyboard-focus rule uses the shared focus token. Inside this composite
    editor it outlines only the textarea, cutting across the footer; the card's
    focus-within hairline above is the single, quieter focus indicator instead. */
 .script-editor textarea:focus-visible {

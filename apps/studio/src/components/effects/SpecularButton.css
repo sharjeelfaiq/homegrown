@@ -55,7 +55,7 @@
 }
 
 .specular-button:focus-visible {
-  outline: 2px solid var(--accent-2);
+  outline: 2px solid var(--line-focus);
   outline-offset: 2px;
 }
 

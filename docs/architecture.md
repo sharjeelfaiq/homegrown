@@ -50,6 +50,12 @@ declares package metadata; it does not replace or duplicate dependency pins.
 - `audio/` owns conversion, stitching, reference trimming and transcription.
 - `persistence/stores.py` owns JSON stores, locking and reference-path migration;
   `persistence/media_paths.py` validates existing stored media paths.
+- Bulk DELETE on `/api/history` and `/api/presets` holds the worker lock across
+  idle checks and store cleanup. Stores track active reference uploads and
+  preserve files shared by surviving records. A history revision rejects
+  submissions whose preflight overlaps a bulk clear. Removed records are saved
+  before media cleanup; responses identify deleted IDs and any files that could
+  not be removed, allowing the UI to report partial cleanup accurately.
 - `routes/` exposes health, presets, generation, history, queue and download APIs.
 
 Mutable state is accessed through its owning module, so replacing a model or

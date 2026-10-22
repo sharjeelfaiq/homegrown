@@ -17,13 +17,13 @@ export default function ThemeSwitch() {
   }
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+    <div className="settings-preference-row">
       <div className="min-w-0">
         <p className="m-0 text-[13px] font-medium text-ink">Theme</p>
         <p className="m-0 mt-0.5 text-[12px] text-muted">Choose how Studio looks.</p>
       </div>
       <Dropdown.Root>
-        <Dropdown.Trigger className="flex h-9 min-w-[148px] items-center justify-between gap-2 rounded-sm border border-control bg-surface-raised px-3 text-left text-[13px] text-ink transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-audio" aria-label={`Theme: ${activeLabel}`}>
+        <Dropdown.Trigger className="flex h-9 min-w-[148px] items-center justify-between gap-2 rounded-sm border border-control bg-surface-raised px-3 text-left text-[13px] text-ink transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--line-focus)" aria-label={`Theme: ${activeLabel}`}>
           <span>{activeLabel}</span>
           <ChevronDown size={15} aria-hidden="true" />
         </Dropdown.Trigger>

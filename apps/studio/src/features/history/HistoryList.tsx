@@ -1273,7 +1273,7 @@ export default function HistoryList({
           <div className="relative min-w-0 flex-1">
           <input
             type="search"
-            className="voiceover-search h-9 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+            className="voiceover-search h-9 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-(--line-focus)"
             placeholder="Search voiceovers or voices…"
             aria-label="Search voiceovers or voices"
             value={draft}

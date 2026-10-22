@@ -31,6 +31,7 @@ import {
   ApiError,
   createPreset,
   deleteHistoryEntry,
+  deleteAllRecords,
   deletePreset,
   getHealth,
   getQueueScript,
@@ -47,6 +48,7 @@ import { historyQueryClient, invalidateHistory } from '../features/history/histo
 import { Skeleton } from 'boneyard-js/react'
 import { StudioStartupFixture } from '../skeletons/BoneyardFixtures'
 import { AppTooltip } from '../components/ui/Tooltip'
+import { useAudioActivity } from '../lib/audio/AudioActivityContext'
 
 /** Sent only so the backend has something if language detection comes back
  * empty or names a language this model cannot speak. */
@@ -57,6 +59,14 @@ const MODEL_LOADING_TOAST_ID = 'voice-model-loading'
 export default function StudioShell() {
   const voiceoversRef = useRef<HTMLElement>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const bulkDeleting = useRef(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const cloneBusy = useRef(false)
+  const [historyReset, setHistoryReset] = useState(0)
+  const historyDeletionRevision = useRef(0)
+  const presetDeletionRevision = useRef(0)
+  const { activeAudio, releaseAudio } = useAudioActivity()
+  const handleCloneBusyChange = useCallback((busy: boolean) => { cloneBusy.current = busy }, [])
   const [mascotEnabled, setMascotEnabled] = useState(() => {
     try { return localStorage.getItem('homegrown-mascot-enabled') !== 'false' } catch { return true }
   })
@@ -154,8 +164,10 @@ export default function StudioShell() {
   const refreshHistory = useCallback(() => { void invalidateHistory() }, [])
 
   function refreshPresets() {
+    const revision = presetDeletionRevision.current
     listPresets()
       .then((r) => {
+        if (revision !== presetDeletionRevision.current) return
         setPresets(r.presets)
         // Default to the first voice so a new user can type and hit Generate
         // without first realising a voice must be chosen.
@@ -281,7 +293,7 @@ export default function StudioShell() {
     // The Clone voice button is not the only route to this operation: a file
     // can also be dropped over the page. Keep that path behind the same model
     // readiness gate so it cannot bypass the disabled button during startup.
-    if (modelStatus !== 'ready' || warmingUp) return 'failed'
+    if (modelStatus !== 'ready' || warmingUp || bulkDeleting.current) return 'failed'
     setVoiceError(null)
     // The queue owns per-file feedback and continues after a rejected request.
     // Language falls back to what faster-whisper detects in the recording.
@@ -294,6 +306,7 @@ export default function StudioShell() {
   }
 
   async function handleRenamePreset(id: string, name: string, opts?: { unloading?: boolean }) {
+    const revision = presetDeletionRevision.current
     const trimmedName = name.trim()
     if (!trimmedName) return
 
@@ -313,6 +326,7 @@ export default function StudioShell() {
     try {
       await renamePreset(id, trimmedName)
     } catch (e) {
+      if (revision !== presetDeletionRevision.current) return
       setPresets(before)
       setVoiceError(e instanceof ApiError ? e.message : 'Failed to rename the voice')
     }
@@ -320,6 +334,7 @@ export default function StudioShell() {
 
   /** Optimistically remove the voice and defer the server delete for Undo. */
   async function handleDeletePreset(id: string) {
+    const revision = presetDeletionRevision.current
     const doomed = presets.find((p) => p.id === id)
     if (!doomed) return
     const index = presets.findIndex((p) => p.id === id)
@@ -331,6 +346,7 @@ export default function StudioShell() {
     setVoiceId((current) => (current === id ? null : current))
 
     const restoreVoice = () => {
+      if (revision !== presetDeletionRevision.current) return
       setPresets((prev) => prev.some((p) => p.id === id)
         ? prev
         : [...prev.slice(0, Math.min(index, prev.length)), doomed, ...prev.slice(Math.min(index, prev.length))])
@@ -350,6 +366,7 @@ export default function StudioShell() {
   }
 
   async function handleDeleteHistory(id: string) {
+    const revision = historyDeletionRevision.current
     const snapshots = historyQueryClient.getQueriesData<HistoryPage>({ queryKey: ['voiceover-history'] })
     historyQueryClient.setQueriesData<HistoryPage>({ queryKey: ['voiceover-history'] }, (page) => {
       if (!page || !page.history.some((entry) => entry.id === id)) return page
@@ -359,6 +376,7 @@ export default function StudioShell() {
       await deleteHistoryEntry(id)
       refreshHistory()
     } catch (e) {
+      if (revision !== historyDeletionRevision.current) return
       for (const [key, page] of snapshots) historyQueryClient.setQueryData(key, page)
       const message = e instanceof ApiError ? e.message : 'Failed to delete voiceover'
       setError(message)
@@ -391,6 +409,7 @@ export default function StudioShell() {
     script.trim().length > 0 && script.length <= MAX_SCRIPT_CHARS && selectedVoice != null
 
   async function handleGenerate() {
+    if (bulkDeleting.current) return
     if (!scriptReady || selectedVoice == null) {
       setError(
         presets.length === 0
@@ -561,7 +580,7 @@ export default function StudioShell() {
           <AppTooltip content="Settings">
             <button
               type="button"
-              className="icon-btn focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-audio"
+              className="icon-btn focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--line-focus)"
               aria-label="Open settings"
               onClick={() => setSettingsOpen(true)}
             >
@@ -571,7 +590,7 @@ export default function StudioShell() {
           <AppTooltip content="Replay tour">
             <button
               type="button"
-              className="icon-btn focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-audio"
+              className="icon-btn focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--line-focus)"
               aria-label="Replay studio tour"
               onClick={() => startTour({ force: true })}
             >
@@ -607,10 +626,11 @@ export default function StudioShell() {
             onSelect={setVoiceId}
             onRename={handleRenamePreset}
             loading={modelStatus === 'checking'}
-            modelReady={modelReady}
+            modelReady={modelReady && !bulkBusy}
             modelLoading={modelLoading}
             onAddVoice={handleAddVoice}
             onDelete={handleDeletePreset}
+            onCloneBusyChange={handleCloneBusyChange}
           />
 
           {/* GenerateButton stays a button throughout -- progress now lives in
@@ -645,6 +665,7 @@ export default function StudioShell() {
           />
           {estimate?.warning && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">{estimate.warning}</p>}
           <HistoryList
+            key={historyReset}
             presets={presets}
             filters={historyFilters}
             onFiltersChange={setHistoryFilters}
@@ -666,6 +687,45 @@ export default function StudioShell() {
         onClose={() => setSettingsOpen(false)}
         mascotEnabled={mascotEnabled}
         onMascotEnabledChange={setMascotPreference}
+        onBulkDelete={async (kind) => {
+          if (bulkDeleting.current) throw new Error('A bulk deletion is already in progress.')
+          if (submitting || warmingUp) throw new Error('Wait for the current generation submission to finish before bulk deletion.')
+          if (kind === 'presets' && cloneBusy.current) throw new Error('Wait for all queued voices to finish cloning before deleting uploaded voices.')
+          bulkDeleting.current = true
+          setBulkBusy(true)
+          try {
+            const result = await deleteAllRecords(kind)
+            const deleted = new Set(result.deleted_ids)
+            if (activeAudio) {
+              const path = new URL(activeAudio.src, window.location.href).pathname
+              // Voice previews stop in ClonedVoicesSection when their row is removed.
+              if (kind === 'history' && path.startsWith('/audio/')) {
+                activeAudio.pause()
+                releaseAudio(activeAudio)
+              }
+            }
+            if (kind === 'presets') {
+              presetDeletionRevision.current += 1
+              for (const cancel of voiceDeleteTimers.current) cancel()
+              voiceDeleteTimers.current.clear()
+              setPresets((previous) => previous.filter((voice) => !deleted.has(voice.id)))
+              setVoiceId((current) => current && deleted.has(current) ? null : current)
+              setHistoryFilters((previous) => previous.presetId && deleted.has(previous.presetId) ? { ...previous, presetId: undefined } : previous)
+            } else {
+              historyDeletionRevision.current += 1
+              await historyQueryClient.cancelQueries({ queryKey: ['voiceover-history'] })
+              historyQueryClient.setQueriesData<HistoryPage>({ queryKey: ['voiceover-history'] }, () => ({ history: [], total: 0 }))
+              setHistoryReset((value) => value + 1)
+              setPendingNew(0)
+              await invalidateHistory()
+              await refreshQueue()
+            }
+            return result
+          } finally {
+            bulkDeleting.current = false
+            setBulkBusy(false)
+          }
+        }}
       />
 
       {modelStatus === 'down' && (

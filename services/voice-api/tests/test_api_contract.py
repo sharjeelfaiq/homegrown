@@ -5,6 +5,7 @@ import tempfile
 import threading
 import unittest
 from contextlib import ExitStack
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -37,6 +38,7 @@ class ApiContractTests(unittest.TestCase):
         for module, name, value in [
             (worker, '_jobs', {}), (worker, '_pending_job_ids', []),
             (worker, '_current_running_job_id', None),
+            (worker, '_history_revision', 0),
             (worker, '_queue_event', threading.Event()),
             (worker, '_stop_event', threading.Event()),
             (stores, '_presets', []), (stores, '_history', []),
@@ -73,10 +75,10 @@ class ApiContractTests(unittest.TestCase):
         expected = {
             '/api/download/{filename}': {'get'}, '/api/health': {'get'},
             '/api/languages': {'get'}, '/api/estimate': {'post'},
-            '/api/presets': {'get', 'post'},
+            '/api/presets': {'get', 'post', 'delete'},
             '/api/presets/{preset_id}': {'patch', 'delete'},
             '/api/presets/{preset_id}/download': {'get'},
-            '/api/history': {'get'}, '/api/history/zip': {'post'},
+            '/api/history': {'get', 'delete'}, '/api/history/zip': {'post'},
             '/api/history/{entry_id}': {'delete'}, '/api/generate': {'post'},
             '/api/jobs/{job_id}': {'get'}, '/api/queue': {'get'},
             '/api/queue/{job_id}/script': {'get'},
@@ -87,6 +89,113 @@ class ApiContractTests(unittest.TestCase):
         paths = app.openapi()['paths']
         actual = {p: set(methods) for p, methods in paths.items() if p.startswith('/api/')}
         self.assertEqual(actual, expected)
+
+    def test_bulk_history_covers_all_pages_and_preserves_shared_and_unowned_media(self):
+        shared = config.GEN_DIR / 'shared.wav'
+        shared.write_bytes(b'audio')
+        for i in range(105):
+            media = config.GEN_DIR / f'{i}.wav'
+            media.write_bytes(b'audio')
+            media.with_suffix('.mp3').write_bytes(b'cached')
+            stores._history.append({'id': str(i), 'user_id': 'local-user', 'audio_url': f'/audio/{i}.wav'})
+        stores._history.extend([
+            {'id': 'shared-mine', 'user_id': 'local-user', 'audio_url': '/audio/shared.wav'},
+            {'id': 'shared-other', 'user_id': 'other', 'audio_url': '/audio/shared.wav'},
+            {'id': 'unsafe', 'user_id': 'local-user', 'audio_url': '/audio/../protected.txt'},
+        ])
+        protected = self.root / 'protected.txt'
+        protected.write_bytes(b'keep')
+        stores._presets.append({'id': 'builtin-shared', 'user_id': 'local-user', 'is_builtin': True, 'audio_path': 'generated/0.wav'})
+        response = self.client.delete('/api/history')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(response.json()['deleted_ids']), 107)
+        self.assertEqual(response.json()['cleanup_failed'], [])
+        self.assertEqual([h['id'] for h in stores._history], ['shared-other'])
+        self.assertEqual(json.loads(config.HISTORY_FILE.read_text()), stores._history)
+        self.assertEqual(set(config.GEN_DIR.iterdir()), {shared, config.GEN_DIR / '0.wav'})
+        self.assertTrue(protected.exists())
+        self.assertEqual(self.client.delete('/api/history').json()['deleted_ids'], [])
+
+    def test_bulk_presets_preserves_builtins_shared_media_and_history(self):
+        for name in ('shared.wav', 'uploaded.wav'):
+            (config.REF_DIR / name).write_bytes(b'audio')
+        unrelated = self.root / 'settings.json'
+        unrelated.write_bytes(b'keep')
+        stores._presets.extend([
+            {'id': 'builtin', 'user_id': 'local-user', 'is_builtin': True, 'audio_path': 'references/shared.wav'},
+            {'id': 'shared', 'user_id': 'local-user', 'audio_path': 'references/shared.wav'},
+            {'id': 'uploaded', 'user_id': 'local-user', 'audio_path': 'references/uploaded.wav'},
+            {'id': 'other', 'user_id': 'other', 'audio_path': 'references/shared.wav'},
+            {'id': 'outside-refs', 'user_id': 'local-user', 'audio_path': 'settings.json'},
+        ])
+        stores._history.append({'id': 'keep', 'user_id': 'local-user', 'text': 'Saved transcript'})
+        result = self.client.delete('/api/presets')
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(set(result.json()['deleted_ids']), {'shared', 'uploaded', 'outside-refs'})
+        self.assertEqual([p['id'] for p in stores._presets], ['builtin', 'other'])
+        self.assertTrue((config.REF_DIR / 'shared.wav').exists())
+        self.assertFalse((config.REF_DIR / 'uploaded.wav').exists())
+        self.assertEqual(unrelated.read_bytes(), b'keep')
+        self.assertEqual(stores._history[0]['text'], 'Saved transcript')
+
+    def test_bulk_deletion_refuses_active_work_without_mutation(self):
+        self.ready_voice()
+        job_id = self.submit()
+        for status in ('queued', 'running', 'canceling'):
+            worker._jobs[job_id]['status'] = status
+            for path in ('/api/history', '/api/presets'):
+                self.assertEqual(self.client.delete(path).status_code, 409)
+                self.assertEqual(stores._presets[0]['id'], 'voice')
+        worker._jobs[job_id]['status'] = 'canceled'
+        with stores.reference_upload():
+            self.assertEqual(self.client.delete('/api/presets').status_code, 409)
+        self.assertEqual(self.client.delete('/api/presets').status_code, 200)
+
+    def test_bulk_cleanup_failure_is_reported_and_store_failure_preserves_records(self):
+        audio = config.GEN_DIR / 'locked.mp3'
+        audio.write_bytes(b'audio')
+        entry = {'id': 'locked', 'user_id': 'local-user', 'audio_url': '/audio/locked.mp3'}
+        stores._history.append(entry)
+        with patch.object(stores, '_save_json', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                self.client.delete('/api/history')
+        self.assertEqual(stores._history, [entry])
+        self.assertTrue(audio.exists())
+        original_unlink = Path.unlink
+        def locked_unlink(path, *args, **kwargs):
+            if path == audio:
+                raise PermissionError('locked')
+            return original_unlink(path, *args, **kwargs)
+        with patch.object(Path, 'unlink', autospec=True, side_effect=locked_unlink):
+            result = self.client.delete('/api/history')
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json(), {'deleted_ids': ['locked'], 'cleanup_failed': ['locked.mp3']})
+        self.assertEqual(stores._history, [])
+        self.assertTrue(audio.exists())
+
+    def test_bulk_clear_rejects_submissions_already_in_preflight(self):
+        self.ready_voice()
+        for collection in ('history', 'presets'):
+            with self.subTest(collection=collection):
+                entered = threading.Event()
+                release = threading.Event()
+                def preflight(_preset):
+                    entered.set()
+                    if not release.wait(5):
+                        raise RuntimeError('Preflight test timed out')
+                    return budget._Budget(200, 700, 1)
+                with patch.object(budget, '_seq_budget', side_effect=preflight), ThreadPoolExecutor(max_workers=1) as pool:
+                    submission = pool.submit(self.client.post, '/api/generate', json={
+                        'preset_id': 'voice', 'text': 'Must not reappear.', 'language': 'English',
+                    })
+                    try:
+                        self.assertTrue(entered.wait(5))
+                        self.assertEqual(self.client.delete(f'/api/{collection}').status_code, 200)
+                    finally:
+                        release.set()
+                    self.assertEqual(submission.result(timeout=5).status_code, 409)
+                self.assertEqual(worker._jobs, {})
+                self.assertEqual(stores._history, [])
 
     def test_health_validation_and_unknown_api_do_not_fall_through_to_spa(self):
         self.assertFalse(self.client.get('/api/health').json()['model_loaded'])

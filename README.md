@@ -115,6 +115,11 @@ system theme. The same dialog can hide or show the mascot. Both choices are
 stored in this browser; hiding the mascot does not remove its assets or change
 voice generation.
 
+Settings also has a **Danger Zone** to permanently delete all generated
+voiceovers or all uploaded voices, including their audio, after confirmation.
+Built-in voices are preserved. Finish or cancel generation first; uploaded-voice
+deletion also requires the cloning queue to finish. Bulk deletion has no Undo.
+
 The Studio mascot is a session-local viewport companion. On wide screens it
 rests at the Voiceovers section's lower-left corner, and on narrow screens at
 the viewport's lower-left, until you drag the mascot artwork itself; after a

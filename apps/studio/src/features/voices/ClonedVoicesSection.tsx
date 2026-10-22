@@ -22,6 +22,7 @@ interface Props {
   modelLoading: boolean
   onAddVoice: (file: File) => Promise<'done' | 'failed'>
   onDelete: (id: string) => Promise<void>
+  onCloneBusyChange?: (busy: boolean) => void
 }
 
 /** Persistent voice management surface for cloning, finding, and managing presets. */
@@ -35,6 +36,7 @@ export default function ClonedVoicesSection({
   modelLoading,
   onAddVoice,
   onDelete,
+  onCloneBusyChange,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('')
   const [previewingId, setPreviewingId] = useState<string | null>(null)
@@ -44,7 +46,7 @@ export default function ClonedVoicesSection({
   const previewRequestRef = useRef(0)
   const previewObjectUrlRef = useRef<string | null>(null)
   const voiceUploadRef = useRef<HTMLInputElement>(null)
-  const enqueueVoiceFiles = useVoiceCloneQueue({ modelReady, onAddVoice })
+  const enqueueVoiceFiles = useVoiceCloneQueue({ modelReady, onAddVoice, onBusyChange: onCloneBusyChange })
   const { setActiveAudio, releaseAudio } = useAudioActivity()
   const { runningPresetIds } = useGenerationActivity()
   const reduced = usePrefersReducedMotion()
@@ -147,7 +149,7 @@ export default function ClonedVoicesSection({
               value={searchQuery}
               aria-label="Search cloned voices"
               placeholder="Search voices…"
-              className="voiceover-search h-9 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-audio-line"
+              className="voiceover-search h-9 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-(--line-focus)"
               onChange={(event) => setSearchQuery(event.target.value)}
               onKeyDown={(event) => event.stopPropagation()}
             />

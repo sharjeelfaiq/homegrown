@@ -53,6 +53,13 @@ Settings also contains the **Pet animal** switch, which hides or shows the
 mascot. These preferences are stored in the browser; they do not affect
 presets, generated audio, or other clients.
 
+The **Danger Zone** section has two permanent bulk actions: **Delete all generated
+voiceovers** and **Delete all uploaded voices**. Both require confirmation and
+have no Undo window. Voiceover deletion includes every page and its generated
+audio; uploaded-voice deletion preserves built-in voices and completed voiceovers.
+Finish or cancel generation first, and let all waiting/active clones finish before
+deleting uploaded voices. The app reports any audio files it could not remove.
+
 ## Create and manage voices
 
 Choose **Clone voice** in the Voices card to select one or more audio files,
@@ -179,8 +186,8 @@ the toast disappears after one second. Failed requests keep the existing error
 feedback and rollback behavior.
 
 Leaving the page before the timer expires cancels the pending client-side delete;
-the history entry remains on the server. Each delete is a separate action; there
-is no batch-selection workflow.
+the history entry remains on the server. Individual deletes remain separate
+actions; Settings provides the confirmed, permanent bulk actions described above.
 
 Reusing a finished voiceover's script fills the composer with its saved script,
 voice, and generation language. Reusing a queued job restores the same three

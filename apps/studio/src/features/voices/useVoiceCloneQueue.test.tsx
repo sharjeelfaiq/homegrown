@@ -23,6 +23,21 @@ beforeEach(() => { vi.clearAllMocks(); toastState.next = 0 })
 afterEach(cleanup)
 
 describe('voice clone FIFO', () => {
+  it('reports busy through running and paused queued uploads until the whole batch settles', async () => {
+    const first = request()
+    const next = request()
+    const onAddVoice = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(next.promise)
+    const onBusyChange = vi.fn()
+    const { result, rerender } = renderHook(({ ready }) => useVoiceCloneQueue({ modelReady: ready, onAddVoice, onBusyChange }), { initialProps: { ready: true } })
+    act(() => result.current([file('active.wav'), file('waiting.wav')]))
+    expect(onBusyChange).toHaveBeenLastCalledWith(true)
+    rerender({ ready: false })
+    await act(async () => { first.resolve('done') })
+    expect(onBusyChange).toHaveBeenLastCalledWith(true)
+    rerender({ ready: true })
+    await act(async () => { next.resolve('done') })
+    expect(onBusyChange).toHaveBeenLastCalledWith(false)
+  })
   it('serializes a batch and appends new uploads without interrupting the active clone', async () => {
     const requests = [request(), request(), request(), request()]
     let active = 0

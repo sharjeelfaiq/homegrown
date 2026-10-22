@@ -12,11 +12,19 @@ import homegrown_api.audio.transcription as audio_transcription
 import homegrown_api.dependencies as dependencies
 import homegrown_api.generation.budget as generation_budget
 import homegrown_api.generation.model as generation_model
+import homegrown_api.generation.worker as generation_worker
 import homegrown_api.persistence.media_paths as persistence_media_paths
 import homegrown_api.persistence.stores as persistence_stores
 import homegrown_api.routes.downloads as routes_downloads
 
 router = APIRouter()
+
+
+@router.delete("/api/presets")
+def delete_all_presets(user_id: str = Depends(dependencies.get_current_user)):
+    with generation_worker._jobs_lock:
+        generation_worker.require_idle_for_deletion(user_id)
+        return persistence_stores.delete_collection("presets", user_id)
 
 
 def _preset_response(preset: dict) -> dict:
@@ -60,6 +68,7 @@ async def create_preset(
     language: str = Form("English"),
     tag: str = Form(""),
     user_id: str = Depends(dependencies.get_current_user),
+    _upload: None = Depends(persistence_stores.reference_upload_dependency),
 ):
     name = name.strip()
     ref_text = ref_text.strip()
@@ -305,10 +314,10 @@ def download_reference(preset_id: str, user_id: str = Depends(dependencies.get_c
 
 @router.delete("/api/presets/{preset_id}")
 def delete_preset(preset_id: str, user_id: str = Depends(dependencies.get_current_user)):
-    preset = persistence_stores._find_preset(preset_id)
-    if preset is None or preset.get("user_id") != user_id:
-        raise HTTPException(404, "Unknown preset_id")
     with persistence_stores._store_lock:
+        preset = persistence_stores._find_preset(preset_id)
+        if preset is None or preset.get("user_id") != user_id:
+            raise HTTPException(404, "Unknown preset_id")
         persistence_stores._presets.remove(preset)
         persistence_stores._save_json(config.PRESETS_FILE, persistence_stores._presets)
     try:

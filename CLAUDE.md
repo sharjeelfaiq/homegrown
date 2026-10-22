@@ -172,6 +172,13 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   mascot assets, catalog generation, or generation state. The mascot switch is
   stored as `homegrown-mascot-enabled` in localStorage and defaults to visible
   when storage is unavailable or unset.
+- Settings also contains **Danger Zone** actions to permanently delete all
+  generated voiceovers or all uploaded voices after confirmation, without Undo.
+  Bulk operations cover all pages, preserve built-in voices and shared media,
+  and refuse active generation; uploaded-voice deletion also refuses active
+  cloning and the browser's waiting clone queue. Media cleanup failures are
+  reported separately from successful record deletion. Focus outlines throughout
+  Studio use the Script editor's `--line-focus` token, preserving theme accents.
 - The mascot catalog is generated from top-level numbered pairs in
   `apps/studio/public/mascots/`: `<id>a.webp` is directions and `<id>b.webp`
   is reactions. Do not hand-edit `src/features/mascots/generated/mascotCatalog.ts`; add a pair,

@@ -214,6 +214,12 @@ export function deletePreset(presetId: string): Promise<{ ok: boolean }> {
   }).then(parseOrThrow<{ ok: boolean }>)
 }
 
+export interface BulkDeleteResult { deleted_ids: string[]; cleanup_failed: string[] }
+
+export function deleteAllRecords(kind: 'history' | 'presets'): Promise<BulkDeleteResult> {
+  return fetch(apiUrl(`/api/${kind}`), { method: 'DELETE' }).then(parseOrThrow<BulkDeleteResult>)
+}
+
 export interface HistoryPage {
   history: HistoryEntry[]
   /** Total entries for this user across all pages, before slicing. */

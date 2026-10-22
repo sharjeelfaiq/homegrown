@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 import homegrown_api.audio.convert as audio_convert
 import homegrown_api.dependencies as dependencies
+import homegrown_api.generation.worker as generation_worker
 import homegrown_api.persistence.stores as persistence_stores
 import homegrown_api.routes.downloads as routes_downloads
 
@@ -17,6 +18,19 @@ router = APIRouter()
 
 
 HISTORY_PAGE_MAX = 100
+
+
+@router.delete("/api/history")
+def delete_all_history(user_id: str = Depends(dependencies.get_current_user)):
+    with generation_worker._jobs_lock:
+        generation_worker.require_idle_for_deletion(user_id)
+        result = persistence_stores.delete_collection("history", user_id)
+        generation_worker._history_revision += 1
+        # Completed job metadata must not advertise deleted output or permit reuse.
+        for job_id, job in list(generation_worker._jobs.items()):
+            if job.get("user_id") == user_id and job["status"] == "done":
+                del generation_worker._jobs[job_id]
+        return result
 
 
 @router.get("/api/history")
@@ -169,10 +183,10 @@ def zip_history(req: HistoryZipRequest, user_id: str = Depends(dependencies.get_
 
 @router.delete("/api/history/{entry_id}")
 def delete_history_entry(entry_id: str, user_id: str = Depends(dependencies.get_current_user)):
-    entry = next((h for h in persistence_stores._history if h["id"] == entry_id), None)
-    if entry is None or entry.get("user_id") != user_id:
-        raise HTTPException(404, "Unknown history entry_id")
     with persistence_stores._store_lock:
+        entry = next((h for h in persistence_stores._history if h["id"] == entry_id), None)
+        if entry is None or entry.get("user_id") != user_id:
+            raise HTTPException(404, "Unknown history entry_id")
         persistence_stores._history.remove(entry)
         persistence_stores._save_json(config.HISTORY_FILE, persistence_stores._history)
     audio_url = entry.get("audio_url", "")

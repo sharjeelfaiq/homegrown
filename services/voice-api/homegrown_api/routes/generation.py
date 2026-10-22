@@ -92,6 +92,8 @@ def estimate(req: EstimateRequest, user_id: str = Depends(dependencies.get_curre
 
 @router.post("/api/generate", status_code=202)
 def generate(req: generation_schemas.GenerateRequest, user_id: str = Depends(dependencies.get_current_user)) -> generation_schemas.GenerateJobStart:
+    with generation_worker._jobs_lock:
+        history_revision = generation_worker._history_revision
     if generation_model._tts is None:
         raise HTTPException(503, "Model not loaded yet")
     preset = persistence_stores._find_preset(req.preset_id)
@@ -155,6 +157,11 @@ def generate(req: generation_schemas.GenerateRequest, user_id: str = Depends(dep
         "finished_at": None,
     }
     with generation_worker._jobs_lock:
+        # Bulk voice deletion uses the same lock; recheck after preflight work.
+        if history_revision != generation_worker._history_revision:
+            raise HTTPException(409, "Voiceovers were cleared during submission. Submit again to generate a new voiceover.")
+        if persistence_stores._find_preset(req.preset_id) is not preset:
+            raise HTTPException(409, "Selected voice was deleted. Choose another voice.")
         generation_worker._enqueue_job_locked(job_id, job)
         position = generation_worker._queue_position_locked(job_id)
 

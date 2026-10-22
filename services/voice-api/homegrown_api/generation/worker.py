@@ -22,6 +22,7 @@ import homegrown_api.persistence.stores as persistence_stores
 # regardless of how many threads you throw at it) rather than pretending to
 # support concurrency the hardware can't back up.
 _jobs_lock = threading.Lock()
+_history_revision = 0
 
 
 _jobs: dict[str, dict] = {}
@@ -41,6 +42,12 @@ _timing_lock = threading.Lock()
 
 
 # ---- Queue helpers (all assume caller holds _jobs_lock) --------------------
+
+def require_idle_for_deletion(user_id: str) -> None:
+    """Caller holds _jobs_lock until the deletion completes."""
+    from fastapi import HTTPException
+    if any(job.get("user_id") == user_id and job["status"] in {"queued", "running", "canceling"} for job in _jobs.values()):
+        raise HTTPException(409, "Wait for generation to finish or cancel queued jobs before bulk deletion.")
 
 def _queue_position_locked(job_id: str) -> Optional[int]:
     try:

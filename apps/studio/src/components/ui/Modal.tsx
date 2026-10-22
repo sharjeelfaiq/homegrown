@@ -10,6 +10,7 @@ interface Props {
   title: string
   onClose: () => void
   children: ReactNode
+  size?: 'default' | 'settings'
 }
 
 const FOCUSABLE =
@@ -27,7 +28,7 @@ const FOCUSABLE =
  *    users are not dumped at the top of the document on close.
  *  - Body scroll is locked while open, otherwise the page behind scrolls under
  *    the overlay on wheel input. */
-export default function Modal({ open, title, onClose, children }: Props) {
+export default function Modal({ open, title, onClose, children, size = 'default' }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
   const restoreTo = useRef<HTMLElement | null>(null)
   const reduced = usePrefersReducedMotion()
@@ -115,7 +116,7 @@ export default function Modal({ open, title, onClose, children }: Props) {
         >
           <motion.div
             ref={panelRef}
-            className="flex max-h-[min(85svh,720px)] w-[min(460px,100%)] flex-col overflow-hidden rounded-lg border border-hairline-strong bg-surface-card outline-none"
+            className={`flex max-h-[min(85svh,720px)] w-[min(460px,100%)] flex-col overflow-hidden rounded-lg border border-hairline-strong bg-surface-card outline-none ${size === 'settings' ? 'settings-modal-panel' : ''}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
@@ -125,7 +126,7 @@ export default function Modal({ open, title, onClose, children }: Props) {
             exit={reduced ? undefined : { opacity: 0, y: 4, scale: 0.99 }}
             transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
           >
-            <header className="flex items-center justify-between gap-3 border-b border-hairline py-3.5 pr-3 pl-[18px]">
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline py-3.5 pr-3 pl-[18px]">
               <h2
                 id={titleId}
                 className="font-mono text-[11px] font-normal tracking-[0.1em] uppercase text-muted"
@@ -146,7 +147,7 @@ export default function Modal({ open, title, onClose, children }: Props) {
                 fell through to the panel's first focusable -- the header's
                 close button, i.e. exactly what the comment up there says it
                 is avoiding. Do not remove it to quieten the guard. */}
-            <div className="modal-body flex flex-col gap-[22px] overflow-y-auto p-[18px]">
+            <div className="modal-body min-h-0 flex-1 flex flex-col gap-[22px] overflow-y-auto p-[18px]">
               {children}
             </div>
           </motion.div>
