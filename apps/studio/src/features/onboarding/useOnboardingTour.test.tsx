@@ -47,16 +47,36 @@ describe('useOnboardingTour', () => {
       '[data-tour="voiceover-search-filters"]',
       undefined,
     ])
-    expect(config.steps.map((step: { popover: { title: string, description: string } }) => step.popover.title)).toEqual([
-      'Welcome to Homegrown', 'Theme and help', 'Choose or add a voice', 'Write the script', 'Generate a voiceover', 'Voiceover history', 'Search and filter voiceovers', 'You are ready',
+    const titles = config.steps.map((step: { popover: { title: string, description: string } }) => step.popover.title)
+    const descriptions = config.steps.map((step: { popover: { title: string, description: string } }) => step.popover.description)
+    expect(titles).toEqual([
+      'Welcome to Homegrown', 'Settings and help', 'Choose or add a voice', 'Write the script', 'Generate a voiceover', 'Voiceover history', 'Search and filter voiceovers', 'You are ready',
     ])
     expect(config.steps[0].popover.description).toContain('cards stack on smaller screens.')
     expect(config.steps[2].popover.description).toContain('clicking its row')
+    expect(config.steps[2].popover.description).toContain('drop multiple audio files')
     expect(config.steps[3].popover.description).not.toContain('Press /')
-    expect(config.steps[4].popover.description).toContain('lower-right')
-    expect(config.steps[4].popover.description).toContain('hover it to see the keyboard shortcut')
-    expect(config.steps[5].popover.description).toContain('Generated voiceovers appear in this card')
+    expect(config.steps[3].popover.description).toContain('Choose its language')
+    expect(config.steps[4].popover.description).toContain('generation queue')
+    expect(config.steps[4].popover.description).toContain('cancel queued jobs')
+    expect(config.steps[5].popover.description).toContain('Play, seek, download')
+    expect(config.steps[5].popover.description).toContain('Reuse restores the script, voice, and language')
     expect(config.steps[6].popover.description).toContain('filter button')
+    expect(descriptions[1]).toContain('Danger Zone')
+    expect(descriptions[1]).toContain('theme')
+    expect(descriptions[1]).toContain('show or hide the pet')
+    expect(descriptions.join(' ')).toMatch(/search/i)
+
+    // Keep all targets static and available in an empty Studio; queue rows and
+    // other conditional content must not be required to advance the tour.
+    expect(config.steps.filter((step: { element?: string }) => step.element).map((step: { element: string }) => step.element)).toEqual([
+      '[data-tour="header-controls"]',
+      '[data-tour="voice-controls"]',
+      '[data-tour="script-editor"]',
+      '[data-tour="generate-control"]',
+      '[data-tour="voiceovers"]',
+      '[data-tour="voiceover-search-filters"]',
+    ])
 
     act(() => tour?.startTour({ force: true }))
     expect(driverMock).toHaveBeenCalledTimes(1)
