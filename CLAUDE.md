@@ -86,14 +86,21 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - `GET /api/presets` is newest-first and accepts optional `limit`, `offset`,
   and case-insensitive voice-name `q` search. It always returns an object with
   `presets` and `total`; `total` is the number of matching cloned voices before
-  slicing. Requests without pagination parameters retain the full-list response
+  slicing. Each preset also includes `completed_voiceovers`, the aggregate
+  number of successfully completed persisted history records for that voice,
+  independent of history filters and pages. Generation completion and history
+  deletion invalidate voice queries so these counts refresh. Requests without
+  pagination parameters retain the full-list response
   behavior. The requested page size is clamped to 1–100 and offsets below zero
   become zero.
 - `apps/studio/src/features/history/historyQuery.ts` owns history query keys, normalization, cache
   policy, persistence, and cache clearing. Keys are scoped to `local-user`.
-- TanStack Query retains history for 20 minutes in memory, treats it as stale
-  after one minute, and persists only `voiceover-history` queries in
-  localStorage for 24 hours. Do not turn this into an unbounded aggregate list.
+- TanStack Query retains query data for 20 minutes in memory and treats it as
+  stale after one minute. Its 24-hour localStorage persistence includes history,
+  voice-list pages, and model-language options. Voice persistence projects only
+  row/action fields; reference transcripts and storage paths are blanked. Queue
+  snapshots, health/readiness, scripts, uploads, and generated audio are not in
+  this API cache. Queue state remains in the in-memory query cache.
 - `HistoryList` requests the active server page and prefetches one next page
   after a successful online response. It keeps previous data visible during a
   transition. Automated fetching is skipped offline; cached data remains
@@ -149,7 +156,10 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - `ClonedVoicesSection.tsx` is the persistent voice-management card. It owns
   paged server-side voice search, selection, rename, preview, download, delete,
   pagination, and Clone voice. Only cloned voices appear in pages and the
-  total count; the card's page-size preference is stored separately from
+  total count. Rows show successfully completed voiceover counts; a pulsing dot
+  precedes the count while that voice is generating. Preserve the server count
+  when reconciling page results with StudioShell's live preset objects. Voice
+  page sizes are 50, 80, and 100 (default 50), stored separately from
   Voiceovers. Keep StudioShell's full-list request for generation and
   Voiceovers filters. Ignore stale page responses, reconcile returned records
   with current voices, and clamp the page when results shrink. Search and page
@@ -233,7 +243,8 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   run a normal Studio command, and commit the assets with its regenerated
   catalog. Mascot 2 (the Cat sheets) is the default when it exists.
 - Generate is a compact right-aligned action in the Script editor footer; the
-  language selector is left-aligned. Its tooltip exposes the Ctrl/Cmd+Enter
+  language selector is left-aligned. The selected voice appears in a truncated
+  reminder above the textarea text, outside the footer. Its tooltip exposes the Ctrl/Cmd+Enter
   shortcut when ready and the model-loading explanation while startup blocks
   it. Keep `.generate-action-auxiliary` visually stable and do not reintroduce
   shortcut or prerequisite copy beside the action.

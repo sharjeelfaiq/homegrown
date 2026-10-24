@@ -4,9 +4,10 @@ CUDA-graph-accelerated wrapper around [`qwen-tts`](https://github.com/QwenLM/Qwe
 
 ## Requirements
 
-- NVIDIA GPU + CUDA-enabled PyTorch build for CUDA-graph acceleration. The application can instead use
-  the wrapper's CPU fallback for the standard voice-clone/custom/design generation paths, but it is much
-  slower and skips CUDA graphs; graph-only APIs still require a usable GPU.
+- NVIDIA GPU + CUDA-enabled PyTorch build for CUDA-graph acceleration. The wrapper's standard
+  voice-clone/custom/design paths can fall back to CPU, but they are much slower and skip CUDA graphs;
+  graph-only APIs still require a usable GPU. Homegrown Studio allows voice management on CPU, but
+  disables generation unless health reports a CUDA device.
 - `torch`
 - `transformers` (a recent version providing `transformers.masking_utils.create_causal_mask` / `create_sliding_window_causal_mask`)
 - `qwen-tts` (`pip install -U qwen-tts`) — provides `Qwen3TTSModel` and the underlying model/tokenizer implementation
@@ -64,8 +65,10 @@ CUDA graphs are captured lazily on the first generation call (warmup happens aut
 
 ## Public API
 
-### `FasterQwen3TTS.from_pretrained(model_name, device="cuda", dtype=torch.bfloat16, attn_implementation="sdpa", max_seq_len=2048)`
+### `FasterQwen3TTS.from_pretrained(model_name, device="auto", dtype=torch.bfloat16, attn_implementation="sdpa", max_seq_len=2048)`
 Loads the base `qwen-tts` model and builds (but does not yet capture) the predictor/talker CUDA graphs.
+`device="auto"` selects a usable CUDA device when available and otherwise selects CPU. Pass
+`device="cuda"` to require CUDA explicitly.
 
 ### `generate_voice_clone(text, language, ref_audio=None, ref_text="", ..., xvec_only=False, voice_clone_prompt=None, instruct=None)`
 Generate speech that clones a reference voice. Either pass `ref_audio`/`ref_text`, or a precomputed `voice_clone_prompt`. Set `xvec_only=True` to condition only on the speaker embedding (avoids phoneme bleed-through from the reference, allows language switching) instead of full in-context-learning (ICL) mode.

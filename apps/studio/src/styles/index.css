@@ -996,6 +996,10 @@ body {
   flex: 1 1 auto;
 }
 
+.voice-generation-count {
+  margin-left: 6px;
+}
+
 .cloned-voices-toolbar {
   /* Match the Voiceovers card's compact horizontal rhythm: the control row
      shares its divider, inset, and 40px target height with that card's footer. */

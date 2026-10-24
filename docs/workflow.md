@@ -84,6 +84,8 @@ transcribes the reference. There is no language selector on upload.
 
 The Script editor uses a responsive height of `clamp(300px, 39svh, 400px)`.
 Its footer holds the word count, script-language control, and Generate action.
+The selected voice is repeated in a truncated reminder above the script text;
+it updates with voice selection and does not change generation prerequisites.
 The language control begins at **Select language**. Generation
 requires choosing an explicit language, even
 though the backend can fall back to the voice's stamped language. Choosing one
@@ -92,8 +94,8 @@ cloned voice. The choice stays until you change it and is not saved across
 reloads. The list comes from the loaded model, so a language it does not speak
 is never offered and is refused if requested. Reading a script in a language
 the voice was not cloned from usually keeps the speaker's accent — check the
-first voiceover before committing to a long one. The language dropdown keeps
-a fixed width to prevent footer shifts. Use the Voices card above the composer
+first voiceover before committing to a long one. The language dropdown is
+150px wide to preserve room for Generate. Use the Voices card above the composer
 to search and select a voice. Voice names are read-only by default. Click the
 pencil icon button to edit a name; it hides during editing and returns when
 editing ends. Use the row's **Play**,
@@ -120,12 +122,15 @@ textarea is empty; clicking it clears the script when text is present.
 
 Use the compact **Search voices** field in the Voices card to search names
 case-insensitively on the server. Only cloned voices appear in results and
-pages. The card offers 10, 25, 50, or 100 rows per page (default 10), with
+pages. The card offers 50, 80, or 100 rows per page (default 50), with
 page navigation and a matching-voice total in the footer; its page size is
 stored independently from the Voiceovers page size. Changing the search or
 page size returns to page one. Clicking a matching row selects that voice. An
 unmatched query shows **No matching voices.** without changing the stored voice
 selection. With no voices at all, the card keeps its empty-collection message.
+Each row also shows the number of completed voiceovers associated with that
+voice, including zero. Queued and running jobs are excluded. Counts refresh
+when generation completes and after individual or bulk history deletion.
 
 During cloning, the **Clone voice** label and Upload icon remain unchanged,
 and you can keep selecting or dropping more files. Each file joins the end of
@@ -199,8 +204,9 @@ popover closes only when clicked outside or dismissed with Escape. Custom date
 and duration ranges stay open through their Apply button. The row wraps on
 narrow screens without horizontal scrolling.
 Search and filters narrow the history.
-The search query, page size, and display-name overrides are stored in this
-browser; they are not server-side account data.
+The page size, filter selections, and display-name overrides are stored in this
+browser; the search query is not persisted. These preferences are not
+server-side account data.
 To rename a voiceover, click the pencil button beside its name and edit the
 field. Clicking the name itself does not enter edit mode; the name field is
 read-only until the pencil is used.
@@ -241,10 +247,15 @@ Undo that restores the previous script, voice, and language.
 ## Persistence and startup
 
 Presets, completed history, and the generation queue are persisted under
-`services/voice-api/storage/` in a source checkout. Browser-local names,
-search, history-page cache, history and voice page-size preferences, theme
-choice, and mascot-visibility preference are stored in localStorage. Queue
-records survive a backend restart; a running job
+`services/voice-api/storage/` in a source checkout. The browser API cache
+persists history pages, voice-list pages (including display counts), and model
+language options in localStorage for up to 24 hours; query data is stale after
+one minute and retained in memory for 20 minutes. Queue snapshots, readiness,
+scripts, uploads, and generated audio are excluded from that API cache. The
+queue is polled into memory while Studio is open; its server records still
+survive backend restarts. Browser-local names, history and voice page-size
+preferences, filter selections, theme choice, and mascot-visibility preference
+are stored separately in localStorage. A running job
 restarts from the beginning of that job, not from its last chunk.
 
 During Vite development, Studio renders its real header, logo, editor, cards,

@@ -141,9 +141,18 @@ export default function ClonedVoicesSection({
   const pageStart = pageCount <= 4 ? 0 : Math.max(0, Math.min(page - 2, pageCount - 5))
   const pageButtons = Array.from({ length: Math.min(pageCount, pageCount <= 4 ? 4 : 5) }, (_, index) => pageStart + index)
   const liveById = new Map(clonedPresets.map((preset) => [preset.id, preset]))
-  const serverRecords = activeResult?.presets
-    .map((preset) => liveById.get(preset.id))
-    .filter((preset): preset is Preset => preset !== undefined && (!normalizedSearchQuery || preset.name.toLowerCase().includes(normalizedSearchQuery))) ?? null
+  const serverRecords: Preset[] | null = activeResult?.presets
+    .flatMap((pagePreset): Preset[] => {
+      const livePreset = liveById.get(pagePreset.id)
+      if (!livePreset || (normalizedSearchQuery && !livePreset.name.toLowerCase().includes(normalizedSearchQuery))) return []
+      return [{
+        ...livePreset,
+        // Keep live parent data for row actions, but the paginated API result
+        // is authoritative for its freshly aggregated completed-history count.
+        completed_voiceovers: pagePreset.completed_voiceovers ?? livePreset.completed_voiceovers ?? 0,
+      }]
+    })
+    ?? null
   const firstServerPresetId = serverRecords?.[0]?.id
   const firstServerIndex = firstServerPresetId ? clonedPresets.findIndex((preset) => preset.id === firstServerPresetId) : -1
   const localAdditions = page === 0 && firstServerIndex > 0
@@ -283,10 +292,10 @@ export default function ClonedVoicesSection({
                 <span className="min-w-0 flex-1" onKeyDown={(event) => event.stopPropagation()}>
                   <InlineName value={preset.name} placeholder="Name this voice" ariaLabel={`Name of voice ${preset.name}`} title={`“${preset.name}” — use the pencil to edit voice name`} onCommit={(next, opts) => onRename(preset.id, next, opts)} minChars={1} className="result-name voice-picker-name" editOnPencil />
                 </span>
-                <span className="mono flex-none text-[10px] text-faint" aria-label={`${preset.completed_voiceovers ?? 0} completed voiceovers`}>
+                {runningPresetIds.has(preset.id) && <span className={`voice-generation-indicator size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`} aria-hidden="true" />}
+                <span className="voice-generation-count mono flex-none text-[10px] text-faint" aria-label={`${preset.completed_voiceovers ?? 0} completed voiceovers`}>
                   {preset.completed_voiceovers ?? 0} voiceover{preset.completed_voiceovers === 1 ? '' : 's'}
                 </span>
-                {runningPresetIds.has(preset.id) && <span className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`} aria-hidden="true" />}
               </span>
               <span className="ml-auto flex flex-none items-center gap-0.5" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                 <AppTooltip content={previewingId === preset.id ? 'Stop preview' : 'Preview voice'}><button type="button" className="icon-btn" aria-label={previewingId === preset.id ? `Stop preview of ${preset.name}` : `Preview ${preset.name}`} onClick={() => void togglePreview(preset)}>{previewingId === preset.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}</button></AppTooltip>

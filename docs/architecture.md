@@ -41,7 +41,12 @@ under `hooks/`, while feature-specific hooks live with their feature.
 server-paged voice search and controls while `StudioShell` keeps the complete
 voice list for generation and Voiceovers filters. `GET /api/presets` searches
 case-insensitively and returns a matching total before slicing; only cloned
-voices are included. Legacy built-in rows remain stored for compatibility but
+voices are included. Each preset includes `completed_voiceovers`, aggregated
+from that user's persisted completed-history records, independent of history
+filters and pagination. Queued, running, and failed jobs do not contribute.
+Generation completion and individual or bulk history deletion invalidate voice
+queries so the displayed counts refresh. Legacy built-in rows remain stored
+for compatibility but
 are omitted from current voice choices. History responses mark entries tied to
 legacy built-in rows so filters omit them while history retains its original
 voice name, transcript, and audio. `features/history` owns history query keys,
@@ -50,7 +55,12 @@ paginated completed history. Completed rows use the
 shared audio player and compact script preview; their overflow menu owns
 transcript reuse and individual deletion. `lib/audio` owns shared playback
 state; `lib/theme` owns theme state. `styles/tokens.css` is the palette source
-of truth.
+of truth. The shared React Query client scopes API keys to `local-user`, uses a
+one-minute stale time and 20-minute in-memory garbage-collection time, and
+persists history pages, voice-list pages, and language options for 24 hours.
+Persisted voice records contain row/action fields but omit reference transcripts
+and storage paths. Queue snapshots, readiness, scripts, uploads, and generated
+audio are not written to this browser API cache; live queue data is memory-only.
 
 Mascot sheets remain at `/mascots/`. The catalog generator writes
 `features/mascots/generated/mascotCatalog.ts`. Boneyard fixtures live under

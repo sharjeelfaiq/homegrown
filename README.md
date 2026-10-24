@@ -176,8 +176,9 @@ dropdown surface and option-window styling; their triggers are slightly shorter
 and use smaller text than the script-language selector.
 Unselected dropdown inputs use **Select {field label}** as their default
 option (for example, **Select language**); fields with an existing setting
-continue to show that setting. The language control keeps a fixed 190px width
-so voice-name changes do not shift the editor footer.
+continue to show that setting. The language control is 150px wide. The selected
+voice appears in a truncated reminder above the script text, leaving the
+footer for the language selector and Generate action.
 
 The textarea has a **Paste from clipboard** button in its top-right corner.
 Clicking it calls the browser clipboard API, which can show the browser's own
@@ -194,10 +195,12 @@ keep their normal typing behavior. Modifiers, composition input, menus, and
 dialogs are not intercepted.
 
 The persistent Voices card includes a compact, case-insensitive server search
-and paginates cloned voices. Page sizes are 10, 25, 50,
-and 100 (default 10); the preference is stored independently from Voiceovers.
-The footer shows page navigation and the count of matching cloned voices. Clicking a
-row selects that voice; cloned-voice names are editable with their pencil
+and paginates cloned voices. Page sizes are 50, 80, and 100 (default 50); the
+preference is stored independently from Voiceovers. The footer shows page
+navigation and the count of matching cloned voices. Each voice row shows the
+number of completed voiceovers made with that voice; queued and running jobs do
+not count. Counts refresh after generation completes and history is deleted.
+Clicking a row selects that voice; cloned-voice names are editable with their pencil
 control, while preview, reference download, and delete actions remain on each
 row. In completed Voiceovers rows, the fixed-width editable name is
 followed by a truncated script preview and timestamp; playback has a seekable
@@ -249,12 +252,13 @@ restoration, and final executable path are unchanged.
 `apps/marketing/` is a standalone static page with no build step. Open
 `apps/marketing/index.html` directly in a browser or share that directory,
 including its `assets/` folder (the hero's launch video and poster, plus Studio
-screenshots). The page offers Homegrown as a $69 one-time lifetime purchase;
+screenshots). The page describes Homegrown as a $69 one-time lifetime purchase;
 there is no checkout or download link. Buyers use the on-page **Contact** section
 (`#contact`), whose pricing, hero and mobile-bar buttons all link to it. It lists
 WhatsApp (+92 333 5082452, via `wa.me`) and email (admin@runtimeguru.com) and says
-the team responds within a day or less. The page has no form, backend or
-environment variables. Check the page layout with `scripts/marketing/measure_landing.sh`.
+the team responds within a day or less. Contact is through those direct links;
+there is no contact form, checkout, backend or environment variables. Check the
+page layout with `scripts/marketing/measure_landing.sh`.
 
 The page's favicon, touch icon and logo (`favicon.svg`, `favicon.ico`,
 `apple-touch-icon.png`, `logo.svg`) share one source with the Studio favicon and the
@@ -265,7 +269,7 @@ Windows app icon: `python scripts/build/build_brand.py` regenerates them and
 
 ```text
 apps/
-  marketing/       static marketing page plus the contact-form function (api/, lib/)
+  marketing/       standalone static marketing page and its media/assets
   studio/          React + Vite Studio
 services/
   voice-api/

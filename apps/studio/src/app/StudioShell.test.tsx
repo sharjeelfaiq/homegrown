@@ -7,7 +7,7 @@ import type { Preset } from '../lib/api'
 import { historyQueryClient } from '../features/history/historyQuery'
 import StudioShell from './StudioShell'
 
-const mocks = vi.hoisted(() => ({ bulk: vi.fn(), rename: vi.fn(), remove: vi.fn(), error: vi.fn(), audio: null as HTMLAudioElement | null, release: vi.fn() }))
+const mocks = vi.hoisted(() => ({ bulk: vi.fn(), rename: vi.fn(), remove: vi.fn(), error: vi.fn(), audio: null as HTMLAudioElement | null, release: vi.fn(), queue: [] as Array<{ status: string }> }))
 vi.mock('../lib/api', async (original) => ({
   ...await original<typeof import('../lib/api')>(),
   listPresets: vi.fn().mockResolvedValue({ presets: [
@@ -25,7 +25,7 @@ vi.mock('../features/onboarding/useOnboardingTour', () => ({ useOnboardingTour: 
 vi.mock('../features/generation/useJobToasts', () => ({ useJobToasts: vi.fn() }))
 vi.mock('../lib/theme/ThemeContext', () => ({ useTheme: () => ({ theme: 'studio' }) }))
 vi.mock('../lib/audio/AudioActivityContext', () => ({ useAudioActivity: () => ({ activeAudio: mocks.audio, releaseAudio: mocks.release }) }))
-vi.mock('../features/generation/GenerationActivityContext', () => ({ useGenerationActivity: () => ({ queue: [], refresh: vi.fn(), reachable: true }) }))
+vi.mock('../features/generation/GenerationActivityContext', () => ({ useGenerationActivity: () => ({ queue: mocks.queue, refresh: vi.fn(), reachable: true }) }))
 vi.mock('../features/history/historyQuery', async original => ({
   ...await original<typeof import('../features/history/historyQuery')>(), invalidateHistory: vi.fn().mockResolvedValue(undefined),
 }))
@@ -51,14 +51,14 @@ vi.mock('../features/voices/ClonedVoicesSection', () => ({ default: ({ presets, 
   presets: Preset[]; selectedPresetId: string | null; onRename: (id: string, name: string) => Promise<void>; onCloneBusyChange: (busy: boolean) => void
 }) => <>
   <span data-testid="selected">{selectedPresetId ?? 'none'}</span>
-  {presets.map(p => <span key={p.id}>{p.name}</span>)}
+  {presets.map(p => <span key={p.id}>{p.name}<span data-testid={`count-${p.id}`}>{p.completed_voiceovers ?? 0}</span></span>)}
   <button onClick={() => { void onRename('uploaded', 'Renamed') }}>Rename uploaded</button>
   <button onClick={() => onCloneBusyChange(true)}>Queue clones</button>
 </> }))
 vi.mock('../features/history/HistoryList', () => ({ default: ({ onDelete }: { onDelete: (id: string) => Promise<void> }) =>
   <button onClick={() => { void onDelete('history-one').catch(mocks.error) }}>Delete one voiceover</button> }))
 
-beforeEach(() => { vi.clearAllMocks(); mocks.audio = null; localStorage.clear(); historyQueryClient.clear(); mocks.bulk.mockResolvedValue({ deleted_ids: ['uploaded'], cleanup_failed: [] }) })
+beforeEach(() => { vi.clearAllMocks(); mocks.audio = null; mocks.queue = []; localStorage.clear(); historyQueryClient.clear(); mocks.bulk.mockResolvedValue({ deleted_ids: ['uploaded'], cleanup_failed: [] }) })
 afterEach(() => { cleanup(); historyQueryClient.clear() })
 
 function renderStudio() {
@@ -66,8 +66,9 @@ function renderStudio() {
 }
 
 async function ready() {
-  renderStudio()
+  const view = renderStudio()
   await waitFor(() => expect(screen.getByTestId('selected').textContent).toBe('uploaded'))
+  return view
 }
 
 it('renders the Studio shell immediately while backend readiness is pending', async () => {
@@ -105,6 +106,25 @@ it('filters legacy built-ins from active voice choices and ignores a stale renam
   expect(screen.queryByText('Uploaded voice')).toBeNull()
   expect(screen.queryByText('Renamed')).toBeNull()
   expect(screen.queryByText('Built-in voice')).toBeNull()
+})
+
+it('refreshes voiceover counts when a generation job completes', async () => {
+  const { listPresets } = await import('../lib/api')
+  const view = await ready()
+  expect(screen.getByTestId('count-uploaded')).toHaveTextContent('0')
+  vi.mocked(listPresets).mockResolvedValueOnce({
+    presets: [{
+      id: 'uploaded', name: 'Uploaded voice', language: 'English', ref_text: '', audio_path: '',
+      tag: '', is_builtin: false, preview_url: '', created_at: 0, completed_voiceovers: 1,
+    }],
+    total: 1,
+  })
+
+  mocks.queue = [{ status: 'done' }]
+  view.rerender(<QueryClientProvider client={historyQueryClient}><StudioShell /></QueryClientProvider>)
+
+  await waitFor(() => expect(screen.getByTestId('count-uploaded')).toHaveTextContent('1'))
+  expect(listPresets).toHaveBeenCalledTimes(2)
 })
 
 it('does not restore deleted history from a stale individual-delete rollback', async () => {

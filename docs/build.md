@@ -72,8 +72,8 @@ first remove the same previous build outputs listed above.
 
 | Need | Check | Install |
 |---|---|---|
-| Python 3 on PATH | `python --version` | python.org |
-| Node + npm | `npm --version` | nodejs.org |
+| Python 3.13 for the tested Windows dependency set | `python --version` | python.org |
+| Node 20.19+ or 22.12+, with npm | `node --version` | nodejs.org |
 | 7-Zip, incl. `7z.sfx` | `ls "/c/Program Files/7-Zip/7z.sfx"` | `winget install 7zip.7zip` |
 | NVIDIA GPU + working CUDA driver (required for Studio generation; CPU supports voice management) | `nvidia-smi` | GeForce driver |
 
@@ -265,9 +265,10 @@ Expect, in order:
 1. A browser **loader within ~2 seconds** — not a blank desktop.
 2. `dist/Homegrown/storage/boot_status.json` appears during startup.
 3. `dist/Homegrown/storage/backend.log` gets written.
-4. **A Windows firewall prompt on first run** — the backend binds `0.0.0.0`. Do not click Cancel: it
-   writes a permanent Block rule for that exe path which nothing in the app can undo. Pre-authorise the
-   exe beforehand from an elevated prompt and the prompt never appears:
+4. The backend listens on `0.0.0.0:8731` for trusted LAN access, so Windows may show a firewall
+   prompt on first run. Allow access only on the Private profile when LAN access is needed; declining
+   the prompt leaves inbound access blocked. To add a Private-profile rule before first run, use an
+   elevated prompt:
 
    ```
    netsh advfirewall firewall add rule name="Homegrown" dir=in ^
@@ -311,7 +312,7 @@ Expect, in order:
    readiness.
 8. In the Voices card, confirm the search covers cloned voices only.
    Search with a mixed-case substring and confirm only matching rows remain;
-   check the 10/25/50/100 page-size choices, the matching total, and previous,
+   check the 50/80/100 page-size choices (default 50), the matching total, and previous,
    next, and numbered-page controls when the fixture has enough voices. Change
    pages and page size, then change the query and confirm it returns to page one.
    Clear the query and confirm all rows return. Select or drop multiple audio
@@ -322,6 +323,11 @@ Expect, in order:
    turn. Drop a file elsewhere in Studio: it must not clone, and the browser
    must not navigate to the file.
    Check preview, reference download, rename, and delete actions on cloned rows.
+   Generate one short voiceover with a selected voice and wait for completion;
+   that voice's completed count should increase by one, while counts for other
+   voices stay unchanged. Delete that history entry and confirm its count
+   decreases by one. The count is independent of the current Voiceovers filters
+   and page.
 9. In Voiceovers, use the filter button beside search and verify the four
    equal-width filter controls appear in two columns: Voice and Date range in
    the first row, Duration and Generation status in the second. Choose a simple filter and
@@ -401,7 +407,9 @@ cd ..
 `-mx5`, not `-mx9`: the payload is mostly incompressible CUDA DLLs, so maximum
 compression costs far more time for a couple of percent.
 
-**Output:** `dist/Homegrown-1.0.0.exe` (~1.7 GB).
+**Output:** `dist/Homegrown-1.0.0.exe` by default. Set `VERSION` to change the
+version suffix. The compressed size varies with dependency and driver-runtime
+versions; use the build's reported size for the current artifact.
 
 ---
 
@@ -412,10 +420,10 @@ ls -lh dist/Homegrown-1.0.0.exe
 sha256sum dist/Homegrown-1.0.0.exe
 ```
 
-Record that checksum. The landing page has no download link: buyers contact the
-team through its form and the executable is delivered to them separately. It
-deliberately publishes no checksum, because a stale one is worse than none, so keep
-the SHA-256 in your release record rather than in `apps/marketing/index.html`.
+Record that checksum. The landing page has no checkout or download link; buyers
+contact the team through WhatsApp or email and receive the executable
+separately. Keep the SHA-256 in the release record rather than publishing a
+checksum that could become stale on `apps/marketing/index.html`.
 
 Final check: run the `.exe` on a machine that has never had this app, extract to
 a folder outside the repo, and run `Homegrown.exe` from there.
@@ -425,7 +433,8 @@ a folder outside the repo, and run `Homegrown.exe` from there.
 ## What the recipient experiences
 
 1. Runs the `.exe`; 7-Zip asks where to extract.
-2. `<chosen folder>/Homegrown/` appears (~4.5 GB).
+2. `<chosen folder>/Homegrown/` appears. Its size depends on the current frozen
+   backend and launcher dependencies.
 3. Runs `Homegrown.exe` inside it.
 4. **SmartScreen warns once** — "Windows protected your PC" → More info → Run
    anyway. The exe is unsigned; only an Authenticode certificate removes this.

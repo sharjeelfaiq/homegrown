@@ -8,18 +8,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import ClonedVoicesSection from './ClonedVoicesSection'
 import * as api from '../../lib/api'
 import type { Preset } from '../../lib/api'
+import { apiQueryKeys } from '../history/historyQuery'
 
 const toastMock = vi.hoisted(() => Object.assign(
   vi.fn((_message: string, options: ExternalToast): string => String(options.id ?? `cloning-toast-${toastMock.mock.calls.length}`)),
   { dismiss: vi.fn(), error: vi.fn() },
 ))
+const runningPresetIds = vi.hoisted(() => new Set<string>())
 vi.mock('sonner', () => ({ toast: toastMock }))
 
 vi.mock('framer-motion', () => ({ AnimatePresence: ({ children }: { children: ReactNode }) => children, motion: { div: 'div', ul: 'ul' } }))
 vi.mock('boneyard-js/react', () => ({ Skeleton: ({ children }: { children: ReactNode }) => children }))
 vi.mock('../../hooks/usePrefersReducedMotion', () => ({ usePrefersReducedMotion: () => false }))
 vi.mock('../../lib/audio/AudioActivityContext', () => ({ useAudioActivity: () => ({ setActiveAudio: vi.fn(), releaseAudio: vi.fn() }) }))
-vi.mock('../generation/GenerationActivityContext', () => ({ useGenerationActivity: () => ({ runningPresetIds: new Set<string>() }) }))
+vi.mock('../generation/GenerationActivityContext', () => ({ useGenerationActivity: () => ({ runningPresetIds }) }))
 vi.mock('../../components/ui/InlineName', () => ({ default: ({ value }: { value: string }) => <span>{value}</span> }))
 vi.mock('../../components/ui/Tooltip', () => ({
   AppTooltip: ({ children, content }: { children: ReactNode; content: ReactNode }) => (
@@ -47,10 +49,10 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof ClonedVoic
     ...overrides,
   }
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return { ...render(<QueryClientProvider client={queryClient}><ClonedVoicesSection {...props} /></QueryClientProvider>), props }
+  return { ...render(<QueryClientProvider client={queryClient}><ClonedVoicesSection {...props} /></QueryClientProvider>), props, queryClient }
 }
 
-afterEach(() => { cleanup(); localStorage.clear(); vi.useRealTimers(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); localStorage.clear(); runningPresetIds.clear(); vi.useRealTimers(); vi.clearAllMocks() })
 
 describe('ClonedVoicesSection', () => {
   it('uses the voice skeleton while the list is loading', () => {
@@ -80,6 +82,35 @@ describe('ClonedVoicesSection', () => {
       : preset.id === 'bruno' ? { ...preset, completed_voiceovers: 0 } : preset) })
     expect(screen.getByLabelText('4 completed voiceovers')).toBeInTheDocument()
     expect(screen.getByLabelText('0 completed voiceovers')).toBeInTheDocument()
+  })
+
+  it('places the pulsing generation indicator before the completed voiceover count', () => {
+    runningPresetIds.add('ada')
+    renderSection({ presets: [{ ...presets[2], completed_voiceovers: 3 }] })
+    const row = screen.getByRole('option', { name: /Ada/ })
+    const indicator = row.querySelector('.voice-generation-indicator')!
+    const count = screen.getByLabelText('3 completed voiceovers')
+
+    expect(indicator).toBeInTheDocument()
+    expect(indicator).toHaveClass('bg-progress', 'animate-pulse-soft')
+    expect(indicator.compareDocumentPosition(count) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows the fresh paginated count over stale voice props and refreshes it after invalidation', async () => {
+    let completedVoiceovers = 1
+    const listSpy = vi.spyOn(api, 'listPresets').mockImplementation(async () => ({
+      presets: [{ ...presets[2], completed_voiceovers: completedVoiceovers }],
+      total: 1,
+    }))
+    const { queryClient } = renderSection({ presets: [{ ...presets[2], completed_voiceovers: 0 }] })
+
+    await waitFor(() => expect(screen.getByLabelText('1 completed voiceovers')).toBeInTheDocument())
+    expect(listSpy).toHaveBeenCalledTimes(1)
+
+    completedVoiceovers = 2
+    await queryClient.invalidateQueries({ queryKey: apiQueryKeys.voices })
+    await waitFor(() => expect(screen.getByLabelText('2 completed voiceovers')).toBeInTheDocument())
+    expect(screen.queryByLabelText('0 completed voiceovers')).not.toBeInTheDocument()
   })
 
   it('paginates voices, disables page boundaries, and resets to the first page on search', async () => {
