@@ -1,13 +1,13 @@
 """Shared model and device state."""
 import homegrown_api.config as config
 import threading
-from typing import Optional
-import torch
-from qwen import FasterQwen3TTS
-from qwen.utils import resolve_device
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from qwen import FasterQwen3TTS
 
 
-_tts: Optional[FasterQwen3TTS] = None
+_tts: Optional["FasterQwen3TTS"] = None
 
 
 # Set once a CUDA-level fault (e.g. Windows TDR killing a kernel) has taken out
@@ -77,12 +77,19 @@ def _model_language_name(whisper_code: str) -> Optional[str]:
 def probe_device() -> None:
     """Resolve and own the device selected for this process."""
     global _device, _device_reason
+    # Keep importing the heavyweight inference stack out of ASGI app import.
+    # Uvicorn can then bind and serve the Studio while startup continues, as it
+    # does in the development environment.
+    from qwen.utils import resolve_device
     _device, _device_reason = resolve_device("auto")
 
 
 def load_model() -> None:
     """Initialize the shared model only after startup has selected its device."""
     global _tts
+    import torch
+    from qwen import FasterQwen3TTS
+
     _tts = FasterQwen3TTS.from_pretrained(
         config.MODEL_PATH,
         device=_device,

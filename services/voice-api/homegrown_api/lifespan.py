@@ -2,6 +2,7 @@
 import asyncio
 import homegrown_api.config as config
 import os
+import sys
 import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -9,6 +10,7 @@ from fastapi import FastAPI
 import homegrown_api.boot_status as boot_status
 import homegrown_api.generation.model as generation_model
 import homegrown_api.generation.worker as generation_worker
+import homegrown_api.model_download as model_download
 import homegrown_api.persistence.stores as persistence_stores
 
 
@@ -50,8 +52,11 @@ async def wait_until_ready(timeout: float) -> bool:
 def _initialize_model() -> None:
     global _startup_error, _worker_thread
     try:
+        if getattr(sys, "frozen", False):
+            model_download.download_model_if_needed()
         persistence_stores._migrate_preset_media_paths()
 
+        boot_status.write(config.STORAGE_DIR, boot_status.PHASE_IMPORTING)
         # Run a test op rather than trusting torch.cuda.is_available(): a GPU
         # may be visible but lack kernels for this torch build.
         boot_status.write(config.STORAGE_DIR, boot_status.PHASE_PROBING_GPU)

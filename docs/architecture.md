@@ -122,9 +122,10 @@ remain the command entry points. Helpers are grouped under `scripts/dev`,
 
 `services/voice-api/run.py` remains the frozen entry point. PyInstaller bundles
 `homegrown_api.app`, the vendored engine, and built Studio files. The launcher
-keeps its independent executable, port and release layout. Splash sources live
-under `desktop/launcher/splash`; `scripts/build/build_splash.py` generates
-`desktop/launcher/_splash.py` using the Studio's Tailwind CLI.
+keeps its independent executable, port and release layout. It opens the built
+Studio as soon as the backend serves the frontend; model download and inference
+initialization run in the ASGI lifespan background worker, so the packaged app
+uses its normal shell and API-backed loading skeletons during startup.
 `scripts/build/build_brand.py` generates the favicon, touch icons, landing-page
 logo and `desktop/assets/icon.ico` from one geometry; `BrandMark.tsx` renders the
 same mark in the Studio header with theme tokens.

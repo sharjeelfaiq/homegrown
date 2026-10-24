@@ -6,9 +6,10 @@ flow) is used instead. This file only matters once frozen into backend.exe:
 it wires up the installed-machine paths (model dir, storage dir, .env) that
 the API can't derive from a real repo layout anymore, then starts uvicorn.
 
-Everything slow happens here before uvicorn exists, so each step publishes its
-progress through `boot_status` -- the launcher's browser loader is the only UI
-the user has until PORT comes up.
+The entrypoint configures installed-machine paths and starts Uvicorn. Slow
+model download and initialization run from the ASGI lifespan after Uvicorn is
+serving the Studio, so the packaged build shows the development app's loading
+states.
 """
 import fnmatch
 import os
@@ -62,8 +63,7 @@ def _configure_frozen_env() -> None:
         from dotenv import load_dotenv
         load_dotenv(env_path, override=True)
 
-    # A status file from a previous run would make the launcher's loader show
-    # a stale phase (or a stale error) before this run has published anything.
+    # A status file from a previous run would expose a stale phase or error.
     boot_status.clear(_storage_dir())
     boot_status.write(_storage_dir(), boot_status.PHASE_STARTING)
 
@@ -163,10 +163,10 @@ def _download_model_if_needed() -> None:
 
 if getattr(sys, "frozen", False):
     _configure_frozen_env()
-    _download_model_if_needed()
+    # Model download and inference imports now run inside lifespan's startup
+    # worker after Uvicorn has bound and can serve the Studio shell.
     # `import homegrown_api.app` (via uvicorn, below) faults in ~3.8GB of torch DLLs off
     # disk -- tens of seconds cold, and silent. Say so before it happens.
-    boot_status.write(_storage_dir(), boot_status.PHASE_IMPORTING)
 
 import uvicorn
 
