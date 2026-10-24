@@ -9,8 +9,10 @@ on the computer that runs it.
 Use Windows 10/11 with Git Bash, Python 3.13 for the tested Windows dependency
 set (the API package metadata requires Python 3.11 or newer, but pinned native
 dependencies may not publish wheels for the newest Python versions), Node
-20.19+ (or 22.12+), and (for a packaged build) 7-Zip. An NVIDIA GPU is
-recommended; CPU fallback works but generation may take many minutes.
+20.19+ (or 22.12+), and (for a packaged build) 7-Zip. Studio generation
+requires the voice model to load on an NVIDIA CUDA device. If no usable GPU is
+found, the backend can start on CPU for voice management, but Studio keeps
+Generate disabled.
 
 ```bash
 git clone git@github.com:sharjeelfaiq/homegrown.git
@@ -78,11 +80,13 @@ different Python minor version does not rebuild its installed dependencies.
 npm run dev
 ```
 
-Open `http://localhost:5173`. The script starts Vite first so Studio can show
-its startup state, then starts FastAPI on `127.0.0.1:8000`; FastAPI probes for
-a usable NVIDIA GPU and loads Qwen3-TTS before reporting ready. Vite proxies
-`/api`, `/audio`, and `/refs`, so Studio always uses same-origin API paths. It
-prints a LAN address when available.
+Open `http://localhost:5173`. The script starts Vite first, then FastAPI on
+`127.0.0.1:8000`. FastAPI binds and serves the Studio while a background
+startup task probes for a usable device, restores the queue, and loads
+Qwen3-TTS. `/api/health` remains available during startup; other `/api/*`
+requests wait for initialization and return a startup error or timeout if it
+does not complete. Vite proxies `/api`, `/audio`, and `/refs`, so Studio always
+uses same-origin API paths. It prints a LAN address when available.
 There are no accounts or general API authentication. Ordinary actions,
 including individual deletes, are unauthenticated. Permanent bulk deletion
 from Settings additionally requires the locally configured
@@ -90,8 +94,8 @@ from Settings additionally requires the locally configured
 
 For manual startup, start Studio first in one terminal, wait until Vite is
 serving at `http://localhost:5173`, then start FastAPI in a second terminal.
-This lets the frontend render while the backend probes the device and loads
-the model:
+The Studio shell renders as soon as Vite is ready while FastAPI initializes in
+the background. Model-dependent API requests wait for readiness:
 
 ```bash
 cd apps/studio && npm run dev
@@ -101,10 +105,13 @@ cd apps/studio && npm run dev
 cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn homegrown_api.app:app --host 127.0.0.1 --port 8000
 ```
 
-Keep `apps/studio/.env.local` empty for supported local workflows. While the
-model initializes, Studio shows a persistent **Voice model is loading** toast
-with an animated spinner; it disappears when startup succeeds or fails. The
-full-screen startup overlay also reports the backend phase.
+Keep `apps/studio/.env.local` empty for supported local workflows. During
+startup, the real header, logo, editor, cards, and controls render immediately.
+Skeletons reserve API-backed voice rows, language options, and uncached
+history or initial queue rows until their data arrives. Generate and Clone
+voice remain visible but disabled until the model is loaded. Generate requires
+health to confirm that the model is on CUDA; Clone voice is available after
+model initialization, including CPU fallback.
 
 Clone voices from the persistent Voices card by selecting one or more files, or
 drop multiple audio files directly onto that card. Dropping files elsewhere
@@ -157,10 +164,13 @@ The Script editor is 300–400px high, with its height adapting to viewport size
 Its footer places the language selector on the left and the compact **Generate**
 action on the right. Generate stays disabled until the script contains
 non-whitespace text, an available voice and a script language are selected,
-the model is fully ready, and no submission is in progress. While the model is
-loading, Generate and **Clone voice** are disabled; their tooltips say the voice
-model is loading and can take up to three minutes. The voice, script-language, filter,
-and page-size selectors use one shared Base UI menu-backed dropdown style.
+health confirms the model is loaded on a CUDA device, and no submission is in
+progress. During model startup, Generate and **Clone voice** are disabled; the
+loading tooltip says the voice model can take up to three minutes. If the
+backend falls back to CPU, Clone voice becomes available after model loading,
+but Generate stays disabled and Studio explains that CUDA is required. The
+voice, script-language, filter, and page-size selectors use one shared Base UI
+menu-backed dropdown style.
 Compact Voice, Duration, and Status filters use the shared
 dropdown surface and option-window styling; their triggers are slightly shorter
 and use smaller text than the script-language selector.

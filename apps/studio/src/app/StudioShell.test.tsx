@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { Preset } from '../lib/api'
 import { historyQueryClient } from '../features/history/historyQuery'
@@ -33,9 +35,14 @@ vi.mock('../components/effects/ParticleText', () => ({ default: () => null }))
 vi.mock('../components/effects/CursorGrid', () => ({ default: () => null }))
 vi.mock('../features/mascots/MascotPicker', () => ({ default: () => null }))
 vi.mock('../features/startup/BootOverlay', () => ({ default: () => null }))
-vi.mock('../features/generation/ScriptBlock', () => ({ default: () => null }))
-vi.mock('../features/generation/GenerateButton', () => ({ default: () => null }))
-vi.mock('boneyard-js/react', () => ({ Skeleton: ({ children }: { children: React.ReactNode }) => children }))
+vi.mock('../features/generation/ScriptBlock', () => ({ default: ({ generateAction }: { generateAction: React.ReactNode }) => <div>{generateAction}</div> }))
+vi.mock('../features/generation/GenerateButton', () => ({ default: ({ disabled, blockedReason }: { disabled: boolean; blockedReason?: string | null }) => <>
+  <button aria-label="Generate" disabled={disabled}>Generate</button>
+  {blockedReason && <span role="status">{blockedReason}</span>}
+</> }))
+vi.mock('boneyard-js/react', () => ({ Skeleton: ({ children, fixture, loading, name }: {
+  children: React.ReactNode; fixture?: React.ReactNode; loading?: boolean; name?: string
+}) => loading ? <div data-testid={`skeleton-${name}`}>{fixture}</div> : children }))
 vi.mock('../features/settings/SettingsModal', () => ({ default: ({ onBulkDelete }: { onBulkDelete: (kind: 'presets' | 'history', password: string) => Promise<unknown> }) => <>
   <button onClick={() => { void onBulkDelete('presets', 'test-admin-password').catch(mocks.error) }}>Bulk voices</button>
   <button onClick={() => { void onBulkDelete('history', 'test-admin-password').catch(mocks.error) }}>Bulk history</button>
@@ -54,10 +61,38 @@ vi.mock('../features/history/HistoryList', () => ({ default: ({ onDelete }: { on
 beforeEach(() => { vi.clearAllMocks(); mocks.audio = null; localStorage.clear(); historyQueryClient.clear(); mocks.bulk.mockResolvedValue({ deleted_ids: ['uploaded'], cleanup_failed: [] }) })
 afterEach(() => { cleanup(); historyQueryClient.clear() })
 
+function renderStudio() {
+  return render(<QueryClientProvider client={historyQueryClient}><StudioShell /></QueryClientProvider>)
+}
+
 async function ready() {
-  render(<StudioShell />)
+  renderStudio()
   await waitFor(() => expect(screen.getByTestId('selected').textContent).toBe('uploaded'))
 }
+
+it('renders the Studio shell immediately while backend readiness is pending', async () => {
+  const { wakeBackend } = await import('../features/startup/wake')
+  let finish!: () => void
+  vi.mocked(wakeBackend).mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve }))
+  renderStudio()
+  expect(screen.getByRole('heading', { level: 1 })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Open settings' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+  await act(async () => { finish() })
+})
+
+it('keeps Generate disabled when the loaded model is on CPU', async () => {
+  let finishHealth!: (value: { model_loaded: boolean; sample_rate: number; device: string; device_reason: string }) => void
+  const { getHealth } = await import('../lib/api')
+  vi.mocked(getHealth).mockReturnValueOnce(new Promise((resolve) => { finishHealth = resolve }))
+  renderStudio()
+  await waitFor(() => expect(finishHealth).toBeTypeOf('function'))
+  await act(async () => {
+    finishHealth({ model_loaded: true, sample_rate: 24000, device: 'cpu', device_reason: 'No usable GPU' })
+  })
+  expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+  expect(screen.getByRole('status')).toHaveTextContent('Waiting for GPU model')
+})
 
 it('filters legacy built-ins from active voice choices and ignores a stale rename rollback', async () => {
   let fail!: (error: Error) => void

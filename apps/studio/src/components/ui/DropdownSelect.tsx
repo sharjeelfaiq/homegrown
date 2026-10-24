@@ -18,19 +18,20 @@ interface Props {
   side?: 'top' | 'right' | 'bottom' | 'left'
   align?: 'start' | 'center' | 'end'
   sideOffset?: number
+  disabled?: boolean
 }
 
 /** Consistent single-choice dropdown, built from the shared Base UI menu. */
 export default function DropdownSelect({
   value, options, onValueChange, ariaLabel, placeholder,
   className = '', contentClassName = '',
-  side = 'bottom', align = 'start', sideOffset = 4,
+  side = 'bottom', align = 'start', sideOffset = 4, disabled = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const selected = options.find((option) => option.value === value)
   return (
     <Dropdown.Root open={open} onOpenChange={setOpen}>
-      <Dropdown.Trigger className={`dropdown-select-trigger ${className}`} aria-label={ariaLabel}>
+      <Dropdown.Trigger className={`dropdown-select-trigger ${className}`} aria-label={ariaLabel} disabled={disabled}>
         <span className="min-w-0 flex-1 truncate">{selected?.label ?? placeholder}</span>
         <ChevronDown aria-hidden="true" className="size-3.5 shrink-0" />
       </Dropdown.Trigger>

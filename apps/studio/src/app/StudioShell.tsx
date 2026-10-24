@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import SettingsModal from '../features/settings/SettingsModal'
 import ParticleText from '../components/effects/ParticleText'
 import BrandMark from '../components/brand/BrandMark'
@@ -11,8 +12,7 @@ import MascotPicker from '../features/mascots/MascotPicker'
 import { MAX_SCRIPT_CHARS } from '../features/generation/constants'
 import { presetNameFromFile } from '../lib/format'
 import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Settings as SettingsIcon } from 'lucide-react'
-import { Toaster, toast } from 'sonner'
-import { formatToastTitle } from '../lib/messageFormatting'
+import { Toaster } from 'sonner'
 import { useGenerationActivity } from '../features/generation/GenerationActivityContext'
 import { useJobToasts } from '../features/generation/useJobToasts'
 import { usePersistedDraft } from '../features/generation/usePersistedDraft'
@@ -26,8 +26,6 @@ import { useTypeToScript } from '../hooks/useTypeToScript'
 import { wakeBackend } from '../features/startup/wake'
 import Modal from '../components/ui/Modal'
 import CursorGrid from '../components/effects/CursorGrid'
-import BootOverlay from '../features/startup/BootOverlay'
-import StatusMark from '../components/ui/StatusMark'
 import { showUndoDeleteToast } from '../components/ui/UndoDeleteToast'
 import { useOnboardingTour } from '../features/onboarding/useOnboardingTour'
 import {
@@ -38,8 +36,6 @@ import {
   deletePreset,
   getHealth,
   getQueueScript,
-  listLanguages,
-  listPresets,
   renamePreset,
   startGenerate,
   type Estimate,
@@ -47,9 +43,7 @@ import {
   type HistoryPage,
   type Preset,
 } from '../lib/api'
-import { historyQueryClient, invalidateHistory } from '../features/history/historyQuery'
-import { Skeleton } from 'boneyard-js/react'
-import { StudioStartupFixture } from '../skeletons/BoneyardFixtures'
+import { apiQueryKeys, fetchLanguages, fetchVoices, historyQueryClient, invalidateHistory, invalidateVoices, persistablePreset } from '../features/history/historyQuery'
 import { AppTooltip } from '../components/ui/Tooltip'
 import { useAudioActivity } from '../lib/audio/AudioActivityContext'
 
@@ -57,7 +51,6 @@ import { useAudioActivity } from '../lib/audio/AudioActivityContext'
  * empty or names a language this model cannot speak. */
 const LANGUAGE_FALLBACK = 'English'
 const MODEL_LOADING_TOOLTIP = 'Voice model is loading — this can take up to 3 minutes.'
-const MODEL_LOADING_TOAST_ID = 'voice-model-loading'
 
 export default function StudioShell() {
   const voiceoversRef = useRef<HTMLElement>(null)
@@ -78,6 +71,7 @@ export default function StudioShell() {
     try { localStorage.setItem('homegrown-mascot-enabled', String(next)) } catch { /* storage is optional */ }
   }, [])
   const [modelStatus, setModelStatus] = useState<'checking' | 'ready' | 'down'>('checking')
+  const [modelOnGpu, setModelOnGpu] = useState(false)
   const { startTour } = useOnboardingTour(modelStatus)
   const [wakeMessage, setWakeMessage] = useState<string | null>(null)
   const [wakeNonce, setWakeNonce] = useState(0)
@@ -93,7 +87,10 @@ export default function StudioShell() {
   // dismissal -- the user has evidently tried again and hit the same wall.
   const [faultSeenAt, setFaultSeenAt] = useState<number | null>(null)
 
-  const [presets, setPresets] = useState<Preset[]>([])
+  const [presets, setPresets] = useState<Preset[]>(() => historyQueryClient.getQueryData<Preset[]>(apiQueryKeys.voices) ?? [])
+  const [presetsLoading, setPresetsLoading] = useState(() => historyQueryClient.getQueryData<Preset[]>(apiQueryKeys.voices) === undefined)
+  const presetsLoaded = useRef(false)
+  const presetLoadRequest = useRef(0)
   const voiceDeleteTimers = useRef(new Set<() => void>())
   useEffect(() => () => {
     for (const cancel of voiceDeleteTimers.current) cancel()
@@ -116,7 +113,9 @@ export default function StudioShell() {
   // "Leave site?" dialog would be noise guarding something already safe.
   const [script, setScript] = usePersistedDraft('homegrown-script-draft')
   const [languageOverride, setLanguageOverride] = useState<string | null>(null)
-  const [languages, setLanguages] = useState<string[]>([])
+  const [languages, setLanguages] = useState<string[]>(() => historyQueryClient.getQueryData<string[]>(apiQueryKeys.languages) ?? [])
+  const [languagesLoading, setLanguagesLoading] = useState(() => historyQueryClient.getQueryData<string[]>(apiQueryKeys.languages) === undefined)
+  const [languagesValidated, setLanguagesValidated] = useState(false)
   const [historyFilters, setHistoryFilters] = useState<VoiceoverFilterState>(restoreVoiceoverFilters)
   const [pendingNew, setPendingNew] = useState(0)
   // A ref, not state: read inside a callback that must not be rebuilt on every
@@ -132,14 +131,28 @@ export default function StudioShell() {
   const [estimate, setEstimate] = useState<Estimate | null>(null)
 
   const { queue, refresh: refreshQueue, reachable } = useGenerationActivity()
+  const cachedVoicesQuery = useQuery({ queryKey: apiQueryKeys.voices, queryFn: fetchVoices, enabled: false })
+  const cachedLanguagesQuery = useQuery({ queryKey: apiQueryKeys.languages, queryFn: fetchLanguages, enabled: false })
+  useEffect(() => {
+    if (!cachedVoicesQuery.data) return
+    setPresets(cachedVoicesQuery.data)
+    setPresetsLoading(false)
+    setVoiceId((current) => current && cachedVoicesQuery.data!.some((preset) => preset.id === current)
+      ? current
+      : cachedVoicesQuery.data![0]?.id ?? null)
+  }, [cachedVoicesQuery.data])
+  useEffect(() => {
+    if (!cachedLanguagesQuery.data) return
+    setLanguages(cachedLanguagesQuery.data)
+    setLanguagesLoading(false)
+  }, [cachedLanguagesQuery.data])
   useJobToasts(queue)
   // Both error states are mirrored to toasts rather than rendered inline.
   useErrorToast(error, 'Something went wrong')
   useErrorToast(voiceError, 'Could not add that voice')
   const { theme } = useTheme()
-  // Only while we are actually waiting. Null whenever there is no dev-server
-  // status source, which is every non-`vite dev` build -- the row below then
-  // falls back to wakeMessage's elapsed counter alone.
+  // The status file can provide the model-load failure detail in dev; the
+  // health poll carries the same failure in packaged builds.
   const boot = useBootStatus(modelStatus === 'checking')
   // Set when boot_status reports a failed model load, so the in-flight
   // wakeBackend poll can be ignored rather than cancelled -- see the effect
@@ -148,32 +161,17 @@ export default function StudioShell() {
   const scriptRef = useRef<HTMLTextAreaElement>(null)
   useTypeToScript(scriptRef, script, setScript)
 
-  // Keep one persistent toast visible throughout the initial model load. Use
-  // the same indeterminate StatusMark spinner shown by the voice-cloning toast.
-  useEffect(() => {
-    if (modelStatus === 'checking') {
-      toast(formatToastTitle('Voice model is loading'), {
-        id: MODEL_LOADING_TOAST_ID,
-        duration: Infinity,
-        icon: <StatusMark status="running" size={18} strokeWidth={2.2} color="var(--progress)" strike={false} />,
-      })
-    } else {
-      toast.dismiss(MODEL_LOADING_TOAST_ID)
-    }
-    return () => {
-      toast.dismiss(MODEL_LOADING_TOAST_ID)
-    }
-  }, [modelStatus])
-
   const refreshHistory = useCallback(() => { void invalidateHistory() }, [])
 
-  function refreshPresets() {
+  const refreshPresets = useCallback(() => {
     const revision = presetDeletionRevision.current
-    listPresets()
-      .then((r) => {
-        if (revision !== presetDeletionRevision.current) return
-        const availablePresets = r.presets.filter((preset) => !preset.is_builtin)
+    const requestId = ++presetLoadRequest.current
+    if (!presetsLoaded.current) setPresetsLoading(true)
+    historyQueryClient.fetchQuery({ queryKey: apiQueryKeys.voices, queryFn: fetchVoices })
+      .then((availablePresets) => {
+        if (requestId !== presetLoadRequest.current || revision !== presetDeletionRevision.current) return
         setPresets(availablePresets)
+        historyQueryClient.setQueryData(apiQueryKeys.voices, availablePresets.map(persistablePreset))
         // Default to the first voice so a new user can type and hit Generate
         // without first realising a voice must be chosen.
         setVoiceId((current) => current && availablePresets.some((preset) => preset.id === current)
@@ -181,47 +179,65 @@ export default function StudioShell() {
           : availablePresets[0]?.id ?? null)
       })
       .catch(() => {})
-  }
+      .finally(() => {
+        if (requestId === presetLoadRequest.current) {
+          presetsLoaded.current = true
+          setPresetsLoading(false)
+        }
+      })
+  }, [])
 
   useEffect(() => {
     let cancelled = false
     bootFailedRef.current = false
     setModelStatus('checking')
+    setModelOnGpu(false)
+    setLanguagesValidated(false)
+    setCpuNotice(null)
     setWakeMessage(null)
-    wakeBackend((status, elapsedMs) => {
-      if (cancelled || status !== 'starting') return
-      setModelStatus('checking')
-      setWakeMessage(`Loading the voice model… ${Math.round(elapsedMs / 1000)}s`)
-    })
+    wakeBackend()
       .then(() => {
         if (cancelled || bootFailedRef.current) return
         setModelStatus('ready')
         setWakeMessage(null)
-        listLanguages()
-          .then((result) => { if (!cancelled) setLanguages(result.languages) })
-          .catch(() => {})
-        // The backend runs on CPU when no usable GPU was found. It still works,
-        // but generation is orders of magnitude slower -- say so up front rather
-        // than letting the first job look like it hung.
+        historyQueryClient.fetchQuery({ queryKey: apiQueryKeys.languages, queryFn: fetchLanguages, staleTime: 0 })
+          .then((result) => {
+            if (cancelled) return
+            setLanguages(result)
+            setLanguagesValidated(true)
+            setLanguagesLoading(false)
+          })
+          .catch(() => { if (!cancelled) setLanguagesLoading(false) })
+        // CPU fallback keeps voice management available, but Generate remains
+        // disabled until health confirms the model is resident on CUDA.
         getHealth()
           .then((h) => {
-            if (!cancelled && h.device === 'cpu') {
-              setCpuNotice(h.device_reason ?? 'No usable GPU found.')
+            if (!cancelled) {
+              const onGpu = h.model_loaded && /^cuda(?::|$)/i.test(h.device ?? '')
+              setModelOnGpu(onGpu)
+              setCpuNotice(onGpu || h.device !== 'cpu' ? null : h.device_reason ?? 'No usable GPU found.')
             }
           })
-          .catch(() => {})
+          .catch((error) => {
+            if (cancelled) return
+            setModelStatus('down')
+            setModelOnGpu(false)
+            setWakeMessage(error instanceof Error ? error.message : 'Could not confirm GPU model readiness.')
+          })
         refreshPresets()
         refreshHistory()
       })
       .catch((e) => {
         if (cancelled || bootFailedRef.current) return
         setModelStatus('down')
+        setModelOnGpu(false)
+        setPresetsLoading(false)
         setWakeMessage(e instanceof Error ? e.message : 'Backend unreachable.')
       })
     return () => {
       cancelled = true
     }
-  }, [wakeNonce, refreshHistory])
+  }, [wakeNonce, refreshHistory, refreshPresets])
 
   // A model that fails to load is the one case wakeBackend cannot diagnose.
   // lifespan() is deliberately fail-soft there -- it keeps serving with
@@ -233,6 +249,8 @@ export default function StudioShell() {
     if (boot?.phase !== 'error') return
     bootFailedRef.current = true
     setModelStatus('down')
+    setModelOnGpu(false)
+    setPresetsLoading(false)
     setWakeMessage(boot.detail || 'The voice model failed to load.')
   }, [boot?.phase, boot?.detail])
 
@@ -274,9 +292,11 @@ export default function StudioShell() {
     }
     const added = doneCount - lastDoneCount.current
     lastDoneCount.current = doneCount
+    void invalidateVoices()
+    refreshPresets()
     if (atTopRef.current) refreshHistory()
     else setPendingNew((n) => n + added)
-  }, [doneCount, refreshHistory])
+  }, [doneCount, refreshHistory, refreshPresets])
 
   // Scrolling back to the top by any route means the badge has served its
   // purpose -- otherwise it lingers over content the user is already looking at.
@@ -307,8 +327,13 @@ export default function StudioShell() {
     const preset = await createPreset(
       presetNameFromFile(file.name), file, '', LANGUAGE_FALLBACK,
     )
-    setPresets((prev) => [preset, ...prev])
+    setPresets((prev) => {
+      const next = [preset, ...prev]
+      historyQueryClient.setQueryData(apiQueryKeys.voices, next.map(persistablePreset))
+      return next
+    })
     setVoiceId(preset.id)
+    void historyQueryClient.invalidateQueries({ queryKey: apiQueryKeys.voices })
     return 'done'
   }
 
@@ -329,12 +354,18 @@ export default function StudioShell() {
     const before = presets
     // Optimistic: the field has already visually committed, and bouncing the
     // text back on a slow round-trip reads as the edit being rejected.
-    setPresets((prev) => prev.map((p) => (p.id === id ? { ...p, name: trimmedName } : p)))
+    setPresets((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, name: trimmedName } : p))
+      historyQueryClient.setQueryData(apiQueryKeys.voices, next.map(persistablePreset))
+      return next
+    })
     try {
       await renamePreset(id, trimmedName)
+      void historyQueryClient.invalidateQueries({ queryKey: apiQueryKeys.voices })
     } catch (e) {
       if (revision !== presetDeletionRevision.current) return
       setPresets(before)
+      historyQueryClient.setQueryData(apiQueryKeys.voices, before.map(persistablePreset))
       setVoiceError(e instanceof ApiError ? e.message : 'Failed to rename the voice')
     }
   }
@@ -349,7 +380,11 @@ export default function StudioShell() {
     // "this voice was selected" from "nothing was selected".
     const wasSelected = voiceId === id
 
-    setPresets((prev) => prev.filter((p) => p.id !== id))
+    setPresets((prev) => {
+      const next = prev.filter((p) => p.id !== id)
+      historyQueryClient.setQueryData(apiQueryKeys.voices, next.map(persistablePreset))
+      return next
+    })
     setVoiceId((current) => (current === id ? null : current))
 
     const restoreVoice = () => {
@@ -361,7 +396,7 @@ export default function StudioShell() {
     }
     const cancel = showUndoDeleteToast({
       label: doomed.name,
-      onDelete: () => deletePreset(id).then(() => {}),
+      onDelete: () => deletePreset(id).then(() => { void historyQueryClient.invalidateQueries({ queryKey: apiQueryKeys.voices }) }),
       onUndo: restoreVoice,
       onError: (e) => {
         restoreVoice()
@@ -382,6 +417,8 @@ export default function StudioShell() {
     try {
       await deleteHistoryEntry(id)
       refreshHistory()
+      void invalidateVoices()
+      refreshPresets()
     } catch (e) {
       if (revision !== historyDeletionRevision.current) return
       for (const [key, page] of snapshots) historyQueryClient.setQueryData(key, page)
@@ -431,21 +468,22 @@ export default function StudioShell() {
       setError('Select a language before generating.')
       return
     }
+    if (!modelOnGpu) {
+      setError('The voice model must be loaded on a GPU before generating.')
+      return
+    }
     setError(null)
 
     // Normally a no-op: canGenerate already requires modelStatus 'ready'. This
     // is the race guard for the model having gone away while the tab sat idle.
     setWarmingUp(true)
     try {
-      await wakeBackend((status, elapsedMs) => {
-        setWakeMessage(
-          status === 'starting' ? `Loading the voice model… ${Math.round(elapsedMs / 1000)}s` : null,
-        )
-      })
+      await wakeBackend()
     } catch (e) {
       setWarmingUp(false)
       setWakeMessage(null)
       setModelStatus('down')
+      setModelOnGpu(false)
       setError(e instanceof Error ? e.message : 'Failed to start the backend.')
       return
     }
@@ -479,11 +517,11 @@ export default function StudioShell() {
     }
   }
 
-  // `wakeBackend` resolves only after /api/health confirms model_loaded. This
-  // is the single readiness gate for every model-dependent Studio action.
+  // `wakeBackend` confirms model initialization. Generation adds the stricter
+  // CUDA residency gate below; voice management can use the CPU fallback.
   const modelReady = modelStatus === 'ready' && !warmingUp
   const modelLoading = !modelReady && modelStatus !== 'down'
-  const canGenerate = modelReady && scriptReady && selectedVoice != null && languageOverride != null && !submitting
+  const canGenerate = modelReady && modelOnGpu && scriptReady && selectedVoice != null && languageOverride != null && !submitting
 
   // Say what is missing rather than presenting a mute grey slab -- but only
   // for prerequisites the user has to go and fix elsewhere. An empty script is
@@ -492,7 +530,9 @@ export default function StudioShell() {
   const blockedReason =
     canGenerate || submitting || !modelReady
       ? null
-      : presets.length === 0
+      : !modelOnGpu
+        ? 'Waiting for GPU model'
+        : presets.length === 0
           ? 'Add a voice first'
           : selectedVoice == null
             ? 'Pick a voice'
@@ -510,13 +550,6 @@ export default function StudioShell() {
   })
 
   return (
-    <Skeleton
-      name="studio-startup"
-      loading={modelStatus === 'checking'}
-      fixture={<StudioStartupFixture />}
-      select="viewport"
-      snapshotConfig={{ excludeTags: ['svg', 'canvas'], excludeSelectors: ['[data-boneyard-decorative]'] }}
-    >
       <div
         className="flex min-h-svh flex-col wide:h-svh wide:overflow-hidden"
         onDragOver={(event) => {
@@ -638,7 +671,7 @@ export default function StudioShell() {
             selectedPresetId={voiceId}
             onSelect={setVoiceId}
             onRename={handleRenamePreset}
-            loading={modelStatus === 'checking'}
+            loading={presetsLoading || modelStatus === 'checking'}
             modelReady={modelReady && !bulkBusy}
             modelLoading={modelLoading}
             onAddVoice={handleAddVoice}
@@ -657,7 +690,7 @@ export default function StudioShell() {
         </div>
 
         <aside ref={voiceoversRef} className="relative flex w-full min-w-0 flex-col gap-[22px] wide:h-full wide:min-h-0">
-          {cpuNotice && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">Running on CPU — generation will be very slow. {cpuNotice}</p>}
+          {cpuNotice && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">The voice model is running on CPU, so Generate is disabled. {cpuNotice}</p>}
           <ScriptBlock
             text={script}
             onTextChange={setScript}
@@ -665,12 +698,15 @@ export default function StudioShell() {
             presetId={voiceId}
             onEstimate={setEstimate}
             languages={languages}
+            languagesLoading={languagesLoading}
+            languageEnabled={languagesValidated}
+            selectedVoiceName={selectedVoice?.name ?? null}
             language={languageOverride}
             onLanguageChange={setLanguageOverride}
             generateAction={<GenerateButton
               disabled={!canGenerate}
               blockedReason={blockedReason}
-              tooltip={modelLoading ? MODEL_LOADING_TOOLTIP : modelStatus === 'down' ? 'The voice model is unavailable. Open the backend warning for details.' : undefined}
+              tooltip={modelLoading ? MODEL_LOADING_TOOLTIP : modelStatus === 'down' ? 'The voice model is unavailable. Open the backend warning for details.' : !modelOnGpu ? 'Generate is available after the voice model loads on a GPU.' : undefined}
               busy={submitting}
               warming={warmingUp}
               onClick={handleGenerate}
@@ -722,6 +758,8 @@ export default function StudioShell() {
               for (const cancel of voiceDeleteTimers.current) cancel()
               voiceDeleteTimers.current.clear()
               setPresets((previous) => previous.filter((voice) => !deleted.has(voice.id)))
+              historyQueryClient.setQueryData(apiQueryKeys.voices, (historyQueryClient.getQueryData<Preset[]>(apiQueryKeys.voices) ?? []).filter((voice) => !deleted.has(voice.id)).map(persistablePreset))
+              await historyQueryClient.invalidateQueries({ queryKey: apiQueryKeys.voices })
               setVoiceId((current) => current && deleted.has(current) ? null : current)
               setHistoryFilters((previous) => previous.presetId && deleted.has(previous.presetId) ? { ...previous, presetId: undefined } : previous)
             } else {
@@ -731,6 +769,8 @@ export default function StudioShell() {
               setHistoryReset((value) => value + 1)
               setPendingNew(0)
               await invalidateHistory()
+              await invalidateVoices()
+              refreshPresets()
               await refreshQueue()
             }
             return result
@@ -870,8 +910,6 @@ export default function StudioShell() {
         }}
       />
 
-      {modelStatus === 'checking' && <BootOverlay boot={boot} elapsed={wakeMessage} />}
       </div>
-    </Skeleton>
   )
 }

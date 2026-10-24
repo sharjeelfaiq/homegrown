@@ -132,6 +132,37 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/presets', params={'limit': 1, 'offset': 1000}).json()['presets'], [])
         self.assertEqual(self.client.get('/api/presets', params={'q': 'legacy'}).json()['total'], 0)
 
+    def test_preset_completed_voiceover_counts_are_global_and_refresh_after_deletion(self):
+        (config.REF_DIR / 'voice.mp3').write_bytes(b'audio')
+        stores._presets.extend({
+            'id': preset_id, 'name': preset_id, 'user_id': 'local-user',
+            'language': 'English', 'audio_path': 'references/voice.mp3', 'ref_text': '',
+        } for preset_id in ('many', 'none'))
+        stores._history.extend([
+            {'id': f'history-{index}', 'user_id': 'local-user', 'preset_id': 'many', 'audio_url': ''}
+            for index in range(3)
+        ])
+        # Other users' rows and live queue jobs are not completed records owned
+        # by this voice and must never affect the aggregate.
+        stores._history.append({'id': 'other', 'user_id': 'someone-else', 'preset_id': 'many'})
+        with patch.object(budget, '_ref_facts', return_value=SimpleNamespace(
+            ref_seconds=None, budget=SimpleNamespace(chunk_chars=200),
+        )):
+            full = self.client.get('/api/presets').json()['presets']
+            self.assertEqual({voice['id']: voice['completed_voiceovers'] for voice in full}, {'many': 3, 'none': 0})
+            # The count is aggregate data, unaffected by list paging or search.
+            page = self.client.get('/api/presets', params={'q': 'many', 'limit': 1, 'offset': 0}).json()
+            self.assertEqual(page['presets'][0]['completed_voiceovers'], 3)
+            self.assertEqual(page['total'], 1)
+            self.client.get('/api/history', params={'limit': 1, 'offset': 1, 'preset_id': 'none'})
+            self.assertEqual(self.client.get('/api/presets', params={'q': 'many'}).json()['presets'][0]['completed_voiceovers'], 3)
+            self.assertEqual(self.client.delete('/api/history/history-0').status_code, 200)
+            refreshed = self.client.get('/api/presets', params={'q': 'many'}).json()['presets'][0]
+            self.assertEqual(refreshed['completed_voiceovers'], 2)
+            self.assertEqual(self.delete_all('/api/history').status_code, 200)
+            refreshed = self.client.get('/api/presets', params={'q': 'many'}).json()['presets'][0]
+            self.assertEqual(refreshed['completed_voiceovers'], 0)
+
     def test_legacy_builtin_cannot_be_used_for_generation_or_managed_as_a_voice(self):
         self.ready_voice()
         stores._presets.append({
@@ -403,6 +434,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(entry['preset_id'], 'voice')
         self.assertEqual(entry['text'], transcript)
         self.assertEqual(worker._jobs[job_id]['status'], 'done')
+        self.assertEqual(self.client.get('/api/presets').json()['presets'][0]['completed_voiceovers'], 1)
 
     def test_development_paths_stay_outside_the_package(self):
         service = Path(__file__).resolve().parents[1]

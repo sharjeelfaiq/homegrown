@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ChevronLeft, ChevronRight, Download as DownloadIcon, Ellipsis as EllipsisIcon, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon, Upload as UploadIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download as DownloadIcon, Ellipsis as EllipsisIcon, LoaderCircle, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon, Upload as UploadIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatToastTitle } from '../../lib/messageFormatting'
-import { listPresets, mediaUrl, presetDownloadUrl, type Preset } from '../../lib/api'
+import { mediaUrl, presetDownloadUrl, type Preset } from '../../lib/api'
 import { useAudioActivity } from '../../lib/audio/AudioActivityContext'
 import { useGenerationActivity } from '../generation/GenerationActivityContext'
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
@@ -11,8 +11,17 @@ import { Dropdown } from '../../components/ui/Dropdown'
 import DropdownSelect from '../../components/ui/DropdownSelect'
 import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
 import InlineName from '../../components/ui/InlineName'
-import { useVoiceCloneQueue } from './useVoiceCloneQueue'
+import { useVoiceCloneQueue, type CloneQueueDisplayItem } from './useVoiceCloneQueue'
 import { AppTooltip } from '../../components/ui/Tooltip'
+import { Skeleton } from 'boneyard-js/react'
+import { ClonedVoiceRowsFixture } from '../../skeletons/BoneyardFixtures'
+import { useQuery } from '@tanstack/react-query'
+import { apiQueryKeys, fetchVoicePage } from '../history/historyQuery'
+
+const skeletonSnapshotConfig = {
+  excludeTags: ['svg', 'canvas'],
+  excludeSelectors: ['[data-boneyard-decorative]'],
+}
 
 interface Props {
   presets: Preset[]
@@ -44,12 +53,11 @@ export default function ClonedVoicesSection({
   const [pageSize, setPageSize] = useState(() => {
     try {
       const stored = Number(localStorage.getItem('homegrown.voicePageSize'))
-      return [10, 25, 50, 100].includes(stored) ? stored : 10
-    } catch { return 10 }
+      return [50, 80, 100].includes(stored) ? stored : 50
+    } catch { return 50 }
   })
   const [page, setPage] = useState(0)
-  const [pageResult, setPageResult] = useState<{ key: string; presets: Preset[]; total: number } | null>(null)
-  const pageRequest = useRef(0)
+  const [cloneQueue, setCloneQueue] = useState<CloneQueueDisplayItem[]>([])
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
   const rootRef = useRef<HTMLElement | null>(null)
@@ -57,7 +65,7 @@ export default function ClonedVoicesSection({
   const previewRequestRef = useRef(0)
   const previewObjectUrlRef = useRef<string | null>(null)
   const voiceUploadRef = useRef<HTMLInputElement>(null)
-  const enqueueVoiceFiles = useVoiceCloneQueue({ modelReady, onAddVoice, onBusyChange: onCloneBusyChange })
+  const enqueueVoiceFiles = useVoiceCloneQueue({ modelReady, onAddVoice, onBusyChange: onCloneBusyChange, onQueueChange: setCloneQueue })
   const { setActiveAudio, releaseAudio } = useAudioActivity()
   const { runningPresetIds } = useGenerationActivity()
   const reduced = usePrefersReducedMotion()
@@ -119,12 +127,16 @@ export default function ClonedVoicesSection({
   }
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase()
+  const visibleCloneQueue = cloneQueue.filter((item) => !normalizedSearchQuery || item.name.toLowerCase().includes(normalizedSearchQuery))
   const clonedPresets = presets.filter((preset) => !preset.is_builtin)
   const allFilteredPresets = normalizedSearchQuery
     ? clonedPresets.filter((preset) => preset.name.toLowerCase().includes(normalizedSearchQuery))
     : clonedPresets
-  const pageKey = `${normalizedSearchQuery}\u0000${page}\u0000${pageSize}`
-  const activeResult = pageResult?.key === pageKey ? pageResult : null
+  const pageQuery = useQuery({
+    queryKey: apiQueryKeys.voiceList({ limit: pageSize, offset: page * pageSize, q: normalizedSearchQuery }),
+    queryFn: () => fetchVoicePage({ limit: pageSize, offset: page * pageSize, q: normalizedSearchQuery }),
+  })
+  const activeResult = pageQuery.data ?? null
   const pageCount = Math.max(1, Math.ceil((activeResult?.total ?? allFilteredPresets.length) / pageSize))
   const pageStart = pageCount <= 4 ? 0 : Math.max(0, Math.min(page - 2, pageCount - 5))
   const pageButtons = Array.from({ length: Math.min(pageCount, pageCount <= 4 ? 4 : 5) }, (_, index) => pageStart + index)
@@ -140,20 +152,10 @@ export default function ClonedVoicesSection({
   const visiblePresets = (serverRecords ? [...localAdditions, ...serverRecords] : allFilteredPresets.slice(page * pageSize, (page + 1) * pageSize)).slice(0, pageSize)
   const voiceTotal = activeResult?.total ?? allFilteredPresets.length
   useEffect(() => {
-    let current = true
-    const requestId = ++pageRequest.current
-    listPresets({ limit: pageSize, offset: page * pageSize, q: normalizedSearchQuery })
-      .then((result) => {
-        if (!current || requestId !== pageRequest.current) return
-        setPageResult({ key: pageKey, presets: result.presets, total: result.total })
-        const lastPage = Math.max(0, Math.ceil(result.total / pageSize) - 1)
-        setPage((active) => Math.min(active, lastPage))
-      })
-      .catch(() => {
-        if (current && requestId === pageRequest.current) setPageResult(null)
-      })
-    return () => { current = false }
-  }, [page, pageSize, normalizedSearchQuery, presets, pageKey])
+    if (!pageQuery.data) return
+    const lastPage = Math.max(0, Math.ceil(pageQuery.data.total / pageSize) - 1)
+    setPage((active) => Math.min(active, lastPage))
+  }, [pageQuery.data, pageSize])
   useEffect(() => { setPage((current) => Math.min(current, pageCount - 1)) }, [pageCount])
   useEffect(() => { setPage(0) }, [normalizedSearchQuery, pageSize])
   function changePageSize(value: number) {
@@ -234,12 +236,33 @@ export default function ClonedVoicesSection({
           </AppTooltip>
         </span>
       </div>
-      {clonedPresets.length === 0 ? (
-        <p className="cloned-voices-empty m-0 text-[12px] text-faint">{loading ? 'Loading your voices…' : 'No voices yet — add one to get started.'}</p>
+      {loading && presets.length === 0 && !pageQuery.data && visibleCloneQueue.length === 0 ? (
+        <Skeleton
+          name="cloned-voices"
+          loading
+          fixture={<ClonedVoiceRowsFixture />}
+          select="viewport"
+          snapshotConfig={skeletonSnapshotConfig}
+        >
+          <ClonedVoiceRowsFixture />
+        </Skeleton>
+      ) : clonedPresets.length === 0 && visibleCloneQueue.length === 0 ? (
+        <p className="cloned-voices-empty m-0 text-[12px] text-faint">No voices yet — add one to get started.</p>
       ) : (
         <>
         <ul className="result-list cloned-voices-list" role="listbox" onKeyDown={onListKeyDown}>
-          {visiblePresets.length === 0 ? (
+          {visibleCloneQueue.map((item) => (
+            <li key={`clone-${item.id}`} className="voice-menu-pick -mx-2 flex min-h-9 items-center gap-2 border-b border-hairline px-2" role="option" aria-selected="false" aria-disabled="true" aria-label={`${item.name}, ${item.status === 'cloning' ? 'cloning' : 'in queue'}`}>
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                {item.status === 'cloning'
+                  ? <LoaderCircle size={14} className={reduced ? 'text-progress' : 'animate-spin text-progress'} aria-hidden="true" />
+                  : <span className="size-1.5 rounded-full bg-queued" aria-hidden="true" />}
+                <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{item.name}</span>
+                <span className="mono flex-none text-[10px] text-faint" role="status">{item.status === 'cloning' ? 'Cloning' : 'In queue'}</span>
+              </span>
+            </li>
+          ))}
+          {visiblePresets.length === 0 && visibleCloneQueue.length === 0 ? (
             <li className="list-none px-2 py-3 text-[12px] text-faint" role="presentation">No matching voices.</li>
           ) : visiblePresets.map((preset) => (
             <li
@@ -259,6 +282,9 @@ export default function ClonedVoicesSection({
               <span className="flex min-w-0 flex-1 items-center">
                 <span className="min-w-0 flex-1" onKeyDown={(event) => event.stopPropagation()}>
                   <InlineName value={preset.name} placeholder="Name this voice" ariaLabel={`Name of voice ${preset.name}`} title={`“${preset.name}” — use the pencil to edit voice name`} onCommit={(next, opts) => onRename(preset.id, next, opts)} minChars={1} className="result-name voice-picker-name" editOnPencil />
+                </span>
+                <span className="mono flex-none text-[10px] text-faint" aria-label={`${preset.completed_voiceovers ?? 0} completed voiceovers`}>
+                  {preset.completed_voiceovers ?? 0} voiceover{preset.completed_voiceovers === 1 ? '' : 's'}
                 </span>
                 {runningPresetIds.has(preset.id) && <span className={`size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`} aria-hidden="true" />}
               </span>
@@ -285,7 +311,7 @@ export default function ClonedVoicesSection({
               value={String(pageSize)}
               ariaLabel="Voices per page"
               placeholder="Select page size"
-              options={[10, 25, 50, 100].map((size) => ({ value: String(size), label: String(size) }))}
+              options={[50, 80, 100].map((size) => ({ value: String(size), label: String(size) }))}
               onValueChange={(value) => changePageSize(Number(value))}
             />
           </label>

@@ -1,8 +1,8 @@
 """App"""
 import homegrown_api.config as config
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import homegrown_api.lifespan as lifespan
@@ -15,6 +15,20 @@ import homegrown_api.routes.queue as routes_queue
 
 
 app = FastAPI(title="CloneVoicePrompt-style TTS API", lifespan=lifespan.lifespan)
+
+
+@app.middleware("http")
+async def wait_for_model(request: Request, call_next):
+    # Health must stay available to the readiness poller. All other API work
+    # waits for startup, so reads and writes observe fully restored state too.
+    if lifespan.startup_active() and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        ready = await lifespan.wait_until_ready(timeout=10 * 60)
+        if not ready:
+            detail = lifespan.readiness_error() or "Backend initialization timed out. Retry when startup finishes."
+            return JSONResponse(
+                status_code=503, content={"detail": detail},
+            )
+    return await call_next(request)
 
 
 app.add_middleware(

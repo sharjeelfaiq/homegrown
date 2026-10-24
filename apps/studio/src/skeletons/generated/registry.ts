@@ -3,12 +3,16 @@
 import { registerBones } from 'boneyard-js'
 import { configureBoneyard } from 'boneyard-js/react'
 
-import _studio_startup from './studio-startup.bones.json'
 import _voiceover_history from './voiceover-history.bones.json'
+import _studio_startup from './studio-startup.bones.json'
+import _cloned_voices from './cloned-voices.bones.json'
+import _script_language from './script-language.bones.json'
 
 configureBoneyard({"color":"var(--bg-raised)","darkColor":"var(--bg-raised)","animate":"shimmer","shimmerColor":"var(--bg-hover)","darkShimmerColor":"var(--bg-hover)","speed":"1.2s","shimmerAngle":110})
 
 registerBones({
-  "studio-startup": _studio_startup,
   "voiceover-history": _voiceover_history,
+  "studio-startup": _studio_startup,
+  "cloned-voices": _cloned_voices,
+  "script-language": _script_language,
 })

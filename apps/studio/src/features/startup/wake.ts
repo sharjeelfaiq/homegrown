@@ -18,16 +18,12 @@ const CLIENT_TIMEOUT_MS = LOCAL_TIMEOUT_MS
 async function callWake(): Promise<WakeResponse> {
   try {
     const health = await getHealth()
-    return { status: health.model_loaded ? 'ready' : 'starting' }
+    if (health.model_loaded) return { status: 'ready' }
+    return health.startup_error
+      ? { status: 'error', message: health.startup_error }
+      : { status: 'starting' }
   } catch {
-      // A refused connection is the *normal* state while the backend starts,
-      // not a failure: uvicorn binds the port only after lifespan() finishes
-      // loading the model, so there is no "up but not ready" window to
-      // observe -- model_loaded:false is unreachable on the happy path and
-      // the browser goes straight from ECONNREFUSED to ready. Reporting
-      // 'error' here made the poll loop below give up on its first attempt,
-      // so anyone opening the app URL directly (bookmark, Back button) got
-      // "Could not reach the local backend" instantly instead of a loader.
+      // A refused connection is normal while a cold backend process starts.
     return { status: 'starting' }
   }
 }

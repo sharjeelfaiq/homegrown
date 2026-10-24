@@ -827,12 +827,12 @@ body {
    therefore the final composition setting without covering typed lines or a
    native scrollbar. */
 .script-editor-footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   height: 56px;
   min-height: 56px;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  column-gap: 16px;
   border-top: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-nav) 72%, var(--bg-card));
   padding: 5px 12px 5px 18px;
@@ -854,6 +854,38 @@ body {
 .script-editor-input {
   position: relative;
   min-height: 0;
+}
+
+.script-voice-reminder {
+  position: absolute;
+  z-index: 3;
+  top: 9px;
+  right: 48px;
+  left: 14px;
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+.script-voice-reminder-label {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.script-voice-reminder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .script-paste-button {
@@ -891,7 +923,6 @@ body {
   background: color-mix(in srgb, var(--surface-card) 86%, transparent);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
-  pointer-events: none;
 }
 
 .script-editor-frame {
@@ -911,15 +942,29 @@ body {
 
 .script-editor-generate {
   display: flex;
+  flex: none;
   min-width: 0;
   align-items: center;
-  margin-left: auto;
 }
 
 .script-language-control {
   display: flex;
   flex: none;
   min-width: 0;
+}
+
+.script-language-select {
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+}
+
+.script-editor-selection {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
 }
 
 .generate-action {
@@ -976,12 +1021,19 @@ body {
   .script-editor-footer {
     height: auto;
     min-height: 56px;
-    flex-wrap: wrap;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 8px;
   }
 
   .script-editor-generate {
+    grid-column: 1;
     width: 100%;
     margin-left: 0;
+  }
+
+  .script-editor-selection {
+    width: 100%;
+    flex-basis: 100%;
   }
 
   .generate-action {
@@ -1317,6 +1369,12 @@ body {
 
 .standard-options-popup .dropdown-select-item.is-selected {
   box-shadow: inset 2px 0 var(--accent-2-line);
+}
+
+.dropdown-menu-content.script-language-options-popup {
+  width: min(140px, calc(100vw - 16px));
+  min-width: min(140px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
 }
 
 .dropdown-select-popup .dropdown-menu-radio-item.dropdown-select-item,

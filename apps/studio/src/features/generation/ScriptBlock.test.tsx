@@ -1,20 +1,23 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ScriptBlock from './ScriptBlock'
 import { MAX_SCRIPT_CHARS } from './constants'
 
 const toastError = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: toastError } }))
+vi.mock('boneyard-js/react', () => ({ Skeleton: ({ children }: { children: ReactNode }) => children }))
 
-function renderScriptBlock() {
+function renderScriptBlock(selectedVoiceName: string | null = null) {
   return render(
     <ScriptBlock
       text=""
       onTextChange={vi.fn()}
       presetId={null}
       languages={['English', 'German']}
+      selectedVoiceName={selectedVoiceName}
       language={null}
       onLanguageChange={vi.fn()}
       generateAction={<button type="button">Generate</button>}
@@ -80,6 +83,108 @@ describe('ScriptBlock footer', () => {
     expect(footer).toContainElement(screen.getByRole('button', { name: 'Generate' }))
     expect(footer.querySelector('.script-language-control')).toBeTruthy()
     expect(footer).toHaveTextContent('Select language')
+    expect(screen.getByLabelText('Selected voice: No voice selected')).toBeInTheDocument()
+    expect(container.querySelector('.script-editor-input')).toContainElement(screen.getByLabelText('Selected voice: No voice selected'))
+  })
+
+  it('shows the selected voice above the script and updates when selection changes', () => {
+    const { rerender, container } = renderScriptBlock('Narrator')
+    const input = container.querySelector('.script-editor-input')!
+    const reminder = screen.getByLabelText('Selected voice: Narrator')
+    expect(input).toContainElement(reminder)
+    expect(reminder.querySelector('.script-voice-reminder-name')).toHaveTextContent('Narrator')
+    expect(container.querySelector('.script-editor-selection .script-language-control')).toBeInTheDocument()
+    expect(container.querySelector('.script-selected-voice')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeInTheDocument()
+
+    rerender(
+      <ScriptBlock
+        text=""
+        onTextChange={vi.fn()}
+        presetId={null}
+        languages={['English', 'German']}
+        selectedVoiceName="Updated narrator"
+        language={null}
+        onLanguageChange={vi.fn()}
+        generateAction={<button type="button">Generate</button>}
+      />,
+    )
+    expect(screen.getByLabelText('Selected voice: Updated narrator')).toBeInTheDocument()
+  })
+
+  it('keeps the language control and options menu compact and lists English first', async () => {
+    const { container } = render(
+      <ScriptBlock
+        text=""
+        onTextChange={vi.fn()}
+        presetId={null}
+        languages={['German', 'French', 'English']}
+        language={null}
+        onLanguageChange={vi.fn()}
+        generateAction={<button type="button">Generate</button>}
+      />,
+    )
+    const trigger = screen.getByRole('button', { name: 'Script language' })
+    expect(trigger).toHaveClass('script-language-select')
+    fireEvent.click(trigger)
+    const options = await screen.findAllByRole('menuitemradio')
+    expect(options.map((option) => option.textContent)).toEqual(['Select language', 'English', 'German', 'French'])
+    expect(document.querySelector('.script-language-options-popup')).toBeInTheDocument()
+    expect(container.querySelector('.script-editor-generate')).toContainElement(screen.getByRole('button', { name: 'Generate' }))
+  })
+
+  it('toggles between the existing word count and the full character count', () => {
+    const { rerender } = renderControlledScript('Hi, there!')
+    const counter = screen.getByRole('button', { name: 'Show character count' })
+    expect(counter).toHaveTextContent('2 words')
+    fireEvent.click(counter)
+    expect(screen.getByRole('button', { name: 'Show word count' })).toHaveTextContent('10 characters')
+
+    rerender(
+      <ScriptBlock
+        text="Hi, there! Again."
+        onTextChange={vi.fn()}
+        presetId={null}
+        languages={['English']}
+        language={null}
+        onLanguageChange={vi.fn()}
+        generateAction={<button type="button">Generate</button>}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Show word count' })).toHaveTextContent('17 characters')
+    fireEvent.click(screen.getByRole('button', { name: 'Show word count' }))
+    expect(screen.getByRole('button', { name: 'Show character count' })).toHaveTextContent('3 words')
+  })
+
+  it('keeps the counter keyboard-focusable and preserves over-limit styling in either mode', () => {
+    renderControlledScript('x'.repeat(MAX_SCRIPT_CHARS + 1))
+    const counter = screen.getByRole('button', { name: 'Show character count' })
+    expect(counter).toHaveAttribute('aria-pressed', 'false')
+    counter.focus()
+    expect(document.activeElement).toBe(counter)
+    expect(counter).toHaveClass('text-danger')
+    fireEvent.click(counter)
+    const characterCounter = screen.getByRole('button', { name: 'Show word count' })
+    expect(characterCounter).toHaveTextContent(`${(MAX_SCRIPT_CHARS + 1).toLocaleString()} characters`)
+    expect(characterCounter).toHaveAttribute('aria-pressed', 'true')
+    expect(characterCounter).toHaveClass('text-danger')
+  })
+
+  it('keeps the language control slot as a skeleton while API options load', () => {
+    const { container } = render(
+      <ScriptBlock
+        text=""
+        onTextChange={vi.fn()}
+        presetId={null}
+        languages={[]}
+        languagesLoading
+        language={null}
+        onLanguageChange={vi.fn()}
+        generateAction={<button type="button">Generate</button>}
+      />,
+    )
+    expect(container.querySelector('.script-language-control')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Script language' })).not.toBeInTheDocument()
   })
 
   it('closes the language options after a language is selected', async () => {

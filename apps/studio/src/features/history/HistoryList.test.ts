@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { pageControls } from './historyPager'
+import { VOICEOVER_ROW_GEOMETRY_CLASS, voiceoverRowClassName } from './voiceoverRowLayout'
+
+describe('voiceover row presentation', () => {
+  it('keeps completed, running, and queued rows on the same geometry', () => {
+    const geometry = VOICEOVER_ROW_GEOMETRY_CLASS
+    expect(voiceoverRowClassName('completed').startsWith(geometry)).toBe(true)
+    expect(voiceoverRowClassName('running').startsWith(geometry)).toBe(true)
+    expect(voiceoverRowClassName('queued').startsWith(geometry)).toBe(true)
+    expect(geometry).toContain('py-[7px]')
+  })
+
+  it('applies the existing status theme without changing row geometry', () => {
+    expect(voiceoverRowClassName('completed')).toBe(VOICEOVER_ROW_GEOMETRY_CLASS)
+    expect(voiceoverRowClassName('running')).toBe(`${VOICEOVER_ROW_GEOMETRY_CLASS} is-running`)
+    expect(voiceoverRowClassName('queued')).toBe(`${VOICEOVER_ROW_GEOMETRY_CLASS} is-queued`)
+  })
+})
 
 describe('history page controls', () => {
   it('shows every page when there are four or fewer', () => {

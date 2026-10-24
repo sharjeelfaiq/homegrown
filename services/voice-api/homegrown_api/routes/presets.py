@@ -2,6 +2,7 @@
 import homegrown_api.config as config
 import time
 import uuid
+from collections import Counter
 from pathlib import Path
 import soundfile as sf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -66,6 +67,13 @@ def list_presets(
     user_id: str = Depends(dependencies.get_current_user),
 ):
     presets = [p for p in persistence_stores._presets if p.get("user_id") == user_id and not p.get("is_builtin")]
+    # The durable history store contains completed outputs only. A single
+    # aggregate over it keeps counts independent of history paging/filters and
+    # avoids an additional request for every voice row.
+    completed_counts = Counter(
+        entry.get("preset_id") for entry in persistence_stores._history
+        if entry.get("user_id") == user_id and entry.get("preset_id")
+    )
     needle = (q or "").strip().casefold()
     if needle:
         presets = [p for p in presets if needle in str(p.get("name", "")).casefold()]
@@ -74,7 +82,13 @@ def list_presets(
         limit = min(100, max(1, limit if limit is not None else 100))
         offset = max(0, offset)
         presets = presets[offset:offset + limit]
-    return {"presets": [_preset_response(p) for p in presets], "total": total}
+    return {
+        "presets": [
+            {**_preset_response(preset), "completed_voiceovers": completed_counts.get(preset.get("id"), 0)}
+            for preset in presets
+        ],
+        "total": total,
+    }
 
 
 @router.post("/api/presets")

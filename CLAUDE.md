@@ -60,11 +60,16 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   `ParticleText` wordmark and the skeleton layout do not move. Inline copies also
   live in the landing page and launcher splash; edit the generator and them together.
 - `boneyard-js` supplies generated, source-controlled loading layouts in
-  `apps/studio/src/skeletons/generated/`. `studio-startup` covers model initialization and
-  `voiceover-history` covers only an uncached initial history query; do not use
-  Boneyard's Suspense wrapper because history uses ordinary React Query.
-- `engine/qwen/` is the vendored CUDA-graph TTS wrapper. CPU fallback exists but is
-  slow.
+  `apps/studio/src/skeletons/generated/`. Keep the Studio shell and static card
+  controls rendered during model startup; `cloned-voices` covers only voice
+  rows while their API data loads, `script-language` reserves the language
+  control while options load, and `voiceover-history` covers uncached history
+  or initial queue data. Keep API-loading placeholders in these generated
+  skeletons; do not use Boneyard's Suspense wrapper because history uses
+  ordinary React Query.
+- `engine/qwen/` is the vendored CUDA-graph TTS wrapper. The backend supports a
+  slow CPU fallback; Studio generation stays disabled unless health confirms
+  the model is loaded on CUDA.
 - There is one fixed local user (`local-user`), no accounts, and no workspaces.
   Ordinary API actions, including individual voice and voiceover deletion, do
   not require authentication. Permanent bulk deletion is additionally gated by
@@ -152,13 +157,15 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   distinct.
   File drops clone only when dropped on this card; the rest of Studio only
   suppresses the browser's default file-open behavior.
-  Clone voice and Generate share StudioShell's model-ready gate: they stay
-  semantically disabled until `wakeBackend` observes `model_loaded: true`.
+  Clone voice stays disabled until `wakeBackend` observes `model_loaded: true`.
+  Generate additionally stays disabled until health confirms the model is
+  loaded on a CUDA device; a CPU fallback does not enable generation.
   During startup their tooltip says `Voice model is loading — this can take up
   to 3 minutes.` The API may select CPU when no usable GPU exists;
   that fallback is ready only after its model initialization completes.
-  While Studio is checking startup, it keeps a **Voice model is loading** toast
-  with an indeterminate `StatusMark` spinner until readiness or failure.
+  During startup, render the real header, shell, and static controls
+  immediately. Use generated skeletons for API-backed voice rows, language
+  options, and uncached history or initial queue rows.
 - Voice uploads keep the Clone voice label and Upload icon unchanged, and the
   action stays available while cloning. File selection and card drops accept
   multiple audio files and append them to a browser-local FIFO. Only one clone

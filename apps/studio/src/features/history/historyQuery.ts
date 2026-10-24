@@ -1,7 +1,7 @@
 import { QueryClient, onlineManager, type QueryKey } from '@tanstack/react-query'
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 import { persistQueryClient } from '@tanstack/react-query-persist-client'
-import { listHistory, type HistoryFilters, type HistoryPage } from '../../lib/api'
+import { listHistory, listPresets, listLanguages, type HistoryFilters, type HistoryPage, type Preset } from '../../lib/api'
 
 export const HISTORY_SCOPE = 'local-user'
 const HISTORY_CACHE_VERSION = 'voiceover-history.v1'
@@ -37,6 +37,40 @@ export const historyQueryClient = new QueryClient({
   },
 })
 
+export const apiQueryKeys = {
+  voices: ['voices', HISTORY_SCOPE] as const,
+  voiceList: (request: { limit?: number; offset?: number; q?: string } = {}) => ['voices', HISTORY_SCOPE, {
+    limit: request.limit === undefined ? undefined : Math.max(1, Math.min(100, Math.floor(request.limit))),
+    offset: request.offset === undefined ? undefined : Math.max(0, Math.floor(request.offset)),
+    q: request.q?.trim().replace(/\s+/g, ' ').toLocaleLowerCase() || undefined,
+  }] as const,
+  languages: ['model-languages', HISTORY_SCOPE] as const,
+  queue: ['generation-queue', HISTORY_SCOPE] as const,
+}
+
+/** Only fields used by voice rows and selectors survive local persistence. */
+export function persistablePreset(preset: Preset): Preset {
+  const { id, name, language, tag, preview_url, created_at, ref_seconds, chunk_chars, is_builtin, completed_voiceovers } = preset
+  return { id, name, language, tag, preview_url, created_at, ref_seconds, chunk_chars, is_builtin, completed_voiceovers, ref_text: '', audio_path: '' }
+}
+
+export function fetchVoices() {
+  return listPresets().then(({ presets }) => presets.filter((preset) => !preset.is_builtin).map(persistablePreset))
+}
+
+export function fetchVoicePage(request: { limit?: number; offset?: number; q?: string } = {}) {
+  const normalized = apiQueryKeys.voiceList(request)[2]
+  return listPresets(normalized).then((result) => ({ ...result, presets: result.presets.filter((preset) => !preset.is_builtin).map(persistablePreset) }))
+}
+
+export async function fetchLanguages() {
+  return (await listLanguages()).languages
+}
+
+export function invalidateVoices() {
+  return historyQueryClient.invalidateQueries({ queryKey: apiQueryKeys.voices })
+}
+
 const persister = typeof window === 'undefined' ? undefined : createSyncStoragePersister({
   storage: window.localStorage,
   key: HISTORY_CACHE_VERSION,
@@ -48,7 +82,7 @@ if (persister) {
     queryClient: historyQueryClient,
     persister,
     maxAge: 24 * 60 * 60_000,
-    dehydrateOptions: { shouldDehydrateQuery: (query) => query.queryKey[0] === 'voiceover-history' },
+    dehydrateOptions: { shouldDehydrateQuery: (query) => ['voiceover-history', 'voices', 'model-languages'].includes(String(query.queryKey[0])) },
   })
 }
 

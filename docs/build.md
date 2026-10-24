@@ -75,7 +75,7 @@ first remove the same previous build outputs listed above.
 | Python 3 on PATH | `python --version` | python.org |
 | Node + npm | `npm --version` | nodejs.org |
 | 7-Zip, incl. `7z.sfx` | `ls "/c/Program Files/7-Zip/7z.sfx"` | `winget install 7zip.7zip` |
-| NVIDIA GPU + CUDA driver (recommended for runtime) | `nvidia-smi` | GeForce driver |
+| NVIDIA GPU + working CUDA driver (required for Studio generation; CPU supports voice management) | `nvidia-smi` | GeForce driver |
 
 ---
 
@@ -294,14 +294,21 @@ Expect, in order:
    and confirm Studio shows a toast with browser-permission and Ctrl+V guidance.
    Confirm the clear icon button below Paste is disabled for an empty textarea
    and clears all text when enabled.
-   To check the
-   startup toast and disabled-state tooltips, run `npm run dev` separately:
-   Vite should render Studio before FastAPI starts, and the persistent
-   **Voice model is loading** toast should show an animated spinner until the
-   model is ready or startup fails. Generate and Clone voice should stay
-   disabled during that interval, with tooltips explaining that model loading
-   can take up to three minutes. The packaged launcher shows its browser splash
-   instead and only opens Studio after readiness.
+   To check startup rendering and readiness behavior, run `npm run dev`
+   separately. Start Vite, open Studio before starting FastAPI, and confirm the
+   header, logo, editor, cards, layout controls, and static buttons render
+   immediately. Start FastAPI while the model is still loading: API-backed voice
+   rows, language options, and uncached history or initial queue rows should
+   show skeletons while the rest of Studio remains visible. Confirm
+   `/api/health` responds with startup progress and other API requests wait for
+   initialization; pending requests should finish after readiness or receive
+   HTTP 503 if startup fails. Generate and Clone voice should remain visible but disabled
+   during startup. After loading, Clone voice should enable; Generate should
+   enable only when the model is reported on CUDA and the form prerequisites
+   are met. On CPU fallback, confirm Clone voice enables and Generate remains
+   disabled with a CUDA-required explanation. The packaged launcher displays
+   its browser splash while the backend initializes, then opens Studio after
+   readiness.
 8. In the Voices card, confirm the search covers cloned voices only.
    Search with a mixed-case substring and confirm only matching rows remain;
    check the 10/25/50/100 page-size choices, the matching total, and previous,
@@ -425,8 +432,9 @@ a folder outside the repo, and run `Homegrown.exe` from there.
 5. First launch downloads the ~2.5 GB model, with progress shown in the loader.
 
 **Requirements to state to them:** Windows and about 8 GB free disk, plus
-about 2.5 GB for the model download. NVIDIA GPU with CUDA drivers is
-recommended; CPU fallback is available but generation can be very slow. The
+about 2.5 GB for the model download. Studio generation requires an NVIDIA GPU
+with working CUDA drivers; on CPU fallback, voice management remains available
+but Generate stays disabled. The
 4 GB VRAM figure is a historical tested profile, not a guaranteed minimum.
 No Python, no Node.
 

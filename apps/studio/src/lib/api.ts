@@ -10,6 +10,8 @@ interface HealthResponse {
    * not -- so this is the only signal that every further job is doomed until
    * the backend restarts. */
   gpu_fault?: string | null
+  /** Startup failure published while health remains available. */
+  startup_error?: string | null
 }
 
 export interface Preset {
@@ -32,6 +34,8 @@ export interface Preset {
    *  enough to hurt output quality. */
   ref_seconds?: number | null
   chunk_chars?: number
+  /** Number of successfully completed history records for this voice. */
+  completed_voiceovers?: number
   /** POST /api/presets only, and null unless a trim actually happened -- so it
    *  is both the value and its own condition. Nothing persisted records what an
    *  upload was cut down FROM, which is why this one cannot be derived. */

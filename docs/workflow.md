@@ -14,9 +14,12 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. The script starts Vite on `:5173` first, then
-FastAPI on `127.0.0.1:8000`; FastAPI probes the usable device and initializes
-Qwen3-TTS before reporting ready. Vite proxies `/api`, `/audio`, and `/refs`
-to the API.
+FastAPI on `127.0.0.1:8000`. FastAPI begins serving while a background startup
+task probes the device, loads Qwen3-TTS, restores the queue, and starts the
+worker. The boot-status file reports the startup phase, and `/api/health`
+remains responsive with readiness and error details. Other `/api/*` requests
+wait up to ten minutes and receive HTTP 503 if initialization fails or times
+out. Vite proxies `/api`, `/audio`, and `/refs` to the API.
 `npm run dev` prints a LAN address because Vite listens on the network interfaces.
 There are no accounts or general API authentication. Ordinary actions,
 including individual deletes, are unauthenticated. Permanent bulk deletion
@@ -25,7 +28,8 @@ network.
 
 For manual startup, create and activate the Python environment as described in
 the README. Start Vite in one terminal and wait for it to serve `:5173`, then
-start FastAPI in another terminal so Studio is available during model loading:
+start FastAPI in another terminal. The static Studio shell appears immediately;
+API-backed content uses skeletons until its requests complete:
 
 ```bash
 cd apps/studio && npm run dev
@@ -149,11 +153,13 @@ are the original uploaded audio.
 Write up to 60,000 characters in the Script editor, choose a voice in the
 Voices card and a script language in the footer, then select **Generate**. The button is enabled only
 when the script has non-whitespace text, an available voice and language are
-selected, the model is ready, and no submission is in progress. Ctrl/Cmd+Enter
-generates when the form is ready. While model startup is in progress, Generate
-and Clone voice are disabled and their tooltip says the voice model is loading
-and can take up to three minutes. The compact Generate action is right-aligned in the
-editor footer. The fixed mascot is dragged by
+selected, health confirms the model is loaded on a CUDA device, and no
+submission is in progress. Ctrl/Cmd+Enter generates when the form is ready.
+During startup, Generate and Clone voice are disabled and their tooltip says
+the voice model is loading and can take up to three minutes. If model loading
+falls back to CPU, Clone voice becomes available when loading completes but
+Generate remains disabled because Studio generation requires CUDA. The compact
+Generate action is right-aligned in the editor footer. The fixed mascot is dragged by
 the mascot artwork itself, while its subdued side arrows cycle the numbered
 catalog without initiating a drag. Clicking the artwork instead plays the
 mascot's reaction. Its corner grip resizes the mascot between 56 and 176px,
@@ -241,19 +247,18 @@ choice, and mascot-visibility preference are stored in localStorage. Queue
 records survive a backend restart; a running job
 restarts from the beginning of that job, not from its last chunk.
 
-During Vite development, Studio renders first and shows a persistent **Voice
-model is loading** toast with an animated spinner until startup succeeds or
-fails. A full-screen overlay reports backend startup, GPU probing, and model
-initialization after a short delay. Boot status comes from the backend status
-file. Generate and Clone voice remain disabled until the backend publishes a
-ready model and health reports it loaded; the model-loading tooltip says this
-can take up to three minutes. The packaged app instead shows the launcher's
-browser splash while the backend initializes, then opens Studio after the
-model is ready. If the backend is unavailable or model startup fails, Studio's
-overlay exits and a pulsing warning button at the lower left opens a modal
-with the reported message and a Retry action when available. CPU fallback is
-supported, but can be much slower than GPU generation. A failed background
-history refresh leaves cached voiceovers visible and does not add an inline
-notice above the list. The API serves `apps/studio/dist` when that build exists;
+During Vite development, Studio renders its real header, logo, editor, cards,
+and static controls immediately. Skeletons appear only in API-backed voice
+rows, language options, and uncached history or initial queue rows until those
+queries load. The backend status file reports startup phases, and health
+reports readiness and errors; no full-screen startup gate covers the Studio.
+Generate and Clone voice
+remain disabled while the model loads. Once loading completes, Clone voice is
+available even on CPU fallback, while Generate stays disabled unless health
+confirms a CUDA device. If the backend is unavailable or model startup fails,
+a pulsing warning button at the lower left opens a modal with the reported
+message and a Retry action when available. A failed background history refresh
+leaves cached voiceovers visible and does not add an inline notice above the
+list. The API serves `apps/studio/dist` when that build exists;
 use Vite at `:5173` while developing Studio to avoid mistaking a built UI for
 the live source.

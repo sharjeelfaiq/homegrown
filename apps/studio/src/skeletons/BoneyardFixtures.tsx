@@ -7,7 +7,7 @@ const snapshotConfig = {
 
 function VoiceRowSkeleton({ selected = false }: { selected?: boolean }) {
   return (
-    <div className={`voice-menu-pick -mx-2 flex min-h-9 items-center gap-1 border-b border-hairline px-2 last:border-b-0 ${selected ? 'voice-menu-pick-selected' : ''}`}>
+    <li className={`voice-menu-pick -mx-2 flex min-h-9 list-none items-center gap-1 border-b border-hairline px-2 last:border-b-0 ${selected ? 'voice-menu-pick-selected' : ''}`}>
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="size-3 shrink-0 rounded-sm bg-surface-raised" />
         <span className="h-3 w-[62%] rounded-full bg-surface-raised" />
@@ -17,11 +17,11 @@ function VoiceRowSkeleton({ selected = false }: { selected?: boolean }) {
         <span className="size-7 rounded-full bg-surface-raised" />
         <span className="size-7 rounded-full bg-surface-raised" />
       </span>
-    </div>
+    </li>
   )
 }
 
-function ClonedVoicesSkeleton() {
+export function ClonedVoicesFixture() {
   return (
     <section className="cloned-voices-section results flex w-full flex-none flex-col wide:min-h-0 wide:flex-1" aria-hidden="true">
       <div className="voiceovers-card-header voiceover-history-header shrink-0">
@@ -41,6 +41,27 @@ function ClonedVoicesSkeleton() {
         <VoiceRowSkeleton />
       </div>
     </section>
+  )
+}
+
+/** Skeleton rows only; the card header and controls remain live during fetches. */
+export function ClonedVoiceRowsFixture() {
+  return (
+    <ul className="result-list cloned-voices-list" aria-hidden="true">
+      <VoiceRowSkeleton selected />
+      <VoiceRowSkeleton />
+      <VoiceRowSkeleton />
+      <VoiceRowSkeleton />
+      <VoiceRowSkeleton />
+    </ul>
+  )
+}
+
+export function ScriptLanguageFixture() {
+  return (
+    <div className="script-language-control" aria-hidden="true">
+      <div className="h-8 w-[190px] rounded-sm border border-control bg-surface-raised" />
+    </div>
   )
 }
 
@@ -101,7 +122,7 @@ export function StudioStartupFixture() {
 
       <main className="studio-workspace mx-auto grid w-full max-w-(--shell) grid-cols-[minmax(0,1fr)] items-start gap-[34px] px-(--gutter) pt-8 pb-[72px] wide:min-h-0 wide:flex-auto wide:gap-10 wide:pb-8">
         <div className="composer flex w-full min-w-0 flex-col gap-[22px] wide:h-full wide:min-h-0">
-          <ClonedVoicesSkeleton />
+          <ClonedVoicesFixture />
         </div>
 
         <aside className="relative flex w-full min-w-0 flex-col gap-[22px] wide:h-full wide:min-h-0">
@@ -150,6 +171,16 @@ export function BoneyardCaptureFixtures() {
   return (
     <div>
       <Skeleton name="studio-startup" loading={false} fixture={<StudioStartupFixture />} select="viewport" snapshotConfig={snapshotConfig}><StudioStartupFixture /></Skeleton>
+      <div className="mx-auto w-full max-w-(--shell) px-(--gutter) pb-8">
+        <Skeleton name="cloned-voices" loading={false} fixture={<ClonedVoiceRowsFixture />} select="viewport" snapshotConfig={snapshotConfig}>
+          <ClonedVoiceRowsFixture />
+        </Skeleton>
+      </div>
+      <div className="mx-auto w-full max-w-(--shell) px-(--gutter) pb-8">
+        <Skeleton name="script-language" loading={false} fixture={<ScriptLanguageFixture />} select="viewport" snapshotConfig={snapshotConfig}>
+          <ScriptLanguageFixture />
+        </Skeleton>
+      </div>
       <div className="mx-auto w-full max-w-(--shell) px-(--gutter) pb-8">
         <Skeleton name="voiceover-history" loading={false} fixture={<VoiceoverHistoryFixture />} select="viewport" snapshotConfig={snapshotConfig}>
           <VoiceoverHistoryFixture />

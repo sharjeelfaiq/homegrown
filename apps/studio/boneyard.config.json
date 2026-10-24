@@ -4,6 +4,8 @@
   "wait": 1200,
   "skeletons": {
     "studio-startup": { "route": "/" },
+    "cloned-voices": { "route": "/" },
+    "script-language": { "route": "/" },
     "voiceover-history": { "route": "/" }
   },
   "select": "viewport",

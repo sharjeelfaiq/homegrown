@@ -9,9 +9,12 @@ import {
 } from 'react'
 import { listQueue, type QueueEntry } from '../../lib/api'
 import { usePageVisible } from '../../hooks/usePageVisible'
+import { useQuery } from '@tanstack/react-query'
+import { apiQueryKeys, historyQueryClient } from '../history/historyQuery'
 
 interface GenerationActivityValue {
   queue: QueueEntry[]
+  loading: boolean
   anyRunning: boolean
   /** Ids of voices with a job in flight. Ids, not names: two voices can share
    *  a name, and the old name-keyed set marked both of them busy. */
@@ -41,7 +44,9 @@ const GenerationActivityContext = createContext<GenerationActivityValue | null>(
 /** The one queue poller for the whole app: 1s while work is active,
  * backed off to 4s when idle, fully paused in background tabs. */
 export function GenerationActivityProvider({ children }: { children: ReactNode }) {
-  const [queue, setQueue] = useState<QueueEntry[]>([])
+  const queueQuery = useQuery({ queryKey: apiQueryKeys.queue, queryFn: listQueue, enabled: false })
+  const queue = queueQuery.data?.queue ?? []
+  const [loading, setLoading] = useState(() => historyQueryClient.getQueryData(apiQueryKeys.queue) === undefined)
   const [nonce, setNonce] = useState(0)
   const [reachable, setReachable] = useState(true)
   const visible = usePageVisible()
@@ -64,14 +69,18 @@ export function GenerationActivityProvider({ children }: { children: ReactNode }
       listQueue()
         .then((r) => {
           if (cancelled) return
-          setQueue(r.queue)
+          historyQueryClient.setQueryData(apiQueryKeys.queue, r)
+          setLoading(false)
           misses.current = 0
           setReachable(true)
         })
         .catch(() => {
           if (cancelled) return
           misses.current += 1
-          if (misses.current >= MISSES_BEFORE_UNREACHABLE) setReachable(false)
+          if (misses.current >= MISSES_BEFORE_UNREACHABLE) {
+            setReachable(false)
+            setLoading(false)
+          }
         })
         .finally(() => {
           if (cancelled) return
@@ -94,12 +103,16 @@ export function GenerationActivityProvider({ children }: { children: ReactNode }
     )
     return {
       queue,
+      loading,
       anyRunning: runningPresetIds.size > 0,
       runningPresetIds,
-      refresh: () => setNonce((n) => n + 1),
+      refresh: () => {
+        setNonce((n) => n + 1)
+        void historyQueryClient.invalidateQueries({ queryKey: apiQueryKeys.queue, refetchType: 'none' })
+      },
       reachable,
     }
-  }, [queue, reachable])
+  }, [queue, loading, reachable])
 
   return (
     <GenerationActivityContext.Provider value={value}>

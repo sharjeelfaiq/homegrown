@@ -13,7 +13,11 @@ mounts `app/App.tsx` inside `app/providers.tsx`. Provider order is Tooltip,
 Theme, QueryClient, BrowserRouter, AudioActivity, then GenerationActivity.
 
 `app/StudioShell.tsx` coordinates the feature modules under `features/` and
-owns Studio-level keyboard behavior. `hooks/useTypeToScript.ts` focuses the
+owns Studio-level keyboard behavior. The shell and static card controls render
+without waiting for backend startup; API-backed voice rows, language options,
+and uncached history or initial queue data use generated skeletons while their
+queries load. Clone voice remains disabled until the model is loaded, and
+Generate also requires health to report a CUDA device. `hooks/useTypeToScript.ts` focuses the
 Script textarea on load and forwards eligible printable keys to it without
 intercepting searches, editable controls, menus, dialogs, modifiers, or IME
 composition. The Script editor owns clipboard paste and applies the remaining
@@ -65,8 +69,10 @@ declares package metadata; it does not replace or duplicate dependency pins.
   optional local bulk-delete password.
 - `dependencies.py` supplies the fixed local-user dependency and password gate
   for permanent collection-wide deletion. There is no account authentication.
-- `lifespan.py` coordinates model probing/loading, queue restoration, worker
-  startup and shutdown, and boot-status publication.
+- `lifespan.py` starts model initialization in a background thread during ASGI
+  lifespan startup, then yields without waiting for it. Initialization probes
+  the device, loads the model, restores persisted queue state, and starts the
+  worker before publishing ready; failures publish an error status.
 - `generation/model.py` owns model and device state; `generation/worker.py`
   owns job dictionaries, FIFO ordering and worker synchronization.
 - `generation/budget.py` owns reference and sequence budgeting.
@@ -91,6 +97,12 @@ declares package metadata; it does not replace or duplicate dependency pins.
 Mutable state is accessed through its owning module, so replacing a model or
 restoring the queue is visible to all callers. API routes are registered before
 the SPA catch-all. Unknown `/api/` paths remain HTTP 404 responses.
+The app keeps `/api/health` responsive during model initialization; it reports
+model/device readiness and startup errors. The boot-status file reports the
+startup phase. Other `/api/*` requests wait up to ten minutes for startup and
+receive HTTP 503 if initialization fails or times out. This lets the Studio
+report startup progress without sending model-dependent work to an
+uninitialized model.
 
 ## Development and packaging
 

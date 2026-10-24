@@ -3,6 +3,7 @@ import homegrown_api.config as config
 from fastapi import APIRouter, HTTPException
 
 import homegrown_api.generation.model as generation_model
+import homegrown_api.lifespan as startup
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ def health():
         # gone -- so this is the only way a client can tell that every further
         # job is doomed.
         "gpu_fault": generation_model._gpu_fault,
+        "startup_error": startup.readiness_error(),
     }
 
 

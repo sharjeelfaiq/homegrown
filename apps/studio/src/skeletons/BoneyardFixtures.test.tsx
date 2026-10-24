@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { StudioStartupFixture, VoiceoverHistoryFixture } from './BoneyardFixtures'
+import { ClonedVoiceRowsFixture, ScriptLanguageFixture, StudioStartupFixture, VoiceoverHistoryFixture } from './BoneyardFixtures'
 
 vi.mock('boneyard-js/react', () => ({ Skeleton: ({ children }: { children: ReactNode }) => children }))
 
@@ -27,5 +27,17 @@ describe('Boneyard fixtures', () => {
     const { container } = render(<VoiceoverHistoryFixture />)
     expect(container.querySelectorAll('.result-list > li')).toHaveLength(3)
     expect(container.querySelectorAll('.result-list .bg-audio-soft')).toHaveLength(138)
+  })
+
+  it('keeps cloned voice loading rows separate from the live card controls', () => {
+    const { container } = render(<ClonedVoiceRowsFixture />)
+    expect(container.querySelectorAll('.cloned-voices-list > li')).toHaveLength(5)
+    expect(container.querySelector('.voiceovers-card-header')).toBeNull()
+    expect(container.querySelector('.history-context-toolbar')).toBeNull()
+  })
+
+  it('keeps the script language skeleton sized to its live control slot', () => {
+    const { container } = render(<ScriptLanguageFixture />)
+    expect(container.querySelector('.script-language-control > .h-8')).toBeInTheDocument()
   })
 })

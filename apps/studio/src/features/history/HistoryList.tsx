@@ -33,6 +33,7 @@ import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from './historyPageSize'
 import { fetchHistoryPage, historyQueryKey, normalizeHistoryRequest } from './historyQuery'
 import { pageControls } from './historyPager'
+import { voiceoverRowClassName } from './voiceoverRowLayout'
 import { Skeleton } from 'boneyard-js/react'
 import { VoiceoverHistoryFixture } from '../../skeletons/BoneyardFixtures'
 
@@ -174,7 +175,7 @@ function TransportTime({
  * pausing would hold that lock and stall every queued job. Cancellation lands
  * at the next chunk boundary (~1s). The script remains reusable from the
  * overflow menu through the queue's on-demand script route. */
-function PendingRow({
+export function PendingRow({
   job,
   nameControl,
   onCancel,
@@ -277,6 +278,7 @@ function PendingRow({
   // get it: is-canceling is written after is-queued, so the queued row's purple
   // state hands over to red while cancellation is in progress.
   const showCanceling = canceling || cancelPending
+  const rowStatus = showCanceling ? 'canceling' : failed ? 'failed' : queued ? 'queued' : running ? 'running' : 'completed'
 
   return (
     // Enter AND exit, unlike a VoiceoverRow, which only exits. A pending row
@@ -331,7 +333,7 @@ function PendingRow({
           : { opacity: 0, transition: { duration: leavingCancelled ? 0.22 : 0.16 } }
       }
       transition={{ duration: reduced ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
-      className={[
+      className={voiceoverRowClassName(rowStatus, [
         // px-2 -mx-2 is padding that COSTS NOTHING, and the pair is the whole
         // trick. This row is tinted (amber running, purple queued, red
         // cancelling) while VoiceoverRow is not, so its content sits against a
@@ -348,22 +350,11 @@ function PendingRow({
         // side padding. Content stays on the finished row's pixel (dL 0.0 /
         // dR -0.1 re-measured after this), and the band gains its breathing
         // room. Keep the two numbers equal.
-        'group/row -mx-2 flex overflow-hidden border-b border-hairline px-2 py-[7px] last:border-b-0',
-        queued && 'is-queued',
-        failed && 'is-failed',
-        // Written after is-queued and is-running in index.css, so it wins the
-        // tint, the bar fill and the .result-time colour off source order for
-        // as long as it applies -- and stops applying, restoring amber or
-        // purple, the moment an Undo clears cancelPending.
-        showCanceling && 'is-canceling',
         // is-over used to sit beside this, tinting the clock once elapsed
         // passed the estimate. Both it and the estimate are gone: a prediction
         // that was beaten by 12 of 12 measured jobs is not worth showing, and
         // "over" is undefined without one.
-        running && 'is-running',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      ])}
     >
       <motion.div
         className="flex min-w-0 flex-1 flex-col gap-0.5"
@@ -501,6 +492,20 @@ function PendingRow({
               Retry
             </button>
           )}
+          {!failed && (
+            <Dropdown.Root>
+              <AppTooltip content="More actions">
+                <Dropdown.Trigger className="icon-btn" aria-label={`More actions for ${nameControl.name || nameControl.placeholder || 'this voiceover'}`}>
+                  <MoreIcon size={15} />
+                </Dropdown.Trigger>
+              </AppTooltip>
+              <Dropdown.Content side="top" align="end" sideOffset={4} className="min-w-40">
+                <Dropdown.Item className="dropdown-menu-item" onClick={onReuse}>
+                  <WandIcon size={14} />Reuse transcript
+                </Dropdown.Item>
+              </Dropdown.Content>
+            </Dropdown.Root>
+          )}
           {!failed && confirmingCancel ? (
             <>
               <AppTooltip content="Cancel generation">
@@ -550,7 +555,7 @@ function PendingRow({
  * A component rather than inline JSX because the row needs its own `useRef` for
  * the audio element -- VoiceoverPlayer and TransportTime both watch it, and a
  * hook cannot live inside a .map(). */
-function VoiceoverRow({
+export function VoiceoverRow({
   entry,
   nameControl,
   name,
@@ -591,7 +596,7 @@ function VoiceoverRow({
         ? { opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }
         : undefined}
       transition={{ duration: reduced ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
-      className={`group/row -mx-2 flex cursor-default ${menuOpen ? 'overflow-visible' : 'overflow-hidden'} border-b border-hairline px-2 py-1 last:border-b-0`}>
+      className={[voiceoverRowClassName('completed', ['cursor-default']), menuOpen && 'overflow-visible'].filter(Boolean).join(' ')}>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <HistoryRowHead
         {...nameControl}
@@ -600,9 +605,16 @@ function VoiceoverRow({
         nameTitle={`Created ${created} — use pencil to rename voiceover`}
         scriptPreview={(
           <AppTooltip content={entry.text}>
-            <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-faint">
+            <button
+              type="button"
+              className="result-text m-0 block min-w-0 overflow-hidden bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
+              aria-label={`Reuse transcript for ${name}`}
+              onClick={onRequeue}
+            >
+              <span className="block overflow-hidden text-ellipsis whitespace-nowrap">
               {truncate(entry.text)}
-            </span>
+              </span>
+            </button>
           </AppTooltip>
         )}
       />
@@ -695,7 +707,7 @@ export default function HistoryList({
   onError,
   gpuFault = false,
 }: Props) {
-  const { queue, refresh } = useGenerationActivity()
+  const { queue, refresh, loading: queueLoading } = useGenerationActivity()
   // Read by held-cancel timers, which fire from a closure captured several
   // renders earlier -- `queue` there would be whatever it was when the hold
   // started, which is precisely the value that cannot be trusted.
@@ -801,7 +813,6 @@ export default function HistoryList({
   })
   const history = showingHistory ? historyQuery.data?.history ?? [] : []
   const total = showingHistory ? historyQuery.data?.total ?? 0 : 0
-  const loading = historyQuery.isLoading && !historyQuery.data
   useEffect(() => {
     if (!historyQuery.data || history.length >= total || !navigator.onLine) return
     const next = normalizeHistoryRequest({ ...request, offset: request.offset + request.limit })
@@ -845,6 +856,8 @@ export default function HistoryList({
               (!searching || e.preset_name.toLowerCase().includes(draft.trim().toLowerCase()) || (pendingNames[e.job_id] ?? '').toLowerCase().includes(draft.trim().toLowerCase())),
           )
           .sort((a, b) => Number(a.status === 'error') - Number(b.status === 'error'))
+  const loading = (historyQuery.isLoading && !historyQuery.data) ||
+    (queueLoading && active.length === 0 && filters.status !== 'completed')
 
   // Numbered FIRST, filtered second, and the order is load-bearing. The
   // number is derived from a row's position in the whole list (total - i), so
