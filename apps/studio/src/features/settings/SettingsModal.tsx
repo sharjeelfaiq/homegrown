@@ -17,7 +17,7 @@ interface Props {
   onBulkDelete: (kind: 'history' | 'presets', adminPassword: string) => Promise<BulkDeleteResult>
 }
 
-interface ModelChoice { available: boolean; reason: string | null; installed: boolean; device?: string; status?: string; gpu?: { available: boolean; status: string }; cpu?: { available: boolean; status: string } }
+interface ModelChoice { available: boolean; installed: boolean; device?: string; status?: string }
 
 function VoiceModelAvailability({ open }: { open: boolean }) {
   const [choices, setChoices] = useState<Record<string, ModelChoice> | null>(null)
@@ -35,15 +35,13 @@ function VoiceModelAvailability({ open }: { open: boolean }) {
   const labels = [['standard', 'Standard'], ['higher', 'Higher quality']] as const
   return <section className="settings-section mt-6" aria-labelledby="voice-model-heading">
     <h3 id="voice-model-heading" className="m-0 font-mono text-[11px] font-normal tracking-[0.1em] uppercase text-muted">Voice model</h3>
-    <p className="settings-section-description">Hardware fit is assessed for GPU and CPU. Estimated and unknown choices remain available; successful loading and generation provide stronger validation.</p>
     <div className="mt-3 grid gap-2">
       {labels.map(([key, label]) => {
         const choice = choices?.[key]
         const available = choice?.available === true || choice?.status === 'Unknown'
-        const reason = choice?.reason ?? 'Hardware details are unavailable; download remains available.'
         return <div key={key} className={`model-setup-option ${available ? '' : 'model-setup-option-unavailable'}`}>
-          <span className="model-setup-option-copy"><strong>{label}{recommended === key ? ' · Recommended' : ''}</strong><span>{reason} {choice?.installed ? 'Installed.' : ''}</span></span>
-          <span className="model-setup-option-tag">{choice?.status ?? 'Unknown'} · {choice?.device ?? 'Unknown'}</span>
+          <span className="model-setup-option-copy"><strong>{label}{recommended === key ? ' · Recommended' : ''}</strong></span>
+          <span className="model-setup-option-tag">{!choice?.status || choice.status === 'Unknown' ? 'Fit unknown' : `${choice.status} · ${choice.device ?? 'Unknown'}${choice.device === 'CPU' ? ' · Slow' : ''}`}</span>
           <button type="button" className="ghost-btn" disabled={busy || (choice?.available === false && choice?.status !== 'Unknown')} onClick={async () => {
             setBusy(true); setMessage('')
             try {

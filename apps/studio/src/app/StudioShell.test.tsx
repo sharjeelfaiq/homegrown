@@ -109,11 +109,10 @@ it('shows the same model choice screen when the backend has no installed model',
     onStatus?.('onboarding', 0)
   })
   renderStudio()
-  expect(await screen.findByRole('heading', { name: 'Set up voice generation' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'Choose a voice model' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Download Standard' })).toBeEnabled()
   expect(screen.getByText('Higher quality')).toBeInTheDocument()
-  expect(screen.getAllByText(/hardware details are unavailable/i).length).toBeGreaterThan(0)
-  expect(screen.getAllByText(/unknown · unknown/i).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/fit unknown/i)).toHaveLength(2)
   expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
 })
 
@@ -132,7 +131,7 @@ it('keeps onboarding open with a retryable message when the model download reque
   renderStudio()
   fireEvent.click(await screen.findByRole('button', { name: 'Download Standard' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('Download unavailable')
-  expect(screen.getByRole('heading', { name: 'Set up voice generation' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Choose a voice model' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Download Standard' })).toBeEnabled()
 })
 
@@ -163,7 +162,7 @@ it('keeps the choice dialog open during download polling and shows download prog
   mocks.boot = { phase: 'downloading', detail: '1.0 GB of 2.5 GB', percent: 42 }
   view.rerender(<QueryClientProvider client={historyQueryClient}><StudioShell /></QueryClientProvider>)
 
-  expect(screen.getByRole('heading', { name: 'Set up voice generation' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Choose a voice model' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Downloading 42%' })).toBeDisabled()
   expect(screen.getByText('Voice engine').parentElement).toHaveTextContent('Downloading 42%')
   expect(screen.getByRole('status')).toHaveTextContent('Downloading Standard42%')

@@ -866,25 +866,23 @@ export default function StudioShell() {
           <div className="model-setup-intro">
             <span className="model-setup-icon" aria-hidden="true"><HardDriveDownload size={20} strokeWidth={1.8} /></span>
             <div>
-              <p className="model-setup-kicker">ONE-TIME DOWNLOAD</p>
-              <h2>Set up voice generation</h2>
+              <h2>Choose a voice model</h2>
             </div>
           </div>
-          <p className="model-setup-description">Choose a voice model to finish setting up Homegrown. Assessments are estimates until the model loads and generates successfully.</p>
           <div className="model-setup-options" role="group" aria-label="Available voice models">
             {([['standard', 'Standard'], ['higher', 'Higher quality']] as const).map(([key, label]) => {
               const choice = modelChoices?.[key]
               const selected = selectedSetupModel === key
               return <button type="button" key={key} className={`model-setup-option ${selected ? 'model-setup-option-selected' : ''}`} aria-pressed={selected} onClick={() => setSelectedSetupModel(key)}>
                 <span className="model-setup-radio" aria-hidden="true">{selected && <CheckIcon size={13} />}</span>
-                <span className="model-setup-option-copy"><strong>{label}{recommendedModel === key ? ' · Recommended' : ''}</strong><span>{choice?.reason ?? 'Hardware details are unavailable; download remains available.'}</span></span>
-                <span className="model-setup-option-tag">{choice?.status ?? 'UNKNOWN'} · {choice?.device ?? 'Unknown'}</span>
+                <span className="model-setup-option-copy"><strong>{label}{recommendedModel === key ? ' · Recommended' : ''}</strong></span>
+                <span className="model-setup-option-tag">{!choice?.status || choice.status === 'Unknown' ? 'Fit unknown' : `${choice.status} · ${choice.device ?? 'Unknown'}${choice.device === 'CPU' ? ' · Slow' : ''}`}</span>
               </button>
             })}
           </div>
           {modelSetupBusy && <div className="model-setup-progress" role="status" aria-live="polite">
             <div className="model-setup-progress-copy">
-              <span>{boot?.phase === 'downloading' ? 'Downloading Standard' : boot?.phase === 'probing_gpu' ? 'Checking your device' : boot?.phase === 'loading_model' || boot?.phase === 'importing' ? 'Preparing voice generation' : 'Getting things ready'}</span>
+              <span>{boot?.phase === 'downloading' ? `Downloading ${selectedSetupModel === 'higher' ? 'Higher quality' : 'Standard'}` : boot?.phase === 'probing_gpu' ? 'Checking device' : boot?.phase === 'loading_model' || boot?.phase === 'importing' ? 'Loading model' : 'Getting ready'}</span>
               {boot?.phase === 'downloading' && boot.percent != null && <span>{boot.percent}%</span>}
             </div>
             <div className="model-setup-progress-track" role="progressbar" aria-label="Model download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={boot?.phase === 'downloading' ? boot.percent ?? undefined : undefined}>
@@ -913,7 +911,6 @@ export default function StudioShell() {
             }} disabled={modelSetupBusy || (modelChoices?.[selectedSetupModel]?.available === false && modelChoices?.[selectedSetupModel]?.status !== 'Unknown')}>
             {modelSetupBusy ? <><span className="model-setup-spinner" aria-hidden="true" />{boot?.phase === 'downloading' ? `Downloading${boot.percent == null ? '…' : ` ${boot.percent}%`}` : 'Setting up…'}</> : <><Download size={15} aria-hidden="true" />Download {selectedSetupModel === 'higher' ? 'Higher quality' : 'Standard'}</>}
           </button>
-          <p className="model-setup-footnote">Downloaded once. Stored locally on this device.</p>
         </div>
       </Modal>
 
