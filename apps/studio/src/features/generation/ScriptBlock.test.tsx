@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ScriptBlock from './ScriptBlock'
 import { MAX_SCRIPT_CHARS } from './constants'
@@ -56,6 +56,25 @@ function renderControlledScript(initialText = '') {
     />,
   )
   return { ...view, onTextChange }
+}
+
+function StatefulScriptBlock({ initialText = '' }: { initialText?: string }) {
+  const [text, setText] = useState(initialText)
+  return (
+    <>
+      <button type="button" onClick={() => setText('Reused transcript')}>Load reused script</button>
+      <button type="button" onClick={() => setText((current) => `${current}!`)}>Type into script</button>
+      <ScriptBlock
+        text={text}
+        onTextChange={setText}
+        presetId={null}
+        languages={['English']}
+        language={null}
+        onLanguageChange={() => {}}
+        generateAction={<button type="button">Generate</button>}
+      />
+    </>
+  )
 }
 
 describe('ScriptBlock footer', () => {
@@ -183,6 +202,68 @@ describe('ScriptBlock footer', () => {
 
     expect(onLanguageChange).toHaveBeenCalledWith('English')
     await waitFor(() => expect(screen.queryByRole('menuitemradio', { name: 'English' })).not.toBeInTheDocument())
+  })
+})
+
+describe('ScriptBlock undo and redo', () => {
+  it('disables both controls before there are edits', () => {
+    render(<StatefulScriptBlock />)
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled()
+  })
+
+  it('undoes and redoes grouped typing, and clears redo after a new edit', () => {
+    render(<StatefulScriptBlock initialText="Original" />)
+    const textarea = screen.getByPlaceholderText('Type or paste a script…') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'Original d' } })
+    fireEvent.change(textarea, { target: { value: 'Original draft' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(textarea).toHaveValue('Original')
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }))
+    expect(textarea).toHaveValue('Original draft')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    fireEvent.change(textarea, { target: { value: 'New draft' } })
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled()
+  })
+
+  it('records externally reused scripts, paste, and clear as undoable edits', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { readText: vi.fn().mockResolvedValue(' pasted') },
+    })
+    render(<StatefulScriptBlock initialText="Original" />)
+    const textarea = screen.getByPlaceholderText('Type or paste a script…') as HTMLTextAreaElement
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load reused script' }))
+    expect(textarea).toHaveValue('Reused transcript')
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(textarea).toHaveValue('Original')
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }))
+    expect(textarea).toHaveValue('Reused transcript')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Paste from clipboard' }))
+    await waitFor(() => expect(textarea).toHaveValue('Reused transcript pasted'))
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(textarea).toHaveValue('Reused transcript')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear script' }))
+    expect(textarea).toHaveValue('')
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(textarea).toHaveValue('Reused transcript')
+  })
+
+  it('groups rapid parent-driven character inserts into one undo step', () => {
+    render(<StatefulScriptBlock initialText="Script" />)
+    const textarea = screen.getByPlaceholderText('Type or paste a script…') as HTMLTextAreaElement
+    fireEvent.click(screen.getByRole('button', { name: 'Type into script' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Type into script' }))
+    expect(textarea).toHaveValue('Script!!')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(textarea).toHaveValue('Script')
   })
 })
 

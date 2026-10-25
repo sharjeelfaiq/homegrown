@@ -7,7 +7,7 @@ test('success summary is compact, aligned, and uncolored when color is disabled'
     status: 'success',
     duration: '27m 07s',
     fields: [
-      { label: 'Installer', value: 'dist/Homegrown-1.0.0.exe', accent: true },
+      { label: 'Installer', value: 'D:\\code\\websites\\homegrown\\dist\\Homegrown-1.0.0.exe', accent: true },
       { label: 'Size', value: '1.7 GB' },
     ],
   });
@@ -16,12 +16,32 @@ test('success summary is compact, aligned, and uncolored when color is disabled'
     'BUILD SUCCEEDED',
     '-'.repeat(44),
     '  Duration   27m 07s',
-    '  Installer  dist/Homegrown-1.0.0.exe',
+    '  Installer  D:\\code\\websites\\homegrown\\dist\\Homegrown-1.0.0.exe',
     '  Size       1.7 GB',
     '-'.repeat(44),
     '',
   ].join('\n'));
   assert.doesNotMatch(output, /\x1b\[/);
+});
+
+test('installer path links to its directory only when terminal hyperlinks are enabled', () => {
+  const installer = 'D:\\code\\websites\\homegrown\\dist\\Homegrown-1.0.0.exe';
+  const directoryUrl = 'file:///D:/code/websites/homegrown/dist/';
+  const linked = renderBuildSummary({
+    status: 'success',
+    duration: '01m 02s',
+    hyperlinks: true,
+    fields: [{ label: 'Installer', value: installer, href: directoryUrl }],
+  });
+  assert.ok(linked.includes(`\x1b]8;;${directoryUrl}\x1b\\${installer}\x1b]8;;\x1b\\`));
+
+  const plain = renderBuildSummary({
+    status: 'success',
+    duration: '01m 02s',
+    fields: [{ label: 'Installer', value: installer, href: directoryUrl }],
+  });
+  assert.ok(plain.includes(installer));
+  assert.doesNotMatch(plain, /\x1b\]8;;/);
 });
 
 test('failure summary colors the heading and log path when color is enabled', () => {

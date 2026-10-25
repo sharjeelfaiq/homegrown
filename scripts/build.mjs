@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pipeline } from 'node:stream/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DEFAULT_STAGE_ETAS, RollingTail, formatDuration, renderOverview, renderOverviewLine, renderProgress, stageDescription, TOTAL_STAGES } from './build/progress.mjs';
 import { renderBuildSummary } from './build/summary.mjs';
 
@@ -246,15 +246,17 @@ async function main() {
   const bytes = fs.statSync(OUTPUT).size;
   const timingSummary = progress.summary();
   logger.event(`TIMING_SUMMARY ${JSON.stringify(timingSummary)}`);
-  const installerPath = path.relative(ROOT, OUTPUT).split(path.sep).join('/');
+  const installerPath = path.resolve(OUTPUT);
+  const installerDirectoryUrl = pathToFileURL(`${DIST_DIR}${path.sep}`).href;
   process.stdout.write(`\n${renderBuildSummary({
     status: 'success',
     duration: elapsed(),
     fields: [
-      { label: 'Installer', value: installerPath, accent: true },
+      { label: 'Installer', value: installerPath, accent: true, href: installerDirectoryUrl },
       { label: 'Size', value: `${(bytes / 1024 ** 3).toFixed(1)} GB` },
     ],
     color: colorSummary(),
+    hyperlinks: interactive(),
   })}`);
 }
 

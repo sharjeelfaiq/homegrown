@@ -9,15 +9,16 @@ const MUTED = '\x1b[90m';
 const CYAN = '\x1b[36m';
 const RULE = '-'.repeat(44);
 
-export function renderBuildSummary({ status, duration, fields, color = false }) {
+export function renderBuildSummary({ status, duration, fields, color = false, hyperlinks = false }) {
   const style = STATUS[status];
   if (!style) throw new TypeError(`Unknown build summary status: ${status}`);
 
   const labelWidth = Math.max('Duration'.length, ...fields.map(({ label }) => label.length));
   const heading = color ? `${style.color}${style.heading}${RESET}` : style.heading;
   const rule = color ? `${MUTED}${RULE}${RESET}` : RULE;
-  const rows = fields.map(({ label, value, accent = false }) => {
-    const renderedValue = color && accent ? `${CYAN}${value}${RESET}` : value;
+  const rows = fields.map(({ label, value, accent = false, href }) => {
+    let renderedValue = color && accent ? `${CYAN}${value}${RESET}` : value;
+    if (hyperlinks && href) renderedValue = `\x1b]8;;${href}\x1b\\${renderedValue}\x1b]8;;\x1b\\`;
     return `  ${label.padEnd(labelWidth)}  ${renderedValue}`;
   });
 

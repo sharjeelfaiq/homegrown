@@ -44,8 +44,11 @@ runs after success, failure, Ctrl-C, or SIGTERM.
 npm run build
 ```
 
-Runs every step below in order and ends by printing the `.exe` path, its size
-and its SHA-256. Expect ~45 minutes and ~10 GB free.
+Runs every step below in order. On success, the final summary prints the build
+duration, the absolute installer path, and its size. In an interactive terminal,
+the path is clickable and opens the directory containing the installer; redirected
+output contains the same absolute path as plain text. The SHA-256 is recorded in
+the separate release step below. Expect ~45 minutes and ~10 GB free.
 
 Before checking prerequisites, it removes previous generated outputs:
 `dist/`, `services/voice-api/dist/`, `services/voice-api/build/`,
@@ -294,7 +297,13 @@ Expect, in order:
    is unfocused, and stops at the script limit. Deny or block clipboard access
    and confirm Studio shows a toast with browser-permission and Ctrl+V guidance.
    Confirm the clear icon button below Paste is disabled for an empty textarea
-   and clears all text when enabled.
+   and clears all text when enabled. Type several short edits, then use Undo and
+   Redo above the word/character count: Undo should step back through typing
+   groups and Redo should restore them. Confirm both buttons disable when their
+   respective history is empty, and a new edit after Undo clears Redo. Repeat
+   with paste, Clear, and a script reused from a voiceover preview. With the
+   textarea focused, Ctrl/Cmd+Z should undo and Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y
+   should redo. Restored text should retain a sensible caret or selection.
    To check startup rendering and readiness behavior, run `npm run dev`
    separately. Start Vite, open Studio before starting FastAPI, and confirm the
    header, logo, editor, cards, layout controls, and static buttons render
@@ -339,11 +348,12 @@ Expect, in order:
    At a narrow viewport, verify the header wraps without horizontal scrolling.
    Confirm a completed row shows its fixed-width editable name, truncated
    script preview, timestamp, and seekable playback. The download action and
-   three-dot menu should be visible; the menu contains Reuse transcript and
-   Delete. Reuse should restore the script, voice, and language. Live rows
-   should use the same compact name/script layout with queue/progress controls,
-   without completed-row download or overflow actions. Hover and keyboard-focus
-   controls to check tooltips and theme-aware styling.
+   three-dot menu should be visible and contain Delete. Clicking the script
+   preview should restore the script, voice, and language. Generating and queued
+   rows should also reuse from their script previews and should not show a
+   three-dot menu. Live rows should use the same compact name/script layout with
+   queue/progress controls, without completed-row download actions. Hover and
+   keyboard-focus controls to check tooltips and theme-aware styling.
 10. Drag the mascot by its artwork, then use its side arrows to cycle numbered
    mascots without moving it; Mascot 2 (the Cat sheets) should be the default.
    Click the artwork without moving it and confirm reaction sprites play, then
@@ -370,6 +380,11 @@ Expect, in order:
    and Retry action. With cached history present, make a background history
    refresh fail and verify the rows remain visible without an inline warning
    above the voiceovers list.
+13. Run `npm run build` in an interactive terminal and wait for success. Confirm
+   the summary shows `BUILD SUCCEEDED`, duration, an absolute installer path,
+   and size. Click the installer path and confirm File Explorer opens the
+   directory containing the `.exe`. For redirected output, confirm the path is
+   plain absolute text with no terminal escape sequences.
 
 This is manual UI QA: the build gates validate source and generated assets, not GPU generation or browser
 WebGL/compositing paths. Before release, generate a voiceover on the target GPU and confirm queueing,

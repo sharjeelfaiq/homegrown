@@ -881,6 +881,16 @@ body {
   cursor: default;
 }
 
+.script-history-controls {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  bottom: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .script-word-count {
   position: absolute;
   z-index: 2;

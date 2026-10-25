@@ -35,7 +35,9 @@ without escape sequences. Detailed child output is written to
 cumulative elapsed times, and a final machine-readable timing summary. Failures
 show only the failed stage and a bounded tail. The build still restores `apps/studio/.env.local`
 on success, failure, or interruption and produces the same self-extracting
-`dist/Homegrown-<version>.exe` artifact.
+`dist/Homegrown-<version>.exe` artifact. Its concise success summary shows the
+duration, size, and absolute installer path; in interactive terminals the path
+links to the containing directory, while redirected output stays plain text.
 
 `npm run dev` starts Vite on `:5173` first, then FastAPI on `127.0.0.1:8000`,
 via `concurrently` from the root `package.json`. Vite proxies `/api`, `/audio`,
@@ -137,6 +139,11 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   the browser can request permission. Unavailable or denied access produces a
   toast with browser-permission and Ctrl+V guidance. The clear icon button below
   it is disabled for an empty script and clears the entire script otherwise.
+  Undo and Redo controls sit above the word/character count in that same right
+  rail. They track typing, paste, clear, and parent-driven text replacements,
+  group rapid character edits, retain up to 100 steps, and restore the caret
+  selection. Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes while the
+  textarea is focused. Each control is disabled when its history is empty.
 - The Script editor footer's script-language selector uses the shared
   Base UI menu-backed dropdown, populated from `GET /api/languages` (the loaded
   checkpoint's own `codec_language_id`, read once when the model reports
@@ -293,10 +300,11 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   button is clicked; clicking the name itself must not enter edit mode.
 - Completed voiceover rows use a fixed-width editable name, a truncated script
   preview, and the timestamp in place of the voice name. The transport has a
-  seekable progress bar; download and the overflow menu follow. Reuse transcript
-  and Delete are in the completed-row menu. Live rows share the compact
-  name/script layout but expose queue/progress controls instead of completed
-  download and overflow actions.
+  seekable progress bar; download and the overflow menu follow. Clicking the
+  script preview reuses its transcript; the completed-row menu contains Delete.
+  Generating and queued rows reuse their script from the preview and have no
+  overflow menu. Live rows share the compact name/script layout but expose
+  queue/progress controls instead of completed download and overflow actions.
 
 ## Deployment and safety
 
