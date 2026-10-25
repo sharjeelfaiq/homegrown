@@ -101,7 +101,7 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
             aria-controls="settings-panel-appearance"
             tabIndex={activeTab === 'appearance' ? 0 : -1}
             data-settings-tab="appearance"
-            className={`settings-sidebar-tab${activeTab === 'appearance' ? ' is-active' : ''}`}
+            className={`settings-sidebar-tab ${activeTab === 'appearance' ? 'is-active' : ''}`}
             onClick={() => setActiveTab('appearance')}
           >
             <Palette size={15} aria-hidden="true" />
@@ -115,7 +115,7 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
             aria-controls="settings-panel-danger"
             tabIndex={activeTab === 'danger' ? 0 : -1}
             data-settings-tab="danger"
-            className={`settings-sidebar-tab is-danger${activeTab === 'danger' ? ' is-active' : ''}`}
+            className={`settings-sidebar-tab is-danger ${activeTab === 'danger' ? 'is-active' : ''}`}
             onClick={() => setActiveTab('danger')}
           >
             <TriangleAlert size={15} aria-hidden="true" />

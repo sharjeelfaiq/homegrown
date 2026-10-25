@@ -17,7 +17,10 @@ Open `http://localhost:5173`. The script starts Vite on `:5173` first, then
 FastAPI on `127.0.0.1:8000`. FastAPI begins serving while a background startup
 task probes the device, loads Qwen3-TTS, restores the queue, and starts the
 worker. The boot-status file reports the startup phase, and `/api/health`
-remains responsive with readiness and error details. Other `/api/*` requests
+remains responsive with readiness and error details. At viewport widths of
+1600px and wider, the Studio shows the loaded model and active compute device
+in the outer left gutter, with a custom-voice model line only when the loaded
+checkpoint supports it. Other `/api/*` requests
 wait up to ten minutes and receive HTTP 503 if initialization fails or times
 out. Vite proxies `/api`, `/audio`, and `/refs` to the API.
 `npm run dev` prints a LAN address because Vite listens on the network interfaces.
@@ -274,7 +277,9 @@ reports readiness and errors; no full-screen startup gate covers the Studio.
 Generate and Clone voice
 remain disabled while the model loads. Once loading completes, Clone voice is
 available even on CPU fallback, while Generate stays disabled unless health
-confirms a CUDA device. If the backend is unavailable or model startup fails,
+confirms a CUDA device. The runtime readout shows loading or unavailable values
+instead of stale model/device names and hides below 1600px. If the backend is
+unavailable or model startup fails,
 a pulsing warning button at the lower left opens a modal with the reported
 message and a Retry action when available. A failed background history refresh
 leaves cached voiceovers visible and does not add an inline notice above the

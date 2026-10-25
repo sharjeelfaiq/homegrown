@@ -21,6 +21,7 @@ import { useErrorToast } from '../hooks/useErrorToast'
 import { useTheme } from '../lib/theme/ThemeContext'
 import { themeMode } from '../lib/theme/theme'
 import { useBootStatus } from '../features/startup/useBootStatus'
+import RuntimeModelReadout from '../features/startup/RuntimeModelReadout'
 import { useHotkeys } from '../hooks/useHotkeys'
 import { useTypeToScript } from '../hooks/useTypeToScript'
 import { wakeBackend } from '../features/startup/wake'
@@ -30,6 +31,7 @@ import { showUndoDeleteToast } from '../components/ui/UndoDeleteToast'
 import { useOnboardingTour } from '../features/onboarding/useOnboardingTour'
 import {
   ApiError,
+  type HealthResponse,
   createPreset,
   deleteHistoryEntry,
   deleteAllRecords,
@@ -71,6 +73,7 @@ export default function StudioShell() {
     try { localStorage.setItem('homegrown-mascot-enabled', String(next)) } catch { /* storage is optional */ }
   }, [])
   const [modelStatus, setModelStatus] = useState<'checking' | 'ready' | 'down'>('checking')
+  const [runtimeHealth, setRuntimeHealth] = useState<HealthResponse | null>(null)
   const [modelOnGpu, setModelOnGpu] = useState(false)
   const { startTour } = useOnboardingTour(modelStatus)
   const [wakeMessage, setWakeMessage] = useState<string | null>(null)
@@ -191,6 +194,7 @@ export default function StudioShell() {
     let cancelled = false
     bootFailedRef.current = false
     setModelStatus('checking')
+    setRuntimeHealth(null)
     setModelOnGpu(false)
     setLanguagesValidated(false)
     setCpuNotice(null)
@@ -213,6 +217,7 @@ export default function StudioShell() {
         getHealth()
           .then((h) => {
             if (!cancelled) {
+              setRuntimeHealth(h)
               const onGpu = h.model_loaded && /^cuda(?::|$)/i.test(h.device ?? '')
               setModelOnGpu(onGpu)
               setCpuNotice(onGpu || h.device !== 'cpu' ? null : h.device_reason ?? 'No usable GPU found.')
@@ -220,6 +225,7 @@ export default function StudioShell() {
           })
           .catch((error) => {
             if (cancelled) return
+            setRuntimeHealth(null)
             setModelStatus('down')
             setModelOnGpu(false)
             setWakeMessage(error instanceof Error ? error.message : 'Could not confirm GPU model readiness.')
@@ -249,6 +255,7 @@ export default function StudioShell() {
     if (boot?.phase !== 'error') return
     bootFailedRef.current = true
     setModelStatus('down')
+    setRuntimeHealth(null)
     setModelOnGpu(false)
     setPresetsLoading(false)
     setWakeMessage(boot.detail || 'The voice model failed to load.')
@@ -278,7 +285,10 @@ export default function StudioShell() {
   useEffect(() => {
     if (errorCount === 0) return
     getHealth()
-      .then((h) => setGpuFault(h.gpu_fault ?? null))
+      .then((h) => {
+        setGpuFault(h.gpu_fault ?? null)
+        setRuntimeHealth(h)
+      })
       .catch(() => {})
     setFaultSeenAt((seen) => (seen != null && errorCount > seen ? null : seen))
   }, [errorCount])
@@ -645,6 +655,11 @@ export default function StudioShell() {
           </AppTooltip>
         </div>
       </div>
+
+      <RuntimeModelReadout
+        health={modelStatus === 'down' ? null : runtimeHealth}
+        loading={modelStatus !== 'down' && runtimeHealth === null}
+      />
 
       {/* minmax(0, ...) on BOTH tracks is load-bearing: the voiceover
           waveform is a canvas with an intrinsic width, and on an `auto` track

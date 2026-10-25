@@ -1,6 +1,10 @@
-interface HealthResponse {
+export interface HealthResponse {
   model_loaded: boolean
   sample_rate: number | null
+  /** Short identifier for the loaded model; never a local filesystem path. */
+  voice_model?: string | null
+  /** Present only when the loaded checkpoint supports Qwen custom-voice generation. */
+  custom_voice_model?: string | null
   /** 'cuda' | 'cpu'. Optional: older backends don't send it. */
   device?: string
   /** Human-readable explanation of the device choice (GPU name, or why it fell back). */

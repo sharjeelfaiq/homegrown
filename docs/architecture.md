@@ -20,7 +20,11 @@ model startup, the language selector stays visible but disabled, and Clone
 voice and voice selection stay disabled; their hover hints say they become
 available when the model is ready. Language options use a generated skeleton
 if they are still loading after startup. Generate also requires health to
-report a CUDA device.
+report a CUDA device. `features/startup/RuntimeModelReadout` shows the loaded
+voice model, optional custom-voice model, and selected compute device in the
+outer left gutter at viewport widths of 1600px and wider; it hides below that
+width. Its values come from `/api/health`, and loading or unavailable values
+are labeled instead of inferred from the local machine.
 `hooks/useTypeToScript.ts` focuses the
 Script textarea on load and forwards eligible printable keys to it without
 intercepting searches, editable controls, menus, dialogs, modifiers, or IME
@@ -119,11 +123,12 @@ Mutable state is accessed through its owning module, so replacing a model or
 restoring the queue is visible to all callers. API routes are registered before
 the SPA catch-all. Unknown `/api/` paths remain HTTP 404 responses.
 The app keeps `/api/health` responsive during model initialization; it reports
-model/device readiness and startup errors. The boot-status file reports the
-startup phase. Other `/api/*` requests wait up to ten minutes for startup and
-receive HTTP 503 if initialization fails or times out. This lets the Studio
-report startup progress without sending model-dependent work to an
-uninitialized model.
+model/device readiness, short loaded-model identifiers, an optional custom-voice
+model identifier, and startup errors without returning local model paths. The
+boot-status file reports the startup phase. Other `/api/*` requests wait up to
+ten minutes for startup and receive HTTP 503 if initialization fails or times
+out. This lets the Studio report startup progress without sending
+model-dependent work to an uninitialized model.
 
 ## Development and packaging
 
