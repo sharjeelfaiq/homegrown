@@ -10,7 +10,8 @@ interface Props {
   title: string
   onClose: () => void
   children: ReactNode
-  size?: 'default' | 'settings'
+  size?: 'default' | 'settings' | 'onboarding'
+  showCloseButton?: boolean
 }
 
 const FOCUSABLE =
@@ -28,7 +29,7 @@ const FOCUSABLE =
  *    users are not dumped at the top of the document on close.
  *  - Body scroll is locked while open, otherwise the page behind scrolls under
  *    the overlay on wheel input. */
-export default function Modal({ open, title, onClose, children, size = 'default' }: Props) {
+export default function Modal({ open, title, onClose, children, size = 'default', showCloseButton = true }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
   const restoreTo = useRef<HTMLElement | null>(null)
   const reduced = usePrefersReducedMotion()
@@ -116,7 +117,7 @@ export default function Modal({ open, title, onClose, children, size = 'default'
         >
           <motion.div
             ref={panelRef}
-            className={`flex max-h-[min(85svh,720px)] w-[min(460px,100%)] flex-col overflow-hidden rounded-lg border border-hairline-strong bg-surface-card outline-none ${size === 'settings' ? 'settings-modal-panel' : ''}`}
+            className={`flex max-h-[min(85svh,720px)] w-[min(460px,100%)] flex-col overflow-hidden rounded-lg border border-hairline-strong bg-surface-card outline-none ${size === 'settings' ? 'settings-modal-panel' : ''} ${size === 'onboarding' ? 'onboarding-modal-panel' : ''}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
@@ -133,11 +134,11 @@ export default function Modal({ open, title, onClose, children, size = 'default'
               >
                 {title}
               </h2>
-              <AppTooltip content="Close dialog">
+              {showCloseButton && <AppTooltip content="Close dialog">
                 <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
                   <X size={16} aria-hidden="true" />
                 </button>
-              </AppTooltip>
+              </AppTooltip>}
             </header>
             {/* `modal-body` is a JS hook, not a style hook -- it has no CSS
                 rule and check_orphan_css.py will list it under "missing

@@ -1,10 +1,14 @@
 export interface HealthResponse {
   model_loaded: boolean
+  /** True only when the loaded model matches a documented hardware profile. */
+  generation_ready?: boolean
   sample_rate: number | null
   /** 'cuda' | 'cpu'. Optional: older backends don't send it. */
   device?: string
   /** Human-readable explanation of the device choice (GPU name, or why it fell back). */
   device_reason?: string
+  /** True once independent startup device detection has finished. */
+  device_ready?: boolean
   /** Non-null once a CUDA fault has killed the process's context. `model_loaded`
    * stays true in that state -- the weights are still resident, the context is
    * not -- so this is the only signal that every further job is doomed until

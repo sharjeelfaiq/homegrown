@@ -44,6 +44,8 @@ class ApiContractTests(unittest.TestCase):
             (worker, '_stop_event', threading.Event()),
             (stores, '_presets', []), (stores, '_history', []),
             (model, '_tts', None), (model, '_gpu_fault', None),
+            (model, '_device', 'cuda'), (model, '_gpu_name', 'NVIDIA GeForce GTX 970'),
+            (model, '_gpu_memory_mib', 4096),
         ]:
             self.stack.enter_context(patch.object(module, name, value))
         # Do not enter TestClient's lifespan: these HTTP tests must not load a model.
@@ -79,6 +81,9 @@ class ApiContractTests(unittest.TestCase):
     def test_all_existing_api_routes_remain_registered(self):
         expected = {
             '/api/download/{filename}': {'get'}, '/api/health': {'get'},
+            '/api/models': {'get'}, '/api/models/select': {'post'},
+            '/api/models/download': {'post'}, '/api/models/cancel': {'post'},
+            '/api/models/restart': {'post'},
             '/api/languages': {'get'}, '/api/estimate': {'post'},
             '/api/presets': {'get', 'post', 'delete'},
             '/api/presets/{preset_id}': {'patch', 'delete'},
@@ -94,6 +99,13 @@ class ApiContractTests(unittest.TestCase):
         paths = app.openapi()['paths']
         actual = {p: set(methods) for p, methods in paths.items() if p.startswith('/api/')}
         self.assertEqual(actual, expected)
+
+    def test_generation_allows_successfully_loaded_cpu_model(self):
+        self.ready_voice()
+        response = self.client.post('/api/generate', json={
+            'preset_id': 'voice', 'text': 'A representative sentence.', 'language': 'English',
+        })
+        self.assertEqual(response.status_code, 202)
 
     def test_health_reports_readiness_without_exposing_model_identity(self):
         loaded_model = SimpleNamespace(tts_model_type='base')

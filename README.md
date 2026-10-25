@@ -9,10 +9,9 @@ on the computer that runs it.
 Use Windows 10/11 with Git Bash, Python 3.13 for the tested Windows dependency
 set (the API package metadata requires Python 3.11 or newer, but pinned native
 dependencies may not publish wheels for the newest Python versions), Node
-20.19+ (or 22.12+), and (for a packaged build) 7-Zip. Studio generation
-requires the voice model to load on an NVIDIA CUDA device. If no usable GPU is
-found, the backend can start on CPU for voice management, but Studio keeps
-Generate disabled.
+20.19+ (or 22.12+), and (for a packaged build) 7-Zip. Studio assesses GPU and
+CPU fit for both voice models. CPU inference is supported after a successful
+model load, though generation can be very slow.
 
 ```bash
 git clone git@github.com:sharjeelfaiq/homegrown.git
@@ -32,19 +31,41 @@ Set `HOMEGROWN_ADMIN_PASSWORD` to a private value in that local `.env` if you
 need the permanent bulk-delete actions in Settings. Leave it out of source
 control; without it, bulk deletion is disabled.
 
-Download the model once (the default location is the ignored `models/`
-directory), then set `MODEL_PATH` in `services/voice-api/.env` to its absolute
-Windows path. The app has no sign-in or authentication; use it only on a
-trusted network:
+The first time Studio opens, choose **Standard** or **Higher quality** to
+download that voice model. Studio shows each model's GPU and CPU fit, confidence,
+and recommendation. Unknown or estimated fit remains selectable; a model is
+disabled only when available hardware readings show severe insufficiency for
+both devices. Standard is stored at `MODEL_PATH`; Higher quality uses
+`HIGHER_MODEL_PATH` or its separate default directory. The development default
+for `MODEL_PATH` points to a snapshot on the original workstation; set it in
+`services/voice-api/.env` on another machine. The packaged default is
+`<install>/models`. Existing model installations are detected automatically.
+To exercise onboarding without moving or deleting your usual model, start dev
+with `MODEL_PATH` set to an empty temporary folder. For example, in PowerShell:
+
+```powershell
+$env:MODEL_PATH = Join-Path $env:TEMP 'homegrown-onboarding-model'
+$env:HIGHER_MODEL_PATH = Join-Path $env:TEMP 'homegrown-onboarding-higher-model'
+npm run dev
+```
+
+The app has no sign-in or authentication; use it only on a trusted network.
+To pre-download manually instead of using Studio onboarding, set `MODEL_REPO`
+and `MODEL_DIR` in Git Bash and run the following. The example downloads
+Standard; for Higher quality, replace the repository ID with
+`Qwen/Qwen3-TTS-12Hz-1.7B-Base` and set the destination to your
+`HIGHER_MODEL_PATH`:
 
 ```bash
 PY=.venv/Scripts/python.exe; [ -f "$PY" ] || PY=.venv/bin/python
-MODEL_DIR="${MODEL_DIR:-$PWD/models}" "$PY" - <<'PYEOF'
+export MODEL_REPO="${MODEL_REPO:-Qwen/Qwen3-TTS-12Hz-0.6B-Base}"
+export MODEL_DIR="${MODEL_DIR:-$PWD/models}"
+"$PY" - <<'PYEOF'
 from huggingface_hub import snapshot_download
 import os
 
 snapshot_download(
-    "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    os.environ["MODEL_REPO"],
     local_dir=os.environ["MODEL_DIR"],
     ignore_patterns=["*.msgpack", "*.h5", "flax_model*"],
 )
@@ -81,12 +102,14 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. The script starts Vite first, then FastAPI on
-`127.0.0.1:8000`. FastAPI binds and serves the Studio while a background
-startup task probes for a usable device, restores the queue, and loads
-Qwen3-TTS. `/api/health` remains available during startup; other `/api/*`
-requests wait for initialization and return a startup error or timeout if it
-does not complete. Vite proxies `/api`, `/audio`, and `/refs`, so Studio always
-uses same-origin API paths. At 1600px and wider, Studio shows generic voice
+`127.0.0.1:8000`. FastAPI serves Studio immediately. If a model exists at
+configured model path, it is probed, the queue is restored, and the model loads in the
+background. If no model exists, Studio presents onboarding for Standard and
+Higher quality, with hardware fit assessments and download actions. Health and
+model-management routes stay available during setup while generation routes
+remain unavailable until the model is ready. Vite proxies `/api`, `/audio`,
+and `/refs`, so Studio always uses same-origin API paths. At 1600px and wider,
+Studio shows generic voice
 engine readiness and the active compute device in the outer left gutter. Model
 identifiers are not exposed through health status. It prints a LAN address
 when available.
@@ -113,8 +136,9 @@ startup, the real header, logo, editor, cards, and controls render immediately.
 Skeletons reserve API-backed voice rows, language options, and uncached
 history or initial queue rows until their data arrives. Generate and Clone
 voice remain visible but disabled until the model is loaded. Generate requires
-health to confirm that the model is on CUDA; Clone voice is available after
-model initialization, including CPU fallback.
+health to confirm the model loaded successfully on its active device. Clone
+voice and generation are available after a successful CPU fallback as well;
+CPU generation is much slower.
 
 Clone voices from the persistent Voices card by selecting one or more files, or
 drop multiple audio files directly onto that card. Dropping files elsewhere
@@ -167,13 +191,14 @@ The Script editor is 300–400px high, with its height adapting to viewport size
 Its footer places the language selector on the left and the compact **Generate**
 action on the right. Generate stays disabled until the script contains
 non-whitespace text, an available voice and a script language are selected,
-health confirms the model is loaded on a CUDA device, and no submission is in
+health confirms the model is loaded on its active device, and no submission is in
 progress. During model startup, Generate shows **Waiting for the voice model to
 load.** The language selector, voice picker, and **Clone voice** control remain
 visible but disabled; hovering them shows **Available when the voice model is
 ready.** If the backend falls back to CPU, Clone voice becomes available after
 model loading,
-but Generate stays disabled and Studio explains that CUDA is required. The
+and Generate is enabled after the CPU model loads, with its slow performance
+explained in the model assessment. The
 voice, script-language, filter, and page-size selectors use one shared Base UI
 menu-backed dropdown style.
 Compact Voice, Duration, and Status filters use the shared
@@ -237,8 +262,9 @@ npm run build
 ```
 
 This creates `dist/Homegrown-<version>.exe`. Run that self-extracting archive,
-then run the extracted `Homegrown.exe`; its browser loader appears before the
-local API initializes Qwen3-TTS. The packaged backend listens on port 8731 for
+then run the extracted `Homegrown.exe`. It opens Studio as soon as the local
+API serves the frontend; model download and initialization continue in the
+background, with progress in Studio. The packaged backend listens on port 8731 for
 trusted LAN use. Ordinary API actions are unauthenticated; permanent bulk
 deletion also requires the local `HOMEGROWN_ADMIN_PASSWORD`. Never expose it to
 an untrusted network. The detailed,
@@ -292,7 +318,7 @@ services/
 engine/
   qwen/            vendored FasterQwen3TTS wrapper
 desktop/
-  launcher/        browser loader and launcher executable
+  launcher/        launcher executable; generated splash source is currently unused
   installer/       legacy NSIS source (not the supported packaging path)
   assets/          desktop icon assets
 scripts/           development, build, checks, marketing, migrations

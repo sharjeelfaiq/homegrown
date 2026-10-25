@@ -1,4 +1,4 @@
-"""Download the packaged voice model during background ASGI startup."""
+"""Install the selected voice model on demand and report local progress."""
 import fnmatch
 import threading
 from pathlib import Path
@@ -8,15 +8,59 @@ import homegrown_api.config as config
 
 
 REPO_ID = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+HIGHER_REPO_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 IGNORE_PATTERNS = ["*.msgpack", "*.h5", "flax_model*"]
 APPROX_MODEL_BYTES = 2_500_000_000
 
 
-def _repo_total_bytes() -> int:
+def model_is_installed(model_dir: Path | None = None) -> bool:
+    root = Path(model_dir or config.MODEL_PATH)
+    # snapshot_download can leave the config and tokenizer in place when an
+    # interrupted transfer has not fetched the checkpoint weights yet.
+    weights = root / "model.safetensors"
+    return (root / "config.json").is_file() and weights.is_file() and weights.stat().st_size > 0
+
+
+def model_path(choice: str) -> Path:
+    return Path(config.HIGHER_MODEL_PATH if choice == "higher" else config.MODEL_PATH)
+
+
+def model_paths_are_separate() -> bool:
+    return model_path("standard").resolve() != model_path("higher").resolve()
+
+
+def active_model_path() -> Path:
+    """Resolve persisted choice without ever aliasing Higher to Standard."""
+    choice = active_choice()
+    if choice == "higher" and not model_paths_are_separate():
+        raise RuntimeError("Higher quality storage must be separate from Standard storage.")
+    return model_path(choice)
+
+
+def active_choice() -> str:
+    import json
+    try:
+        choice = json.loads((config.STORAGE_DIR / "model-selection.json").read_text(encoding="utf-8")).get("selection")
+    except Exception:
+        choice = "standard"
+    return choice if choice in ("standard", "higher") else "standard"
+
+
+def repo_id(choice: str) -> str:
+    return HIGHER_REPO_ID if choice == "higher" else REPO_ID
+
+
+def is_installed(choice: str) -> bool:
+    if choice == "higher" and not model_paths_are_separate():
+        return False
+    return model_is_installed(model_path(choice))
+
+
+def _repo_total_bytes(repo: str = REPO_ID) -> int:
     try:
         from huggingface_hub import HfApi
 
-        info = HfApi().model_info(REPO_ID, files_metadata=True)
+        info = HfApi().model_info(repo, files_metadata=True)
         total = sum(
             sibling.size or 0
             for sibling in info.siblings or []
@@ -48,10 +92,12 @@ def _write_progress(model_dir: Path, total: int, stop: threading.Event) -> None:
         )
 
 
-def download_model_if_needed() -> None:
+def download_model_if_needed(choice: str = "standard") -> None:
     """Fetch the model without delaying the Studio's first render."""
-    model_dir = Path(config.MODEL_PATH)
-    if (model_dir / "config.json").exists():
+    if choice == "higher" and not model_paths_are_separate():
+        raise ValueError("Higher quality storage must be separate from Standard storage.")
+    model_dir = model_path(choice)
+    if model_is_installed(model_dir):
         return
 
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -67,13 +113,14 @@ def download_model_if_needed() -> None:
     try:
         from huggingface_hub import snapshot_download
 
-        total = _repo_total_bytes()
+        repo = repo_id(choice)
+        total = _repo_total_bytes(repo)
         ticker = threading.Thread(
             target=_write_progress, args=(model_dir, total, stop), daemon=True
         )
         ticker.start()
         snapshot_download(
-            repo_id=REPO_ID,
+            repo_id=repo,
             local_dir=str(model_dir),
             ignore_patterns=IGNORE_PATTERNS,
         )

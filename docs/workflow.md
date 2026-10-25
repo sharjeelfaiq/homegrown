@@ -14,15 +14,21 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. The script starts Vite on `:5173` first, then
-FastAPI on `127.0.0.1:8000`. FastAPI begins serving while a background startup
-task probes the device, loads Qwen3-TTS, restores the queue, and starts the
-worker. The boot-status file reports the startup phase, and `/api/health`
-remains responsive with readiness and error details. At viewport widths of
+FastAPI on `127.0.0.1:8000`. FastAPI serves Studio immediately. If the configured
+model already exists, the backend probes the device, loads the model, restores
+the queue, and starts the worker in the background. If no model is present,
+Studio offers Standard and Higher quality choices with hardware fit assessments
+and on-demand downloads, matching the packaged app. Estimated and unknown
+hardware remains selectable; clearly insufficient measured hardware is disabled.
+No `.env` or `MODEL_PATH` is required just to start dev; those
+remain optional overrides. The shared `/api/models` status response reports
+startup and download progress in both environments, while `/api/health` remains
+available with readiness and sanitized error details. At viewport widths of
 1600px and wider, the Studio shows generic voice-engine readiness and the
 active compute device in the outer left gutter. It does not display model
-identifiers or model-type clues. Other `/api/*` requests
-wait up to ten minutes and receive HTTP 503 if initialization fails or times
-out. Vite proxies `/api`, `/audio`, and `/refs` to the API.
+identifiers or model-type clues. Model-dependent `/api/*` requests wait up to
+ten minutes while a model operation is active and receive HTTP 503 if no model
+is ready. Vite proxies `/api`, `/audio`, and `/refs` to the API.
 `npm run dev` prints a LAN address because Vite listens on the network interfaces.
 There are no accounts or general API authentication. Ordinary actions,
 including individual deletes, are unauthenticated. Permanent bulk deletion
@@ -42,8 +48,9 @@ cd apps/studio && npm run dev
 cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn homegrown_api.app:app --host 127.0.0.1 --port 8000
 ```
 
-Set `MODEL_PATH` in `services/voice-api/.env` to the downloaded local model.
-The app has no accounts or general API authentication: requests use the single
+To test a fresh install without touching existing models, point both
+`MODEL_PATH` and `HIGHER_MODEL_PATH` at new temporary directories before
+`npm run dev`; the matching onboarding choice downloads there. The app has no accounts or general API authentication: requests use the single
 local user. Individual deletes and other ordinary API operations do not require
 a password; only permanent bulk deletion requires `HOMEGROWN_ADMIN_PASSWORD`.
 
@@ -166,14 +173,14 @@ are the original uploaded audio.
 Write up to 60,000 characters in the Script editor, choose a voice in the
 Voices card and a script language in the footer, then select **Generate**. The button is enabled only
 when the script has non-whitespace text, an available voice and language are
-selected, health confirms the model is loaded on a CUDA device, and no
+selected, health confirms the model is loaded on its active device, and no
 submission is in progress. Ctrl/Cmd+Enter generates when the form is ready.
 During startup, Generate shows **Waiting for the voice model to load.** The
 language selector, voice picker, and Clone voice control remain visible but
 disabled; hovering them shows **Available when the voice model is ready.** If
 model loading falls back to CPU,
-Clone voice becomes available when loading completes but
-Generate remains disabled because Studio generation requires CUDA. The compact
+Clone voice and Generate become available when loading completes on CPU too;
+CPU generation is substantially slower. The compact
 Generate action is right-aligned in the editor footer. The fixed mascot is dragged by
 the mascot artwork itself, while its subdued side arrows cycle the numbered
 catalog without initiating a drag. Clicking the artwork instead plays the
@@ -270,14 +277,15 @@ are stored separately in localStorage. A running job
 restarts from the beginning of that job, not from its last chunk.
 
 During Vite development, Studio renders its real header, logo, editor, cards,
-and static controls immediately. Skeletons appear only in API-backed voice
-rows, language options, and uncached history or initial queue rows until those
-queries load. The backend status file reports startup phases, and health
-reports readiness and errors; no full-screen startup gate covers the Studio.
+and static controls immediately. With no installed model, the model-choice
+dialog appears over that shell. Skeletons appear only in API-backed voice rows,
+language options, and uncached history or initial queue rows until those
+queries load. `/api/models` reports sanitized startup and download phases, and
+health reports readiness and sanitized errors.
 Generate and Clone voice
 remain disabled while the model loads. Once loading completes, Clone voice is
-available even on CPU fallback, while Generate stays disabled unless health
-confirms a CUDA device. The runtime readout shows loading or unavailable values
+available even on CPU fallback. Generate is enabled after a successful model
+load on either device; CPU generation can be very slow. The runtime readout shows loading or unavailable values
 instead of stale readiness or device details and hides below 1600px. If the backend is
 unavailable or model startup fails,
 a pulsing warning button at the lower left opens a modal with the reported

@@ -19,8 +19,9 @@ or initial queue data use generated skeletons while their queries load. During
 model startup, the language selector stays visible but disabled, and Clone
 voice and voice selection stay disabled; their hover hints say they become
 available when the model is ready. Language options use a generated skeleton
-if they are still loading after startup. Generate also requires health to
-report a CUDA device. `features/startup/RuntimeModelReadout` shows generic
+if they are still loading after startup. Generate requires health to report a
+successfully loaded model on its active device; CPU is allowed after a
+successful load and is identified as slow. `features/startup/RuntimeModelReadout` shows generic
 voice-engine readiness and the selected compute device in the outer left gutter
 at viewport widths of 1600px and wider; it hides below that width. Its values
 come from `/api/health`, and loading or unavailable values are labeled instead
@@ -95,10 +96,10 @@ declares package metadata; it does not replace or duplicate dependency pins.
   optional local bulk-delete password.
 - `dependencies.py` supplies the fixed local-user dependency and password gate
   for permanent collection-wide deletion. There is no account authentication.
-- `lifespan.py` starts model initialization in a background thread during ASGI
-  lifespan startup, then yields without waiting for it. Initialization probes
-  the device, loads the model, restores persisted queue state, and starts the
-  worker before publishing ready; failures publish an error status.
+- `lifespan.py` checks the configured model path in its startup thread and
+  serves Studio immediately. If installed, initialization probes the device,
+  loads the model, restores persisted queue state, and starts the worker. If
+  absent, the model-management API remains available for onboarding.
 - `generation/model.py` owns model and device state; `generation/worker.py`
   owns job dictionaries, FIFO ordering and worker synchronization.
 - `generation/budget.py` owns reference and sequence budgeting.
@@ -119,23 +120,40 @@ declares package metadata; it does not replace or duplicate dependency pins.
   an unset password rejects those requests. The Settings UI asks for it only in
   the second confirmation step.
 - `routes/` exposes health, presets, generation, history, queue and download APIs.
+- `/api/models` is available before inference readiness so Studio can onboard a
+  fresh install. The packaged launcher no longer downloads during process
+  startup; an existing configured model still loads automatically. Model
+  selection and restart requests are stored under the local storage directory,
+  and restart requests are consumed by the desktop launcher. Availability
+  uses per-model GPU and CPU fit assessments; unknown readings remain selectable,
+  while clearly insufficient measured hardware is disabled. Successful CPU
+  loading permits generation on CPU; GPU generation also requires runtime
+  compatibility to remain healthy. Higher quality uses a separate
+  `HIGHER_MODEL_PATH`. See [model-compatibility.md](model-compatibility.md)
+  for validated profiles and limits. Model-management status and health responses use
+  display labels and generic errors rather than checkpoint identifiers.
 
 Mutable state is accessed through its owning module, so replacing a model or
 restoring the queue is visible to all callers. API routes are registered before
 the SPA catch-all. Unknown `/api/` paths remain HTTP 404 responses.
-The app keeps `/api/health` responsive during model initialization; it reports
-model/device readiness and startup errors without exposing model identifiers,
-model-type clues, or local model paths. The
-boot-status file reports the startup phase. Other `/api/*` requests wait up to
-ten minutes for startup and receive HTTP 503 if initialization fails or times
-out. This lets the Studio report startup progress without sending
-model-dependent work to an uninitialized model.
+The app keeps `/api/health` responsive during initialization and
+`/api/models` available before a model is selected. Health reports
+model/device readiness with sanitized errors. `/api/models` reports sanitized
+startup and download progress in both dev and packaged builds. Model-dependent
+`/api/*` requests wait up to ten minutes while a model operation is active and
+receive HTTP 503 when no model is ready.
 
 ## Development and packaging
 
 Root `scripts/dev.mjs`, `scripts/build.mjs` and `scripts/test-backend.mjs`
 remain the command entry points. Helpers are grouped under `scripts/dev`,
 `scripts/build`, `scripts/checks`, `scripts/marketing` and `scripts/migrations`.
+
+`npm run dev` does not require `.env` or an installed model: Studio presents
+first-run model onboarding when the configured paths are empty. Set both
+`MODEL_PATH` and `HIGHER_MODEL_PATH` to new temporary directories to exercise
+either model's journey without changing existing downloads. Dev and packaged
+Studio read progress from `/api/models`.
 
 `services/voice-api/run.py` remains the frozen entry point. PyInstaller bundles
 `homegrown_api.app`, the vendored engine, and built Studio files. The launcher

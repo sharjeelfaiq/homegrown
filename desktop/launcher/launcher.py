@@ -231,13 +231,28 @@ def main() -> None:
 
     (storage_dir / "cuda_error.flag").unlink(missing_ok=True)
     (storage_dir / "boot_status.json").unlink(missing_ok=True)
+    (storage_dir / "restart-request.json").unlink(missing_ok=True)
     proc, log_path = start_backend(backend_exe, storage_dir)
     ok, failure = wait_for_backend(storage_dir, log_path, proc)
     if ok:
         webbrowser.open(BASE_URL)
+        supervise_backend(backend_exe, storage_dir, proc)
         return
     show_error(failure)
     sys.exit(1)
+
+
+def supervise_backend(backend_exe: Path, storage_dir: Path, proc) -> None:
+    """Keep the launcher alive to hand off model-switch restart requests."""
+    request_file = storage_dir / "restart-request.json"
+    while proc.poll() is None:
+        if request_file.exists():
+            request_file.unlink(missing_ok=True)
+            _terminate(proc)
+            # wait() guarantees the old process has released CUDA before relaunch.
+            proc.wait()
+            proc, _ = start_backend(backend_exe, storage_dir)
+        time.sleep(0.5)
 
 
 def wait_for_backend(storage_dir: Path, log_path: Path, proc):

@@ -11,7 +11,7 @@ import GenerateButton from '../features/generation/GenerateButton'
 import MascotPicker from '../features/mascots/MascotPicker'
 import { MAX_SCRIPT_CHARS } from '../features/generation/constants'
 import { presetNameFromFile } from '../lib/format'
-import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Settings as SettingsIcon } from 'lucide-react'
+import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Download, HardDriveDownload, Settings as SettingsIcon } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { useGenerationActivity } from '../features/generation/GenerationActivityContext'
 import { useJobToasts } from '../features/generation/useJobToasts'
@@ -29,6 +29,7 @@ import Modal from '../components/ui/Modal'
 import CursorGrid from '../components/effects/CursorGrid'
 import { showUndoDeleteToast } from '../components/ui/UndoDeleteToast'
 import { useOnboardingTour } from '../features/onboarding/useOnboardingTour'
+import '../features/startup/ModelSetup.css'
 import {
   ApiError,
   type HealthResponse,
@@ -72,10 +73,16 @@ export default function StudioShell() {
     setMascotEnabled(next)
     try { localStorage.setItem('homegrown-mascot-enabled', String(next)) } catch { /* storage is optional */ }
   }, [])
-  const [modelStatus, setModelStatus] = useState<'checking' | 'ready' | 'down'>('checking')
+  const [modelStatus, setModelStatus] = useState<'checking' | 'ready' | 'onboarding' | 'down'>('checking')
+  const [modelSetupOpen, setModelSetupOpen] = useState(false)
+  const [modelSetupBusy, setModelSetupBusy] = useState(false)
+  const [modelChoices, setModelChoices] = useState<Record<string, { available: boolean; installed: boolean; device: string; status: string; reason: string; gpu?: { available: boolean; status: string }; cpu?: { available: boolean; status: string } }> | null>(null)
+  const [recommendedModel, setRecommendedModel] = useState('standard')
+  const [selectedSetupModel, setSelectedSetupModel] = useState('standard')
+  const modelSetupRequested = useRef(false)
   const [runtimeHealth, setRuntimeHealth] = useState<HealthResponse | null>(null)
-  const [modelOnGpu, setModelOnGpu] = useState(false)
-  const { startTour } = useOnboardingTour(modelStatus)
+  const [modelGenerationReady, setModelGenerationReady] = useState(false)
+  const { startTour } = useOnboardingTour(modelStatus === 'onboarding' ? 'checking' : modelStatus)
   const [wakeMessage, setWakeMessage] = useState<string | null>(null)
   const [wakeNonce, setWakeNonce] = useState(0)
   const [backendWarningOpen, setBackendWarningOpen] = useState(false)
@@ -157,6 +164,21 @@ export default function StudioShell() {
   // The status file can provide the model-load failure detail in dev; the
   // health poll carries the same failure in packaged builds.
   const boot = useBootStatus(modelStatus === 'checking')
+  useEffect(() => {
+    if (!modelSetupOpen) return
+    let active = true
+    fetch('/api/models').then((response) => response.ok ? response.json() : null).then((models) => {
+      if (!active || !models) return
+      setModelChoices(models.choices ?? null)
+      setRecommendedModel(models.recommended ?? 'standard')
+      setSelectedSetupModel(models.recommended ?? 'standard')
+    }).catch(() => {
+      if (active) {
+        setModelChoices(null)
+      }
+    })
+    return () => { active = false }
+  }, [modelSetupOpen])
   // Set when boot_status reports a failed model load, so the in-flight
   // wakeBackend poll can be ignored rather than cancelled -- see the effect
   // below for why waiting it out is not an option.
@@ -194,15 +216,30 @@ export default function StudioShell() {
     let cancelled = false
     bootFailedRef.current = false
     setModelStatus('checking')
-    setRuntimeHealth(null)
-    setModelOnGpu(false)
+    setModelGenerationReady(false)
     setLanguagesValidated(false)
     setCpuNotice(null)
     setWakeMessage(null)
-    wakeBackend()
+    let onboarding = false
+    wakeBackend((status, _elapsed, message) => {
+      if (!cancelled && status === 'onboarding') {
+        onboarding = true
+        setModelStatus('onboarding')
+        setModelSetupOpen(true)
+        setModelSetupBusy(false)
+        setWakeMessage(message ?? null)
+        setPresetsLoading(false)
+      }
+    })
       .then(() => {
         if (cancelled || bootFailedRef.current) return
+        if (onboarding) return
         setModelStatus('ready')
+        setModelSetupBusy(false)
+        if (modelSetupRequested.current) {
+          modelSetupRequested.current = false
+          setModelSetupOpen(false)
+        }
         setWakeMessage(null)
         historyQueryClient.fetchQuery({ queryKey: apiQueryKeys.languages, queryFn: fetchLanguages, staleTime: 0 })
           .then((result) => {
@@ -212,23 +249,23 @@ export default function StudioShell() {
             setLanguagesLoading(false)
           })
           .catch(() => { if (!cancelled) setLanguagesLoading(false) })
-        // CPU fallback keeps voice management available, but Generate remains
-        // disabled until health confirms the model is resident on CUDA.
+        // Generation is enabled only after health confirms successful model
+        // initialization on its active device, including a CPU fallback.
         getHealth()
           .then((h) => {
             if (!cancelled) {
               setRuntimeHealth(h)
-              const onGpu = h.model_loaded && /^cuda(?::|$)/i.test(h.device ?? '')
-              setModelOnGpu(onGpu)
-              setCpuNotice(onGpu || h.device !== 'cpu' ? null : h.device_reason ?? 'No usable GPU found.')
+              const ready = h.model_loaded && h.generation_ready === true
+              setModelGenerationReady(ready)
+              setCpuNotice(ready && h.device === 'cpu' ? h.device_reason ?? 'CPU generation will be very slow.' : null)
             }
           })
           .catch((error) => {
             if (cancelled) return
             setRuntimeHealth(null)
             setModelStatus('down')
-            setModelOnGpu(false)
-            setWakeMessage(error instanceof Error ? error.message : 'Could not confirm GPU model readiness.')
+            setModelGenerationReady(false)
+            setWakeMessage(error instanceof Error ? error.message : 'Could not confirm voice model readiness.')
           })
         refreshPresets()
         refreshHistory()
@@ -236,7 +273,8 @@ export default function StudioShell() {
       .catch((e) => {
         if (cancelled || bootFailedRef.current) return
         setModelStatus('down')
-        setModelOnGpu(false)
+        setModelSetupBusy(false)
+        setModelGenerationReady(false)
         setPresetsLoading(false)
         setWakeMessage(e instanceof Error ? e.message : 'Backend unreachable.')
       })
@@ -244,6 +282,31 @@ export default function StudioShell() {
       cancelled = true
     }
   }, [wakeNonce, refreshHistory, refreshPresets])
+
+  // Device detection is independent of model download/load. Keep refreshing
+  // the small health response during checking, onboarding and loading so the
+  // readout can update as soon as the backend's background probe finishes.
+  useEffect(() => {
+    if (modelStatus !== 'checking' && modelStatus !== 'onboarding') return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const pollDevice = async () => {
+      try {
+        const health = await getHealth()
+        if (cancelled) return
+        setRuntimeHealth(health)
+        const hasDevice = health.device === 'cpu' || /^cuda(?::|$)/i.test(health.device ?? '')
+        if (!health.device_ready && !hasDevice) timer = setTimeout(pollDevice, 500)
+      } catch {
+        if (!cancelled) timer = setTimeout(pollDevice, 1000)
+      }
+    }
+    void pollDevice()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [modelStatus])
 
   // A model that fails to load is the one case wakeBackend cannot diagnose.
   // lifespan() is deliberately fail-soft there -- it keeps serving with
@@ -254,11 +317,12 @@ export default function StudioShell() {
   useEffect(() => {
     if (boot?.phase !== 'error') return
     bootFailedRef.current = true
-    setModelStatus('down')
-    setRuntimeHealth(null)
-    setModelOnGpu(false)
+    setModelStatus('onboarding')
+    setModelSetupOpen(true)
+    setModelSetupBusy(false)
+    setModelGenerationReady(false)
     setPresetsLoading(false)
-    setWakeMessage(boot.detail || 'The voice model failed to load.')
+    setWakeMessage(boot.detail || 'The voice model failed to load. Choose Standard to retry.')
   }, [boot?.phase, boot?.detail])
 
 
@@ -478,8 +542,8 @@ export default function StudioShell() {
       setError('Select a language before generating.')
       return
     }
-    if (!modelOnGpu) {
-      setError('The voice model must be loaded on a GPU before generating.')
+    if (!modelGenerationReady) {
+      setError('The voice model must finish loading before generating.')
       return
     }
     setError(null)
@@ -493,7 +557,7 @@ export default function StudioShell() {
       setWarmingUp(false)
       setWakeMessage(null)
       setModelStatus('down')
-      setModelOnGpu(false)
+      setModelGenerationReady(false)
       setError(e instanceof Error ? e.message : 'Failed to start the backend.')
       return
     }
@@ -527,11 +591,11 @@ export default function StudioShell() {
     }
   }
 
-  // `wakeBackend` confirms model initialization. Generation adds the stricter
-  // CUDA residency gate below; voice management can use the CPU fallback.
+  // `wakeBackend` confirms model initialization. The health flag separately
+  // confirms the loaded model can generate on its active device.
   const modelReady = modelStatus === 'ready' && !warmingUp
   const modelLoading = !modelReady && modelStatus !== 'down'
-  const canGenerate = modelReady && modelOnGpu && scriptReady && selectedVoice != null && languageOverride != null && !submitting
+  const canGenerate = modelReady && modelGenerationReady && scriptReady && selectedVoice != null && languageOverride != null && !submitting
 
   // Say what is missing rather than presenting a mute grey slab -- but only
   // for prerequisites the user has to go and fix elsewhere. An empty script is
@@ -540,8 +604,8 @@ export default function StudioShell() {
   const blockedReason =
     canGenerate || submitting || !modelReady
       ? null
-      : !modelOnGpu
-        ? 'Waiting for GPU model'
+      : !modelGenerationReady
+        ? 'Preparing voice model'
         : presets.length === 0
           ? 'Add a voice first'
           : selectedVoice == null
@@ -659,6 +723,7 @@ export default function StudioShell() {
       <RuntimeModelReadout
         health={modelStatus === 'down' ? null : runtimeHealth}
         loading={modelStatus !== 'down' && runtimeHealth === null}
+        progress={boot}
       />
 
       {/* minmax(0, ...) on BOTH tracks is load-bearing: the voiceover
@@ -705,7 +770,7 @@ export default function StudioShell() {
         </div>
 
         <aside ref={voiceoversRef} className="relative flex w-full min-w-0 flex-col gap-[22px] wide:h-full wide:min-h-0">
-          {cpuNotice && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">The voice model is running on CPU, so Generate is disabled. {cpuNotice}</p>}
+          {cpuNotice && <p className="m-0 rounded-sm border border-progress-line bg-progress-soft px-3 py-2.5 text-[13px] text-progress">The voice model is running on CPU. Generation can take many minutes per chunk. {cpuNotice}</p>}
           <ScriptBlock
             text={script}
             onTextChange={setScript}
@@ -721,7 +786,7 @@ export default function StudioShell() {
             generateAction={<GenerateButton
               disabled={!canGenerate}
               blockedReason={blockedReason}
-              tooltip={modelLoading ? MODEL_LOADING_TOOLTIP : modelStatus === 'down' ? 'Voice model unavailable. Open backend details.' : !modelOnGpu ? 'Available when the voice model is ready on a GPU.' : undefined}
+              tooltip={modelLoading ? MODEL_LOADING_TOOLTIP : modelStatus === 'down' ? 'Voice model unavailable. Open backend details.' : !modelGenerationReady ? 'Available when the voice model is ready.' : undefined}
               busy={submitting}
               warming={warmingUp}
               onClick={handleGenerate}
@@ -795,6 +860,62 @@ export default function StudioShell() {
           }
         }}
       />
+
+      <Modal open={modelSetupOpen} title="VOICE SETUP" onClose={() => {}} size="onboarding" showCloseButton={false}>
+        <div className="model-setup-content">
+          <div className="model-setup-intro">
+            <span className="model-setup-icon" aria-hidden="true"><HardDriveDownload size={20} strokeWidth={1.8} /></span>
+            <div>
+              <p className="model-setup-kicker">ONE-TIME DOWNLOAD</p>
+              <h2>Set up voice generation</h2>
+            </div>
+          </div>
+          <p className="model-setup-description">Choose a voice model to finish setting up Homegrown. Assessments are estimates until the model loads and generates successfully.</p>
+          <div className="model-setup-options" role="group" aria-label="Available voice models">
+            {([['standard', 'Standard'], ['higher', 'Higher quality']] as const).map(([key, label]) => {
+              const choice = modelChoices?.[key]
+              const selected = selectedSetupModel === key
+              return <button type="button" key={key} className={`model-setup-option ${selected ? 'model-setup-option-selected' : ''}`} aria-pressed={selected} onClick={() => setSelectedSetupModel(key)}>
+                <span className="model-setup-radio" aria-hidden="true">{selected && <CheckIcon size={13} />}</span>
+                <span className="model-setup-option-copy"><strong>{label}{recommendedModel === key ? ' · Recommended' : ''}</strong><span>{choice?.reason ?? 'Hardware details are unavailable; download remains available.'}</span></span>
+                <span className="model-setup-option-tag">{choice?.status ?? 'UNKNOWN'} · {choice?.device ?? 'Unknown'}</span>
+              </button>
+            })}
+          </div>
+          {modelSetupBusy && <div className="model-setup-progress" role="status" aria-live="polite">
+            <div className="model-setup-progress-copy">
+              <span>{boot?.phase === 'downloading' ? 'Downloading Standard' : boot?.phase === 'probing_gpu' ? 'Checking your device' : boot?.phase === 'loading_model' || boot?.phase === 'importing' ? 'Preparing voice generation' : 'Getting things ready'}</span>
+              {boot?.phase === 'downloading' && boot.percent != null && <span>{boot.percent}%</span>}
+            </div>
+            <div className="model-setup-progress-track" role="progressbar" aria-label="Model download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={boot?.phase === 'downloading' ? boot.percent ?? undefined : undefined}>
+              <span style={{ width: boot?.phase === 'downloading' && boot.percent != null ? `${boot.percent}%` : '12%' }} />
+            </div>
+          </div>}
+          {wakeMessage && <p role="alert" className="model-setup-error">{wakeMessage}</p>}
+          <button type="button" className="primary-btn model-setup-submit" onClick={async () => {
+              try {
+                modelSetupRequested.current = true
+                setModelSetupBusy(true)
+                setWakeMessage(null)
+                const selection = await fetch('/api/models/select', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selection: selectedSetupModel }) })
+                if (!selection.ok) throw new Error((await selection.json()).detail || 'Could not select the model.')
+                const selected = await selection.json() as { state: string }
+                if (selected.state === 'needs_download') {
+                  const download = await fetch('/api/models/download', { method: 'POST' })
+                  if (!download.ok) throw new Error((await download.json()).detail || 'Could not start the download.')
+                }
+                setModelStatus('checking')
+                setWakeNonce((n) => n + 1)
+              } catch (failure) {
+                setModelSetupBusy(false)
+                setWakeMessage(failure instanceof Error ? failure.message : 'Could not start the download.')
+              }
+            }} disabled={modelSetupBusy || (modelChoices?.[selectedSetupModel]?.available === false && modelChoices?.[selectedSetupModel]?.status !== 'Unknown')}>
+            {modelSetupBusy ? <><span className="model-setup-spinner" aria-hidden="true" />{boot?.phase === 'downloading' ? `Downloading${boot.percent == null ? '…' : ` ${boot.percent}%`}` : 'Setting up…'}</> : <><Download size={15} aria-hidden="true" />Download {selectedSetupModel === 'higher' ? 'Higher quality' : 'Standard'}</>}
+          </button>
+          <p className="model-setup-footnote">Downloaded once. Stored locally on this device.</p>
+        </div>
+      </Modal>
 
       {modelStatus === 'down' && (
         <AppTooltip content="Open backend details">

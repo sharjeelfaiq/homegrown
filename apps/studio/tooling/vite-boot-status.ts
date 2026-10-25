@@ -3,26 +3,22 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Plugin } from 'vite'
 
-/** Serves the backend's startup progress to the dev server, off disk.
+/** Exposes the backend's boot-status file on a dev-only diagnostic route.
  *
  * The backend cannot report its own startup over HTTP, and that is physics
  * rather than an oversight: uvicorn binds the socket only after `lifespan()`
  * reaches its `yield`, and `lifespan()` is where the CUDA probe and the model
  * load happen. For that entire window -- tens of seconds warm, minutes on a
  * first run -- the backend port is connection-refused, so there is no endpoint
- * to ask. `src/features/startup/wake.ts` documents the same thing from the client side.
+ * to ask.
  *
  * `services/voice-api/homegrown_api/lifespan.py` publishes its phases to
- * `services/voice-api/storage/boot_status.json` regardless of whether it is frozen, so in
- * dev the information already exists; nothing served it. The desktop build has
- * `launcher.py`, which reads that same file and serves it at `/status` behind
- * its loader page. This is the dev equivalent: same file, same shape, served
- * same-origin with the Vite dev server so there is no CORS and no second port
- * to bind.
+ * `services/voice-api/storage/boot_status.json` regardless of whether it is
+ * frozen. Studio itself reads `/api/models` in both dev and packaged builds;
+ * this route remains available for local diagnostics before the backend binds.
  *
  * Dev only, by construction -- `apply: 'serve'` means it does not exist in any
- * build output. The client must therefore treat a failed request as "no
- * information", never as an error.
+ * build output. A failed read means "no information", never a startup error.
  */
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
