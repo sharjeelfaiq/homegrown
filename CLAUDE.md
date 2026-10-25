@@ -63,7 +63,8 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   `apps/studio/src/skeletons/generated/`. Keep the Studio shell and static card
   controls rendered during model startup; `cloned-voices` covers only voice
   rows while their API data loads, `script-language` reserves the language
-  control while options load, and `voiceover-history` covers uncached history
+  control with a disabled placeholder during model startup and a skeleton
+  while options load afterward, and `voiceover-history` covers uncached history
   or initial queue data. Keep API-loading placeholders in these generated
   skeletons; do not use Boneyard's Suspense wrapper because history uses
   ordinary React Query.
@@ -139,8 +140,10 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - The Script editor footer's script-language selector uses the shared
   Base UI menu-backed dropdown, populated from `GET /api/languages` (the loaded
   checkpoint's own `codec_language_id`, read once when the model reports
-  ready). Its unselected option is **Select language**; empty list hides the
-  control. Selection dropdowns must provide a field-specific `Select {label}`
+  ready). Its unselected option is **Select language**; an empty list hides the
+  control except during model startup, when the disabled placeholder stays
+  visible with the tooltip **Available when the voice model is ready.**
+  Selection dropdowns must provide a field-specific `Select {label}`
   placeholder/default option. Keep meaningful, persisted settings (such as
   page size or System theme) selected instead of replacing them with prompts.
   Generation requires a non-empty script,
@@ -170,8 +173,10 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   Clone voice stays disabled until `wakeBackend` observes `model_loaded: true`.
   Generate additionally stays disabled until health confirms the model is
   loaded on a CUDA device; a CPU fallback does not enable generation.
-  During startup their tooltip says `Voice model is loading — this can take up
-  to 3 minutes.` The API may select CPU when no usable GPU exists;
+  During startup the Clone voice control and voice selection rows are disabled
+  with the tooltip `Available when the voice model is ready.` Generate retains
+  its model-loading tooltip. The API
+  may select CPU when no usable GPU exists;
   that fallback is ready only after its model initialization completes.
   During startup, render the real header, shell, and static controls
   immediately. Use generated skeletons for API-backed voice rows, language
@@ -243,8 +248,8 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   run a normal Studio command, and commit the assets with its regenerated
   catalog. Mascot 2 (the Cat sheets) is the default when it exists.
 - Generate is a compact right-aligned action in the Script editor footer; the
-  language selector is left-aligned. The selected voice appears in a truncated
-  reminder above the textarea text, outside the footer. Its tooltip exposes the Ctrl/Cmd+Enter
+  language selector is left-aligned. The selected voice is not repeated above
+  the textarea. Generate's tooltip exposes the Ctrl/Cmd+Enter
   shortcut when ready and the model-loading explanation while startup blocks
   it. Keep `.generate-action-auxiliary` visually stable and do not reintroduce
   shortcut or prerequisite copy beside the action.

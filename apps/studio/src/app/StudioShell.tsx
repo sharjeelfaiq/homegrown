@@ -50,7 +50,7 @@ import { useAudioActivity } from '../lib/audio/AudioActivityContext'
 /** Sent only so the backend has something if language detection comes back
  * empty or names a language this model cannot speak. */
 const LANGUAGE_FALLBACK = 'English'
-const MODEL_LOADING_TOOLTIP = 'Voice model is loading — this can take up to 3 minutes.'
+const MODEL_LOADING_TOOLTIP = 'Waiting for the voice model to load.'
 
 export default function StudioShell() {
   const voiceoversRef = useRef<HTMLElement>(null)
@@ -623,7 +623,7 @@ export default function StudioShell() {
           <BrandMark className="size-7 rounded-[.4rem] ring-1 ring-(--line)" />
         </div>
         <div className="absolute inset-y-0 right-(--gutter) z-150 flex items-center gap-1" data-tour="header-controls">
-          <AppTooltip content="Settings">
+          <AppTooltip content="Open settings">
             <button
               type="button"
               className="icon-btn focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--line-focus)"
@@ -700,13 +700,13 @@ export default function StudioShell() {
             languages={languages}
             languagesLoading={languagesLoading}
             languageEnabled={languagesValidated}
-            selectedVoiceName={selectedVoice?.name ?? null}
+            modelLoading={modelLoading}
             language={languageOverride}
             onLanguageChange={setLanguageOverride}
             generateAction={<GenerateButton
               disabled={!canGenerate}
               blockedReason={blockedReason}
-              tooltip={modelLoading ? MODEL_LOADING_TOOLTIP : modelStatus === 'down' ? 'The voice model is unavailable. Open the backend warning for details.' : !modelOnGpu ? 'Generate is available after the voice model loads on a GPU.' : undefined}
+              tooltip={modelLoading ? MODEL_LOADING_TOOLTIP : modelStatus === 'down' ? 'Voice model unavailable. Open backend details.' : !modelOnGpu ? 'Available when the voice model is ready on a GPU.' : undefined}
               busy={submitting}
               warming={warmingUp}
               onClick={handleGenerate}
@@ -782,7 +782,7 @@ export default function StudioShell() {
       />
 
       {modelStatus === 'down' && (
-        <AppTooltip content="Backend warning. Open details and retry.">
+        <AppTooltip content="Open backend details">
           <button
             type="button"
             className="backend-warning-button animate-pulse-soft"

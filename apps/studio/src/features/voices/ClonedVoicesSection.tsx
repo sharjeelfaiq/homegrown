@@ -22,6 +22,7 @@ const skeletonSnapshotConfig = {
   excludeTags: ['svg', 'canvas'],
   excludeSelectors: ['[data-boneyard-decorative]'],
 }
+const MODEL_PICKER_LOADING_TOOLTIP = 'Available when the voice model is ready.'
 
 interface Props {
   presets: Preset[]
@@ -173,12 +174,13 @@ export default function ClonedVoicesSection({
   }
   const cloneDisabled = !modelReady
   const cloneTooltip = modelLoading
-    ? 'Voice model is loading — this can take up to 3 minutes.'
+    ? MODEL_PICKER_LOADING_TOOLTIP
     : !modelReady
-      ? 'The voice model is unavailable. Open the backend warning for details.'
+      ? 'Voice model unavailable. Open backend details.'
       : 'Clone voice'
 
   function onListKeyDown(event: ReactKeyboardEvent<HTMLUListElement>) {
+    if (modelLoading) return
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
     const picks = Array.from(rootRef.current?.querySelectorAll<HTMLElement>('.voice-menu-pick') ?? [])
     if (picks.length === 0) return
@@ -273,35 +275,45 @@ export default function ClonedVoicesSection({
           ))}
           {visiblePresets.length === 0 && visibleCloneQueue.length === 0 ? (
             <li className="list-none px-2 py-3 text-[12px] text-faint" role="presentation">No matching voices.</li>
-          ) : visiblePresets.map((preset) => (
+          ) : visiblePresets.map((preset) => {
+            const voiceCount = (
+              <span className="voice-generation-count mono flex-none text-[10px] text-faint" aria-label={`${preset.completed_voiceovers ?? 0} completed voiceovers`}>
+                {preset.completed_voiceovers ?? 0} voiceover{preset.completed_voiceovers === 1 ? '' : 's'}
+              </span>
+            )
+            const pickerDetails = (
+              <span className={`voice-picker-option-details flex min-w-0 flex-1 items-center ${modelLoading ? 'is-disabled' : ''}`}>
+                <span className="min-w-0 flex-1" onKeyDown={(event) => event.stopPropagation()}>
+                  <InlineName value={preset.name} placeholder="Name this voice" ariaLabel={`Name of voice ${preset.name}`} title={modelLoading ? MODEL_PICKER_LOADING_TOOLTIP : 'Edit voice name'} onCommit={(next, opts) => onRename(preset.id, next, opts)} minChars={1} className="result-name voice-picker-name" editOnPencil />
+                </span>
+                {runningPresetIds.has(preset.id) && <span className={`voice-generation-indicator size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`} aria-hidden="true" />}
+                {modelLoading
+                  ? <AppTooltip content={MODEL_PICKER_LOADING_TOOLTIP}>{voiceCount}</AppTooltip>
+                  : voiceCount}
+              </span>
+            )
+            const option = (
             <li
               key={preset.id}
               className={`voice-menu-pick -mx-2 flex min-h-9 items-center gap-1 border-b border-hairline px-2 last:border-b-0 hover:bg-surface-hover focus:bg-surface-hover focus:outline-none ${preset.id === selectedPresetId ? 'voice-menu-pick-selected' : ''}`}
               role="option"
-              tabIndex={0}
+              tabIndex={modelLoading ? -1 : 0}
+              aria-disabled={modelLoading || undefined}
               aria-selected={preset.id === selectedPresetId}
               aria-current={preset.id === selectedPresetId ? 'true' : undefined}
-              onClick={() => onSelect(preset.id)}
+              onClick={() => { if (!modelLoading) onSelect(preset.id) }}
               onKeyDown={(event) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return
+                if (modelLoading || (event.key !== 'Enter' && event.key !== ' ')) return
                 event.preventDefault()
                 onSelect(preset.id)
               }}
             >
-              <span className="flex min-w-0 flex-1 items-center">
-                <span className="min-w-0 flex-1" onKeyDown={(event) => event.stopPropagation()}>
-                  <InlineName value={preset.name} placeholder="Name this voice" ariaLabel={`Name of voice ${preset.name}`} title={`“${preset.name}” — use the pencil to edit voice name`} onCommit={(next, opts) => onRename(preset.id, next, opts)} minChars={1} className="result-name voice-picker-name" editOnPencil />
-                </span>
-                {runningPresetIds.has(preset.id) && <span className={`voice-generation-indicator size-1.5 rounded-full bg-progress ${reduced ? '' : 'animate-pulse-soft'}`} aria-hidden="true" />}
-                <span className="voice-generation-count mono flex-none text-[10px] text-faint" aria-label={`${preset.completed_voiceovers ?? 0} completed voiceovers`}>
-                  {preset.completed_voiceovers ?? 0} voiceover{preset.completed_voiceovers === 1 ? '' : 's'}
-                </span>
-              </span>
+              {pickerDetails}
               <span className="ml-auto flex flex-none items-center gap-0.5" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                 <AppTooltip content={previewingId === preset.id ? 'Stop preview' : 'Preview voice'}><button type="button" className="icon-btn" aria-label={previewingId === preset.id ? `Stop preview of ${preset.name}` : `Preview ${preset.name}`} onClick={() => void togglePreview(preset)}>{previewingId === preset.id ? <PauseIcon size={13} /> : <PlayIcon size={13} />}</button></AppTooltip>
                 <AppTooltip content="Download reference clip"><a href={presetDownloadUrl(preset.id)} download className="icon-btn" aria-label={`Download ${preset.name} reference clip`}><DownloadIcon size={13} /></a></AppTooltip>
                 <Dropdown.Root>
-                  <AppTooltip content="More voice actions">
+                  <AppTooltip content="More actions">
                     <Dropdown.Trigger className="icon-btn" aria-label={`More actions for ${preset.name}`}><EllipsisIcon size={14} /></Dropdown.Trigger>
                   </AppTooltip>
                   <Dropdown.Content side="bottom" align="end" sideOffset={4} className="row-actions-menu">
@@ -310,7 +322,9 @@ export default function ClonedVoicesSection({
                 </Dropdown.Root>
               </span>
             </li>
-          ))}
+            )
+            return option
+          })}
         </ul>
         <div className="voiceover-pager cloned-voices-pager" aria-label="Voice pagination">
           <label className="flex items-center gap-1.5 text-[10px] text-faint">

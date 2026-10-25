@@ -14,10 +14,14 @@ Theme, QueryClient, BrowserRouter, AudioActivity, then GenerationActivity.
 
 `app/StudioShell.tsx` coordinates the feature modules under `features/` and
 owns Studio-level keyboard behavior. The shell and static card controls render
-without waiting for backend startup; API-backed voice rows, language options,
-and uncached history or initial queue data use generated skeletons while their
-queries load. Clone voice remains disabled until the model is loaded, and
-Generate also requires health to report a CUDA device. `hooks/useTypeToScript.ts` focuses the
+without waiting for backend startup; API-backed voice rows and uncached history
+or initial queue data use generated skeletons while their queries load. During
+model startup, the language selector stays visible but disabled, and Clone
+voice and voice selection stay disabled; their hover hints say they become
+available when the model is ready. Language options use a generated skeleton
+if they are still loading after startup. Generate also requires health to
+report a CUDA device.
+`hooks/useTypeToScript.ts` focuses the
 Script textarea on load and forwards eligible printable keys to it without
 intercepting searches, editable controls, menus, dialogs, modifiers, or IME
 composition. The Script editor owns clipboard paste and applies the remaining

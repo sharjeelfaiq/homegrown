@@ -2,13 +2,13 @@
 // Detailed child output is captured in .tmp/build-logs/; the console is a
 // compact ten-stage progress view.
 import { spawn } from 'node:child_process';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_STAGE_ETAS, RollingTail, formatDuration, renderOverview, renderOverviewLine, renderProgress, stageDescription, stripAnsi, TOTAL_STAGES } from './build/progress.mjs';
+import { DEFAULT_STAGE_ETAS, RollingTail, formatDuration, renderOverview, renderOverviewLine, renderProgress, stageDescription, TOTAL_STAGES } from './build/progress.mjs';
+import { renderBuildSummary } from './build/summary.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const atRoot = (...parts) => path.join(ROOT, ...parts);
@@ -37,8 +37,9 @@ class BuildError extends Error { constructor(message, details = {}) { super(mess
 const die = (message, details) => { throw new BuildError(message, details); };
 const isFile = (p) => fs.statSync(p, { throwIfNoEntry: false })?.isFile() ?? false;
 const elapsedSeconds = () => (performance.now() - START) / 1000;
-const elapsed = () => { const s = Math.floor(elapsedSeconds()); return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`; };
+const elapsed = () => { const s = Math.floor(elapsedSeconds()); return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`; };
 const interactive = () => Boolean(process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY && !process.env.CI && !process.env.BUILD_NONINTERACTIVE);
+const colorSummary = () => interactive() && !process.env.NO_COLOR && process.env.FORCE_COLOR !== '0';
 
 class BuildLogger {
   constructor() { fs.mkdirSync(LOG_DIR, { recursive: true }); const stamp = new Date().toISOString().replace(/[.:]/g, '-'); this.path = path.join(LOG_DIR, `build-${stamp}.log`); fs.writeFileSync(this.path, `HOMEGROWN BUILD DIAGNOSTIC LOG\nstarted: ${new Date().toISOString()}\nstages: ${TOTAL_STAGES}\n`); }
@@ -180,6 +181,13 @@ function registerExitHandlers() {
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
     progress?.fail();
     if (logger && progress) logger.event(`TIMING_SUMMARY ${JSON.stringify(progress.summary())}`);
+    const logPath = logger ? path.relative(ROOT, logger.path).split(path.sep).join('/') : 'unavailable';
+    process.stderr.write(`\n${renderBuildSummary({
+      status: 'cancelled',
+      duration: elapsed(),
+      fields: [{ label: 'Log', value: logPath, accent: Boolean(logger) }],
+      color: colorSummary(),
+    })}`);
     process.exit(130);
   });
 }
@@ -235,10 +243,51 @@ async function main() {
     const archive = path.join(DIST_DIR, 'app.7z'); fs.rmSync(archive, { force: true }); fs.rmSync(OUTPUT, { force: true }); await run(SEVENZIP, ['a', '-t7z', '-m0=lzma2', '-mx5', '-mmt=on', 'app.7z', 'Homegrown'], { cwd: DIST_DIR });
     fs.copyFileSync(SFX, OUTPUT); await pipeline(fs.createReadStream(archive), fs.createWriteStream(OUTPUT, { flags: 'a' })); fs.rmSync(archive, { force: true }); if (!isFile(OUTPUT)) die(`packing produced no ${path.relative(ROOT, OUTPUT)}`);
   });
-  const bytes = fs.statSync(OUTPUT).size; const hash = crypto.createHash('sha256'); await pipeline(fs.createReadStream(OUTPUT), hash); const timingSummary = progress.summary(); logger.event(`TIMING_SUMMARY ${JSON.stringify(timingSummary)}`); process.stdout.write(`\n${OUTPUT}\nsize    ${(bytes / 1024 ** 3).toFixed(1)}G\nsha256  ${hash.digest('hex')}\nbuilt   ${elapsed()}\ntimings ${JSON.stringify(timingSummary)}\n`);
+  const bytes = fs.statSync(OUTPUT).size;
+  const timingSummary = progress.summary();
+  logger.event(`TIMING_SUMMARY ${JSON.stringify(timingSummary)}`);
+  const installerPath = path.relative(ROOT, OUTPUT).split(path.sep).join('/');
+  process.stdout.write(`\n${renderBuildSummary({
+    status: 'success',
+    duration: elapsed(),
+    fields: [
+      { label: 'Installer', value: installerPath, accent: true },
+      { label: 'Size', value: `${(bytes / 1024 ** 3).toFixed(1)} GB` },
+    ],
+    color: colorSummary(),
+  })}`);
 }
 
 const isDirect = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isDirect) main().catch((error) => { const details = error?.details || {}; if (!details.stage) progress?.fail(); if (logger && progress) logger.event(`TIMING_SUMMARY ${JSON.stringify(progress.summary())}`); process.stderr.write(`\nBUILD FAILED: ${error instanceof BuildError ? error.message : error?.stack ?? String(error)}\n`); if (details.stage) process.stderr.write(`stage: ${details.stage}/${TOTAL_STAGES} ${details.stageName}\n`); if (details.command) process.stderr.write(`command: ${details.command}\n`); if (details.code != null || details.signal) process.stderr.write(`exit: ${details.code ?? details.signal}\n`); if (logger) process.stderr.write(`log: ${path.relative(ROOT, logger.path)}\n`); const tail = stripAnsi(details.tail || '').trim(); if (tail) process.stderr.write(`last output:\n${tail}\n`); process.exitCode = 1; });
+if (isDirect) main().catch((error) => {
+  const details = error?.details || {};
+  if (!details.stage) progress?.fail();
+  if (logger && progress) logger.event(`TIMING_SUMMARY ${JSON.stringify(progress.summary())}`);
+
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const genericCommandFailure = details.command && (
+    errorMessage === `${details.command} exited with ${details.code ?? details.signal}` ||
+    errorMessage.startsWith(`${details.command} could not be started:`)
+  );
+  const message = genericCommandFailure
+    ? `A build command failed${details.code != null ? ` with exit code ${details.code}` : details.signal ? ` (${details.signal})` : ''}.`
+    : errorMessage.replace(/\s+/g, ' ').slice(0, 280);
+  const stageNumber = details.stage ?? progress?.current;
+  const stage = stageNumber
+    ? `${String(stageNumber).padStart(2, '0')}/${TOTAL_STAGES} - ${details.stageName ?? STAGES[stageNumber - 1]}`
+    : 'Finalizing build output';
+  const logPath = logger ? path.relative(ROOT, logger.path).split(path.sep).join('/') : 'unavailable';
+  process.stderr.write(`\n${renderBuildSummary({
+    status: 'failure',
+    duration: elapsed(),
+    fields: [
+      { label: 'Stage', value: stage },
+      { label: 'Issue', value: message },
+      { label: 'Log', value: logPath, accent: Boolean(logger) },
+    ],
+    color: colorSummary(),
+  })}`);
+  process.exitCode = 1;
+});
 
 export { BuildError, Progress, run };

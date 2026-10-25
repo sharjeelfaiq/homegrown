@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Palette, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatToastDescription, formatToastTitle } from '../../lib/messageFormatting'
@@ -7,6 +7,7 @@ import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
 import StatusMark from '../../components/ui/StatusMark'
 import type { BulkDeleteResult } from '../../lib/api'
 import ThemeSwitch from './ThemeSwitch'
+import './SettingsModal.css'
 
 interface Props {
   open: boolean
@@ -18,12 +19,16 @@ interface Props {
 
 /** A small home for durable Studio preferences. */
 export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEnabledChange, onBulkDelete }: Props) {
+  const [activeTab, setActiveTab] = useState<'appearance' | 'danger'>('appearance')
   const [confirm, setConfirm] = useState<'history' | 'presets' | null>(null)
   const [busy, setBusy] = useState(false)
   const [passwordStep, setPasswordStep] = useState(false)
   const [adminPassword, setAdminPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const busyRef = useRef(false)
+  useEffect(() => {
+    if (!open) setActiveTab('appearance')
+  }, [open])
   async function removeAll(kind: 'history' | 'presets', password: string): Promise<boolean> {
     if (busyRef.current) return false
     busyRef.current = true
@@ -67,10 +72,64 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
     if (await removeAll(confirm, adminPassword)) closeConfirmation()
   }
 
+  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+    const currentIndex = tabs.indexOf(event.target as HTMLButtonElement)
+    if (currentIndex < 0) return
+    let nextIndex = currentIndex
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % tabs.length
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = tabs.length - 1
+    else return
+    event.preventDefault()
+    const nextTab = tabs[nextIndex]
+    nextTab.focus()
+    setActiveTab(nextTab.dataset.settingsTab as 'appearance' | 'danger')
+  }
+
   return (
     <>
     <Modal open={open && confirm === null} title="Settings" onClose={onClose} size="settings">
-      <section className="settings-section" aria-labelledby="appearance-heading">
+      <div className="settings-layout">
+        <div className="settings-sidebar" role="tablist" aria-label="Settings sections" onKeyDown={handleTabKeyDown}>
+          <button
+            id="settings-tab-appearance"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'appearance'}
+            aria-controls="settings-panel-appearance"
+            tabIndex={activeTab === 'appearance' ? 0 : -1}
+            data-settings-tab="appearance"
+            className={`settings-sidebar-tab${activeTab === 'appearance' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('appearance')}
+          >
+            <Palette size={15} aria-hidden="true" />
+            <span>Appearance</span>
+          </button>
+          <button
+            id="settings-tab-danger"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'danger'}
+            aria-controls="settings-panel-danger"
+            tabIndex={activeTab === 'danger' ? 0 : -1}
+            data-settings-tab="danger"
+            className={`settings-sidebar-tab is-danger${activeTab === 'danger' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('danger')}
+          >
+            <TriangleAlert size={15} aria-hidden="true" />
+            <span>Danger Zone</span>
+          </button>
+        </div>
+        <div
+          id={`settings-panel-${activeTab}`}
+          className="settings-content"
+          role="tabpanel"
+          aria-labelledby={`settings-tab-${activeTab}`}
+          tabIndex={0}
+        >
+        {activeTab === 'appearance' ? <section className="settings-section" aria-labelledby="appearance-heading">
         <div className="flex items-center gap-2">
           <Palette size={15} className="text-muted" aria-hidden="true" />
           <h3 id="appearance-heading" className="m-0 font-mono text-[11px] font-normal tracking-[0.1em] uppercase text-muted">Appearance</h3>
@@ -92,7 +151,7 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
           <span className={`relative h-5 w-9 rounded-full transition-colors ${mascotEnabled ? 'bg-audio' : 'bg-surface-card border border-control'}`} aria-hidden="true"><span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${mascotEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} /></span>
         </button>
       </section>
-      <section className="settings-section settings-danger-section" aria-labelledby="danger-zone-heading">
+        : <section className="settings-section settings-danger-section" aria-labelledby="danger-zone-heading">
         <div className="flex items-center gap-2">
           <TriangleAlert size={15} className="text-danger" aria-hidden="true" />
           <h3 id="danger-zone-heading" className="m-0 font-mono text-[11px] font-normal tracking-[0.1em] uppercase text-danger">Danger Zone</h3>
@@ -109,6 +168,15 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
           </div>
         </div>
       </section>
+        }
+        </div>
+        <div
+          id={`settings-panel-${activeTab === 'appearance' ? 'danger' : 'appearance'}`}
+          role="tabpanel"
+          aria-labelledby={`settings-tab-${activeTab === 'appearance' ? 'danger' : 'appearance'}`}
+          hidden
+        />
+      </div>
     </Modal>
     <ConfirmDeleteModal
       open={open && confirm !== null && !passwordStep}

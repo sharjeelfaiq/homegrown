@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import SettingsModal from './SettingsModal'
@@ -18,9 +19,26 @@ function setup(onBulkDelete: (kind: 'history' | 'presets', adminPassword: string
   return onBulkDelete
 }
 
+function openDangerZone() {
+  fireEvent.click(screen.getByRole('tab', { name: 'Danger Zone' }))
+}
+
+it('opens Appearance by default and supports accessible keyboard tab navigation', () => {
+  setup()
+  const appearance = screen.getByRole('tab', { name: 'Appearance' })
+  expect(appearance).toHaveAttribute('aria-selected', 'true')
+  expect(document.getElementById(appearance.getAttribute('aria-controls')!)).toHaveAttribute('role', 'tabpanel')
+
+  fireEvent.keyDown(appearance, { key: 'ArrowRight' })
+  const danger = screen.getByRole('tab', { name: 'Danger Zone' })
+  expect(danger).toHaveAttribute('aria-selected', 'true')
+  expect(danger).toHaveFocus()
+  expect(document.getElementById(danger.getAttribute('aria-controls')!)).toHaveAttribute('aria-labelledby', danger.id)
+})
+
 it('requires confirmation and Cancel keeps data unchanged', async () => {
   const remove = setup()
-  expect(screen.getByText('Danger Zone')).toBeTruthy()
+  openDangerZone()
   expect(remove).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: 'Delete all generated voiceovers' }))
   expect(screen.getByText(/across all pages/)).toBeTruthy()
@@ -35,6 +53,7 @@ it.each([
 ])('confirms %s, prevents duplicate submissions, and reports completion', async (label, kind) => {
   let finish!: (value: { deleted_ids: string[]; cleanup_failed: string[] }) => void
   const remove = setup(vi.fn(() => new Promise<BulkDeleteResult>((resolve) => { finish = resolve })))
+  openDangerZone()
   fireEvent.click(screen.getByRole('button', { name: label }))
   fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }))
   fireEvent.change(screen.getByLabelText('Admin password'), { target: { value: 'test-admin-password' } })
@@ -48,6 +67,7 @@ it.each([
 
 it('reports cleanup failures separately from successful record deletion', async () => {
   setup(vi.fn().mockResolvedValue({ deleted_ids: ['one'], cleanup_failed: ['locked.mp3'] }))
+  openDangerZone()
   fireEvent.click(screen.getByRole('button', { name: 'Delete all generated voiceovers' }))
   fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }))
   fireEvent.change(screen.getByLabelText('Admin password'), { target: { value: 'test-admin-password' } })
@@ -57,6 +77,7 @@ it('reports cleanup failures separately from successful record deletion', async 
 
 it('shows active-work failures without a success toast and permits retry', async () => {
   setup(vi.fn().mockRejectedValue(new Error('Wait for voice cloning to finish.')))
+  openDangerZone()
   fireEvent.click(screen.getByRole('button', { name: 'Delete all uploaded voices' }))
   fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }))
   fireEvent.change(screen.getByLabelText('Admin password'), { target: { value: 'test-admin-password' } })

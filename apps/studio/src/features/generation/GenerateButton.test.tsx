@@ -47,7 +47,7 @@ describe('GenerateButton', () => {
       <GenerateButton
         disabled
         busy={false}
-        tooltip="Voice model is loading — this can take up to 3 minutes."
+        tooltip="Waiting for the voice model to load."
         onClick={() => {}}
       />,
     )
@@ -55,7 +55,7 @@ describe('GenerateButton', () => {
     expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
     expect(container.querySelector('[data-tooltip]')).toHaveAttribute(
       'data-tooltip',
-      'Voice model is loading — this can take up to 3 minutes.',
+      'Waiting for the voice model to load.',
     )
   })
 

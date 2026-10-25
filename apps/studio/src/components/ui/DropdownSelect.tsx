@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { Dropdown } from './Dropdown'
+import { AppTooltip } from './Tooltip'
 
 interface DropdownSelectOption {
   value: string
@@ -19,22 +20,26 @@ interface Props {
   align?: 'start' | 'center' | 'end'
   sideOffset?: number
   disabled?: boolean
+  tooltip?: string
 }
 
 /** Consistent single-choice dropdown, built from the shared Base UI menu. */
 export default function DropdownSelect({
   value, options, onValueChange, ariaLabel, placeholder,
   className = '', contentClassName = '',
-  side = 'bottom', align = 'start', sideOffset = 4, disabled = false,
+  side = 'bottom', align = 'start', sideOffset = 4, disabled = false, tooltip,
 }: Props) {
   const [open, setOpen] = useState(false)
   const selected = options.find((option) => option.value === value)
+  const trigger = (
+    <Dropdown.Trigger className={`dropdown-select-trigger ${className}`} aria-label={ariaLabel} disabled={disabled}>
+      <span className="min-w-0 flex-1 truncate">{selected?.label ?? placeholder}</span>
+      <ChevronDown aria-hidden="true" className="size-3.5 shrink-0" />
+    </Dropdown.Trigger>
+  )
   return (
     <Dropdown.Root open={open} onOpenChange={setOpen}>
-      <Dropdown.Trigger className={`dropdown-select-trigger ${className}`} aria-label={ariaLabel} disabled={disabled}>
-        <span className="min-w-0 flex-1 truncate">{selected?.label ?? placeholder}</span>
-        <ChevronDown aria-hidden="true" className="size-3.5 shrink-0" />
-      </Dropdown.Trigger>
+      {tooltip ? <AppTooltip content={tooltip}>{trigger}</AppTooltip> : trigger}
       <Dropdown.Content side={side} align={align} sideOffset={sideOffset} className={`dropdown-select-popup ${contentClassName}`}>
             <Dropdown.RadioGroup value={value} onValueChange={(next) => {
               onValueChange(next)

@@ -16,7 +16,7 @@ interface Props {
   languages: string[]
   languagesLoading?: boolean
   languageEnabled?: boolean
-  selectedVoiceName?: string | null
+  modelLoading?: boolean
   language: string | null
   onLanguageChange: (language: string | null) => void
   /** Owned by StudioShell because submission state belongs there. */
@@ -32,7 +32,7 @@ export default function ScriptBlock({
   languages,
   languagesLoading = false,
   languageEnabled = true,
-  selectedVoiceName = null,
+  modelLoading = false,
   language,
   onLanguageChange,
   generateAction,
@@ -109,22 +109,27 @@ export default function ScriptBlock({
   const orderedLanguages = [...languages].sort((left, right) =>
     Number(right.toLocaleLowerCase() === 'english') - Number(left.toLocaleLowerCase() === 'english'),
   )
+  const languageSelect = (
+    <DropdownSelect
+      className="script-language-select"
+      contentClassName="standard-options-popup script-language-options-popup"
+      value={language ?? ''}
+      disabled={!languageEnabled || modelLoading}
+      tooltip={modelLoading ? 'Available when the voice model is ready.' : undefined}
+      ariaLabel="Script language"
+      placeholder="Select language"
+      options={[{ value: '', label: 'Select language' }, ...orderedLanguages.map((name) => ({ value: name, label: name }))]}
+      onValueChange={(next) => onLanguageChange(next || null)}
+    />
+  )
 
   return (
     <div className="script-editor grid h-[clamp(300px,39svh,400px)] min-h-[clamp(300px,39svh,400px)] max-h-[clamp(300px,39svh,400px)] grid-rows-[minmax(0,1fr)_auto] overflow-visible rounded-md border border-transparent bg-surface-card" data-tour="script-editor">
       <div className="script-editor-input">
-        <div
-          className="script-voice-reminder"
-          aria-label={`Selected voice: ${selectedVoiceName || 'No voice selected'}`}
-          title={selectedVoiceName || 'No voice selected'}
-        >
-          <span className="script-voice-reminder-label">Voice</span>
-          <span className="script-voice-reminder-name">{selectedVoiceName || 'No voice selected'}</span>
-        </div>
         <textarea
           ref={textareaRef ?? localTextareaRef}
           autoFocus
-          className="block h-full min-h-0 w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pr-14 pt-10 pb-8 text-[15px]/[1.7] outline-none placeholder:text-faint"
+          className="block h-full min-h-0 w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pr-14 pt-[18px] pb-8 text-[15px]/[1.7] outline-none placeholder:text-faint"
           placeholder="Type or paste a script…"
           value={text}
           onChange={(event) => onTextChange(event.target.value)}
@@ -165,7 +170,7 @@ export default function ScriptBlock({
 
       <footer className="script-editor-footer">
         <div className="script-editor-selection">
-          {languagesLoading ? (
+          {languagesLoading && !modelLoading ? (
             <Skeleton
               name="script-language"
               loading
@@ -175,18 +180,9 @@ export default function ScriptBlock({
             >
               <ScriptLanguageFixture />
             </Skeleton>
-          ) : languages.length > 0 && (
+          ) : (languages.length > 0 || modelLoading) && (
             <label className="script-language-control">
-              <DropdownSelect
-                className="script-language-select"
-                contentClassName="standard-options-popup script-language-options-popup"
-                value={language ?? ''}
-                disabled={!languageEnabled}
-                ariaLabel="Script language"
-                placeholder="Select language"
-                options={[{ value: '', label: 'Select language' }, ...orderedLanguages.map((name) => ({ value: name, label: name }))]}
-                onValueChange={(next) => onLanguageChange(next || null)}
-              />
+              {languageSelect}
             </label>
           )}
         </div>

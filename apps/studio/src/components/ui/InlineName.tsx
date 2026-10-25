@@ -135,7 +135,7 @@ export default function InlineName({
           </button>
         </AppTooltip>
       )}
-      <AppTooltip content={title ?? 'Click to edit name'}>
+      <AppTooltip content={title ?? 'Edit name'}>
         <input
           ref={inputRef}
           type="text"
