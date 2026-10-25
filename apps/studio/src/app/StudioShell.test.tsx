@@ -17,7 +17,6 @@ vi.mock('../lib/api', async (original) => ({
   listLanguages: vi.fn().mockResolvedValue({ languages: ['English'] }),
   getHealth: vi.fn().mockResolvedValue({
     model_loaded: true,
-    voice_model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
     device: 'cuda',
     device_reason: 'NVIDIA GeForce RTX 4090 (sm_89)',
   }),
@@ -76,9 +75,11 @@ async function ready() {
   return view
 }
 
-it('shows the loaded model and active graphics card from backend health', async () => {
+it('shows a generic voice engine status and active graphics card from backend health', async () => {
   await ready()
-  expect(screen.getByText('Qwen/Qwen3-TTS-12Hz-0.6B-Base')).toBeInTheDocument()
+  expect(screen.getByText('Voice engine')).toBeInTheDocument()
+  expect(screen.getByText('Ready')).toBeInTheDocument()
+  expect(screen.queryByText(/Qwen|custom voice model/i)).not.toBeInTheDocument()
   expect(screen.getByText('NVIDIA GeForce RTX 4090')).toBeInTheDocument()
 })
 

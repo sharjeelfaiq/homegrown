@@ -25,6 +25,9 @@ const SFX = 'C:\\Program Files\\7-Zip\\7z.sfx';
 const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const ENV_LOCAL_DEFAULT = '# Intentionally empty. Supported workflows use same-origin API paths.';
 const START = performance.now();
+const BUILD_OUTPUTS = ['dist', 'services/voice-api/dist', 'services/voice-api/build', 'apps/studio/dist', 'desktop/launcher/dist', 'desktop/launcher/build'];
+const CLEANUP_RETRIES = 6;
+const CLEANUP_RETRY_DELAY_MS = 250;
 
 export const STAGES = [
   'Removing old build files', 'Checking required tools', 'Finding the build environment',
@@ -176,6 +179,29 @@ function restoreEnvLocal() {
   if (isFile(ENV_STASH)) { fs.mkdirSync(path.dirname(ENV_LOCAL), { recursive: true }); fs.renameSync(ENV_STASH, ENV_LOCAL); }
   else if (!isFile(ENV_LOCAL)) { fs.mkdirSync(path.dirname(ENV_LOCAL), { recursive: true }); fs.writeFileSync(ENV_LOCAL, `${ENV_LOCAL_DEFAULT}\n`); }
 }
+
+function removeBuildOutputs() {
+  for (const output of BUILD_OUTPUTS) {
+    const target = atRoot(...output.split('/'));
+    try {
+      fs.rmSync(target, {
+        recursive: true,
+        force: true,
+        maxRetries: CLEANUP_RETRIES,
+        retryDelay: CLEANUP_RETRY_DELAY_MS,
+      });
+    } catch (error) {
+      if (['EACCES', 'EBUSY', 'EPERM'].includes(error?.code)) {
+        throw new BuildError(
+          `Could not remove old build output ${output} (${error.code}). Close Homegrown and any process using files in that folder, then check its permissions and retry.`,
+          { path: output, code: error.code },
+        );
+      }
+      throw error;
+    }
+  }
+}
+
 function registerExitHandlers() {
   process.on('exit', restoreEnvLocal);
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
@@ -203,7 +229,7 @@ async function stage(number, action) {
 
 async function main() {
   logger = new BuildLogger(); progress = new Progress(logger); registerExitHandlers();
-  await stage(1, async () => { for (const dir of ['dist', 'services/voice-api/dist', 'services/voice-api/build', 'apps/studio/dist', 'desktop/launcher/dist', 'desktop/launcher/build']) fs.rmSync(atRoot(...dir.split('/')), { recursive: true, force: true }); });
+  await stage(1, removeBuildOutputs);
   await stage(2, async () => {
     if (!await run('python', ['--version'], { allowFailure: true })) die('python is not on PATH.');
     if (!await runNpm(['--version'], { allowFailure: true })) die('npm is not on PATH.');

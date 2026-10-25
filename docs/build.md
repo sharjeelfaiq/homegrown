@@ -50,11 +50,14 @@ the path is clickable and opens the directory containing the installer; redirect
 output contains the same absolute path as plain text. The SHA-256 is recorded in
 the separate release step below. Expect ~45 minutes and ~10 GB free.
 
-Before checking prerequisites, it removes previous generated outputs:
+Before checking prerequisites, it removes previous generated outputs, retrying
+transient Windows file-lock errors during recursive cleanup:
 `dist/`, `services/voice-api/dist/`, `services/voice-api/build/`,
 `apps/studio/dist/`, `desktop/launcher/dist/`, and
 `desktop/launcher/build/`. Do not keep files in those build-output folders
 that you need to retain; the build recreates them.
+If a cleanup still fails with a permission error, close Homegrown and any
+process using that output folder, then check its permissions before retrying.
 
 It also **stashes `apps/studio/.env.local` and restores it afterwards**. The restore runs from a
 process-exit handler, so it happens whether the build succeeds, fails, or you Ctrl-C it.

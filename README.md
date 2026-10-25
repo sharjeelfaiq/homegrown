@@ -86,8 +86,9 @@ startup task probes for a usable device, restores the queue, and loads
 Qwen3-TTS. `/api/health` remains available during startup; other `/api/*`
 requests wait for initialization and return a startup error or timeout if it
 does not complete. Vite proxies `/api`, `/audio`, and `/refs`, so Studio always
-uses same-origin API paths. At 1600px and wider, Studio shows the loaded model
-and active compute device in the outer left gutter. It prints a LAN address
+uses same-origin API paths. At 1600px and wider, Studio shows generic voice
+engine readiness and the active compute device in the outer left gutter. Model
+identifiers are not exposed through health status. It prints a LAN address
 when available.
 There are no accounts or general API authentication. Ordinary actions,
 including individual deletes, are unauthenticated. Permanent bulk deletion

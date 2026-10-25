@@ -8,7 +8,6 @@ import RuntimeModelReadout from './RuntimeModelReadout'
 const readyHealth: HealthResponse = {
   model_loaded: true,
   sample_rate: 24000,
-  voice_model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
   device: 'cuda',
   device_reason: 'NVIDIA GeForce GTX 970 (sm_52)',
 }
@@ -16,10 +15,11 @@ const readyHealth: HealthResponse = {
 afterEach(cleanup)
 
 describe('RuntimeModelReadout', () => {
-  it('shows the loaded voice model and active graphics card without CUDA details', () => {
+  it('shows a generic ready state and the active graphics card without model details', () => {
     render(<RuntimeModelReadout health={readyHealth} loading={false} />)
 
-    expect(screen.getByText('Qwen/Qwen3-TTS-12Hz-0.6B-Base')).toBeInTheDocument()
+    expect(screen.getByText('Voice engine')).toBeInTheDocument()
+    expect(screen.getByText('Ready')).toBeInTheDocument()
     expect(screen.getByText('NVIDIA GeForce GTX 970')).toBeInTheDocument()
     expect(screen.queryByText(/sm_52/)).not.toBeInTheDocument()
   })
@@ -30,12 +30,9 @@ describe('RuntimeModelReadout', () => {
     expect(screen.getByText('CPU')).toBeInTheDocument()
   })
 
-  it('shows the custom voice model only when the health response reports one', () => {
-    const { rerender } = render(<RuntimeModelReadout health={readyHealth} loading={false} />)
-    expect(screen.queryByText('Custom voice model')).not.toBeInTheDocument()
-
-    rerender(<RuntimeModelReadout health={{ ...readyHealth, custom_voice_model: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice' }} loading={false} />)
-    expect(screen.getByText('Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice')).toBeInTheDocument()
+  it('never displays model names or model-type clues', () => {
+    const { container } = render(<RuntimeModelReadout health={readyHealth} loading={false} />)
+    expect(container).not.toHaveTextContent(/Qwen|custom voice model/i)
   })
 
   it('uses loading and unavailable labels instead of stale runtime details', () => {
@@ -46,10 +43,7 @@ describe('RuntimeModelReadout', () => {
     rerender(<RuntimeModelReadout health={{
       ...readyHealth,
       model_loaded: false,
-      custom_voice_model: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
     }} loading={false} />)
     expect(screen.getAllByText('Unavailable')).toHaveLength(2)
-    expect(screen.queryByText('Qwen/Qwen3-TTS-12Hz-0.6B-Base')).not.toBeInTheDocument()
-    expect(screen.queryByText('Custom voice model')).not.toBeInTheDocument()
   })
 })

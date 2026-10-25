@@ -13,7 +13,7 @@ function graphicsCardName(deviceReason?: string): string | null {
 export default function RuntimeModelReadout({ health, loading }: Props) {
   const modelLoaded = health?.model_loaded === true
   const unavailable = !loading && !modelLoaded
-  const modelValue = loading ? 'Loading…' : unavailable ? 'Unavailable' : health?.voice_model || 'Unavailable'
+  const engineValue = loading ? 'Loading…' : unavailable ? 'Unavailable' : 'Ready'
   const deviceValue = loading
     ? 'Detecting…'
     : unavailable
@@ -25,17 +25,11 @@ export default function RuntimeModelReadout({ health, loading }: Props) {
           : 'Unavailable'
 
   return (
-    <aside className="runtime-model-readout" aria-label="Runtime model and device">
+    <aside className="runtime-model-readout" aria-label="Voice engine and compute device">
       <div className="runtime-model-readout-item">
-        <span className="runtime-model-readout-label">Voice model</span>
-        <span className="runtime-model-readout-value">{modelValue}</span>
+        <span className="runtime-model-readout-label">Voice engine</span>
+        <span className="runtime-model-readout-value">{engineValue}</span>
       </div>
-      {modelLoaded && health?.custom_voice_model && (
-        <div className="runtime-model-readout-item">
-          <span className="runtime-model-readout-label">Custom voice model</span>
-          <span className="runtime-model-readout-value">{health?.custom_voice_model}</span>
-        </div>
-      )}
       <div className="runtime-model-readout-item">
         <span className="runtime-model-readout-label">Compute device</span>
         <span className="runtime-model-readout-value">{deviceValue}</span>

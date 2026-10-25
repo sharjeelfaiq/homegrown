@@ -48,8 +48,8 @@ class ModelStartupTests(unittest.TestCase):
             health = client.get("/api/health")
             self.assertLess(time.monotonic() - started, 1)
             self.assertFalse(health.json()["model_loaded"])
-            self.assertIsNone(health.json()["voice_model"])
-            self.assertIsNone(health.json()["custom_voice_model"])
+            self.assertNotIn("voice_model", health.json())
+            self.assertNotIn("custom_voice_model", health.json())
 
             result = {}
             request = threading.Thread(target=lambda: result.setdefault("response", client.get("/api/presets")))

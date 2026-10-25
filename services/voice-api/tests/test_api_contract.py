@@ -95,29 +95,18 @@ class ApiContractTests(unittest.TestCase):
         actual = {p: set(methods) for p, methods in paths.items() if p.startswith('/api/')}
         self.assertEqual(actual, expected)
 
-    def test_health_reports_the_loaded_model_without_exposing_its_path(self):
-        loaded_model = SimpleNamespace(
-            tts_model_type='base',
-            config=SimpleNamespace(_name_or_path=None),
-        )
+    def test_health_reports_readiness_without_exposing_model_identity(self):
+        loaded_model = SimpleNamespace(tts_model_type='base')
         model._tts = SimpleNamespace(
             sample_rate=24000,
             model=SimpleNamespace(model=loaded_model),
         )
-        with patch.object(
-            config,
-            'MODEL_PATH',
-            r'D:\models_cache\models--Qwen--Qwen3-TTS-12Hz-0.6B-Base\snapshots\5d83992436eae1d760afd27aff78a71d676296fc',
-        ):
-            response = self.client.get('/api/health')
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['voice_model'], 'Qwen/Qwen3-TTS-12Hz-0.6B-Base')
-        self.assertIsNone(response.json()['custom_voice_model'])
-        self.assertNotIn('models_cache', response.text)
-
-        loaded_model.tts_model_type = 'custom_voice'
         response = self.client.get('/api/health')
-        self.assertEqual(response.json()['custom_voice_model'], 'Qwen/Qwen3-TTS-12Hz-0.6B-Base')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['model_loaded'])
+        self.assertNotIn('voice_model', response.json())
+        self.assertNotIn('custom_voice_model', response.json())
+        self.assertNotIn('Qwen', response.text)
 
     def test_presets_list_supports_search_and_bounded_pagination(self):
         (config.REF_DIR / 'voice.mp3').write_bytes(b'audio')
