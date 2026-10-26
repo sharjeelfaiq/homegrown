@@ -8,6 +8,7 @@ import torch
 
 from codec_history_candidate import CodecHistory
 from qwen.faster_qwen3_tts import FasterQwen3TTS
+from bounded_waveform_candidate import install
 
 
 def original_decode(pieces, reference, chunk_size, bounded=False):
@@ -45,7 +46,7 @@ def fake_pcm(codes):
 
 
 class CodecHistoryTests(unittest.TestCase):
-    def test_actual_clone_stream_matches_old_decoder_inputs_and_pcm(self):
+    def test_frozen_legacy_stream_matches_old_decoder_inputs_and_pcm(self):
         for sizes in ([1], [12, 5], [12, 12, 1], [12, 12, 12, 12, 3],
                       [25, 25, 7], [36, 36, 2]):
             for reference_frames in (0, 1, 40, 500):
@@ -66,6 +67,7 @@ class CodecHistoryTests(unittest.TestCase):
                         return [fake_pcm(codes)], 24000
                     nested = SimpleNamespace(speech_tokenizer=SimpleNamespace(decode=decode))
                     wrapper = FasterQwen3TTS(SimpleNamespace(sample_rate=24000), None, None, device='cpu')
+                    install(wrapper, 'legacy')
                     prepared = (nested, None, None, None, None, None, None, reference)
                     with patch.object(wrapper, '_prepare_generation', return_value=prepared), patch(
                         'qwen.streaming.parity_generate_streaming',

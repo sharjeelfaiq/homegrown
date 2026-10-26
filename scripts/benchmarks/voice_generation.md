@@ -1,5 +1,8 @@
 # Voice generation benchmark
 
+For the retained prefix-skipping decoder and its measured results, see
+[waveform-decoding-results.md](../../docs/waveform-decoding-results.md).
+
 Run from the repository root using the existing virtual environment. The entry
 point uses only the standard library until it redirects storage and enables
 Hugging Face offline mode. It then uses the installed application dependencies.
@@ -30,9 +33,32 @@ The reproducible underlying commands, after an idle-only shutdown, are:
 .venv/Scripts/python.exe scripts/benchmarks/check_transcripts.py .tmp/voice-speed/candidate
 ```
 
+The current runner explicitly selects a decoder, independently of the application's
+default. `--decoder legacy` uses the frozen old implementation; `--decoder
+prefix-skip` uses the retained decoder. `--decoder bounded` is the rejected
+25-frame-from-start experiment. For example, use fresh directories:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/benchmarks/run_idle_phase.ps1 -Phase baseline -Output .tmp/voice-speed/my-baseline -BudgetSeconds 500 -Decoder legacy
+powershell -ExecutionPolicy Bypass -File scripts/benchmarks/run_idle_phase.ps1 -Phase candidate -Output .tmp/voice-speed/my-candidate -Baseline .tmp/voice-speed/my-baseline -BudgetSeconds 600 -Decoder prefix-skip -WaveformReplay
+.venv/Scripts/python.exe scripts/benchmarks/summarize_voice_generation.py .tmp/voice-speed/my-baseline .tmp/voice-speed/my-candidate
+.venv/Scripts/python.exe scripts/benchmarks/check_transcripts.py .tmp/voice-speed/my-candidate --replay
+```
+
+`-WaveformReplay` runs length probes and paired old/new waveform decoding in the
+same process, lock and remaining phase budget. It reuses captured codec and
+reference tensors, alternates decoder order, records actual block inputs and
+per-call wall/CUDA timings, checks sample boundaries, and writes listening WAVs.
+Nested public-decode and internal-forward timings overlap. Replay instrumentation
+is heavier than normal phase instrumentation; use complete full-script cases
+for end-to-end comparisons. Speaker cosines are computed in FP32, not BF16.
+
 Use fresh output directories. Each phase permits at most 600 seconds of model
-loading and GPU work. Stop after two phases under the approved 20-minute total;
-the lock prevents overlap, but does not authorize additional phases. The budget
+loading and GPU work. The total authorization is 20 minutes, including model
+loading and GPU replay. Two full 600-second phases exhaust that budget. When
+evaluating another sequential candidate, first charge completed work in a ledger
+and cap the next phase below the remaining total, including cleanup margin.
+The lock prevents overlap, but does not authorize additional GPU time. The budget
 is checked between codec yields, so an in-flight launch or initial model/graph
 load can finish after its deadline. Incomplete repetitions are labeled and never
 counted as successful full-script runs. A background health monitor aborts a
@@ -66,12 +92,13 @@ contain trimming. Do not add them together. Codec-next wall times cover only
 `next()` calls, excluding consumer/vocoder pauses. Existing streaming timing
 dictionaries are cumulative and are deliberately not summed.
 
-Candidate diagnostics separately time old/new codec assembly and suppression
+Legacy candidate diagnostics separately time old/new codec assembly and suppression
 masks with alternating execution order. These are microbenchmarks, not an
 end-to-end speedup estimate. The preparation changes are small beside reference
-vocoder decoding, which remains unchanged for acoustic-quality reasons.
+vocoder decoding. The retained prefix-skipping path avoids discarded work while
+preserving the old internal decode inputs for generated audio.
 
-Each completed case produces a listening MP3 (and, in current runner versions,
+Each completed case captures reference tensors and produces a listening MP3 (and, in current runner versions,
 the pre-encoding float WAV) and captured codec tensors under
 the phase directory. Exact fake-decoder parity tests exercise short streams,
 calibration boundaries, final partial pieces, reference-free and reference

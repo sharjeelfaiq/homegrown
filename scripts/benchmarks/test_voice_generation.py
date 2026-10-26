@@ -94,7 +94,7 @@ assert 'torch' not in sys.modules
             self.assertEqual(json.loads((Path(directory) / 'storage/history.json').read_text()), [{'test': True}])
 
     def test_no_cuda_events_in_ordinary_cache_or_history_code(self):
-        for name in ('prompt_cache.py', 'faster_qwen3_tts.py'):
+        for name in ('prompt_cache.py', 'faster_qwen3_tts.py', 'waveform_stream.py'):
             source = (ROOT / 'engine/qwen' / name).read_text(encoding='utf-8')
             self.assertNotIn('cuda.Event', source)
 

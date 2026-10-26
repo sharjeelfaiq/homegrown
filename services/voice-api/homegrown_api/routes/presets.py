@@ -101,6 +101,7 @@ async def create_preset(
     user_id: str = Depends(dependencies.get_current_user),
     _upload: None = Depends(persistence_stores.reference_upload_dependency),
 ):
+    cloning_started = time.perf_counter()
     name = name.strip()
     ref_text = ref_text.strip()
     tag = tag.strip()
@@ -259,6 +260,8 @@ async def create_preset(
         "tag": tag,
         "is_builtin": False,
         "created_at": time.time(),
+        # Server processing: upload read, validation, trimming and transcription.
+        "cloning_s": time.perf_counter() - cloning_started,
     }
     with persistence_stores._store_lock:
         persistence_stores._presets.insert(0, preset)

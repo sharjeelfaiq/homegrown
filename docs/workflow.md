@@ -6,6 +6,8 @@ build, see [build.md](build.md). GPU measurements are historical and collected
 on the hardware identified in [gpu-notes.md](gpu-notes.md).
 For isolated, offline generation profiling and paired comparison commands, see
 [the voice benchmark procedure](../scripts/benchmarks/voice_generation.md).
+The latest retained decoder change is documented in
+[the waveform evaluation](waveform-decoding-results.md).
 
 ## Start and safety
 

@@ -155,6 +155,10 @@ virtual environments and generated audio are local data, not source files.
 `HOMEGROWN_STORAGE_DIR` also overrides source-run storage so the offline voice
 benchmark can redirect every persistence owner before import. Benchmark scripts
 live under `scripts/benchmarks/`; artifacts stay in ignored `.tmp/voice-speed/`.
+`engine/qwen/waveform_stream.py` owns voice-clone waveform assembly. It skips
+vocoder blocks whose output the old calibration discarded, preserving internal
+alignment, acoustic context and sample slicing. Autoregressive conditioning is
+unchanged; comparison decoders and GPU timing remain in benchmark scripts.
 The `.env.example` documents variable names only; the administrator password
 must remain in the ignored local `.env` and must never be copied into docs or
 committed.

@@ -1,5 +1,10 @@
 param(
-    [ValidateSet('baseline', 'candidate')][string]$Phase = 'baseline'
+    [ValidateSet('baseline', 'candidate')][string]$Phase = 'baseline',
+    [string]$Output = '',
+    [string]$Baseline = '.tmp/voice-speed/baseline',
+    [ValidateRange(1,600)][int]$BudgetSeconds = 600,
+    [ValidateSet('legacy','bounded','prefix-skip')][string]$Decoder = 'legacy',
+    [switch]$WaveformReplay
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -27,9 +32,13 @@ foreach ($process in $processes) {
         $ancestor = $allProcesses | Where-Object { $_.ProcessId -eq $parentId } | Select-Object -First 1
     }
 }
+if (!$Output) { $Output = ".tmp/voice-speed/$Phase" }
+$target = [System.IO.Path]::GetFullPath((Join-Path $repo $Output))
+if (Test-Path -LiteralPath $target) { throw 'Use a fresh benchmark output directory.' }
 $arguments = @('scripts/benchmarks/voice_generation.py', '--phase', $Phase,
-    '--output', ".tmp/voice-speed/$Phase", '--budget-seconds', '600')
-if ($Phase -eq 'candidate') { $arguments += @('--baseline', '.tmp/voice-speed/baseline') }
+    '--output', $Output, '--budget-seconds', "$BudgetSeconds", '--decoder', $Decoder)
+if ($Phase -eq 'candidate') { $arguments += @('--baseline', $Baseline) }
+if ($WaveformReplay) { $arguments += @('--waveform-replay', $Baseline) }
 # Repeat the live check immediately before stopping; never cancel jobs.
 $queue = Invoke-RestMethod 'http://127.0.0.1:8000/api/queue'
 if (@($queue.queue | Where-Object { $_.status -in @('queued', 'running', 'canceling') }).Count) {

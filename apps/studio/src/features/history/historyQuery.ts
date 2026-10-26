@@ -50,8 +50,8 @@ export const apiQueryKeys = {
 
 /** Only fields used by voice rows and selectors survive local persistence. */
 export function persistablePreset(preset: Preset): Preset {
-  const { id, name, language, tag, preview_url, created_at, ref_seconds, chunk_chars, is_builtin, completed_voiceovers } = preset
-  return { id, name, language, tag, preview_url, created_at, ref_seconds, chunk_chars, is_builtin, completed_voiceovers, ref_text: '', audio_path: '' }
+  const { id, name, language, tag, preview_url, created_at, cloning_s, ref_seconds, chunk_chars, is_builtin, completed_voiceovers } = preset
+  return { id, name, language, tag, preview_url, created_at, cloning_s, ref_seconds, chunk_chars, is_builtin, completed_voiceovers, ref_text: '', audio_path: '' }
 }
 
 export function fetchVoices() {

@@ -76,6 +76,21 @@ class ApiContractTests(unittest.TestCase):
         headers = {} if password is None else {'X-Homegrown-Admin-Password': password}
         return self.client.delete(path, headers=headers)
 
+    def test_clone_processing_time_is_persisted_and_listed(self):
+        from homegrown_api.routes import presets
+        import soundfile as sf
+        upload = io.BytesIO()
+        sf.write(upload, np.zeros(24000 * 8, dtype=np.float32), 24000, format='WAV')
+        with patch.object(presets, 'time', SimpleNamespace(
+                time=presets.time.time, perf_counter=unittest.mock.Mock(side_effect=[100.0, 112.5]))):
+            response = self.client.post('/api/presets',
+                data={'name': 'Timed voice', 'ref_text': 'A reference transcript with enough characters to describe eight seconds of speech.'},
+                files={'audio': ('reference.wav', upload.getvalue(), 'audio/wav')})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['cloning_s'], 12.5)
+        self.assertEqual(json.loads(config.PRESETS_FILE.read_text())[0]['cloning_s'], 12.5)
+        self.assertEqual(self.client.get('/api/presets').json()['presets'][0]['cloning_s'], 12.5)
+
     def test_all_existing_api_routes_remain_registered(self):
         expected = {
             '/api/download/{filename}': {'get'}, '/api/health': {'get'},
@@ -365,22 +380,39 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(json.loads(config.QUEUE_FILE.read_text()), [])
 
     def test_running_cancellation_closes_stream_without_publishing_audio(self):
+        import torch
+        from qwen.waveform_stream import prefix_skipping_waveform_stream
+
         fake = self.ready_voice()
         job_id = self.submit()
         worker._pending_job_ids.remove(job_id)
         closed = []
 
-        def stream(**_kwargs):
+        def codec_source():
             try:
                 # Simulate the HTTP cancel arriving while a stream is producing audio.
                 response = self.client.post(f'/api/queue/{job_id}/cancel')
                 self.assertEqual(response.status_code, 200)
-                yield np.ones(100, dtype=np.float32), 24000, {}
+                yield torch.ones(12, 16, dtype=torch.long), {}
                 self.fail('A canceled stream must not request another piece')
             finally:
                 closed.append(True)
 
-        fake.generate_voice_clone_streaming = stream
+        class Decoder(torch.nn.Module):
+            total_upsample = 1920
+
+            def forward(self, codes):
+                return torch.ones(1, 1, codes.shape[-1] * self.total_upsample)
+
+            def chunked_decode(self, codes, chunk_size=100, left_context_size=25):
+                raise AssertionError('Cancellation must stop before subsequent decoding')
+
+        tokenizer = SimpleNamespace(device='cpu', model=SimpleNamespace(
+            decode_upsample_rate=1920, decoder=Decoder(), get_output_sample_rate=lambda: 24000,
+        ))
+        fake.generate_voice_clone_streaming = lambda **kwargs: prefix_skipping_waveform_stream(
+            codec_source(), tokenizer, torch.ones(507, 16, dtype=torch.long),
+        )
         with patch.object(worker.audio_convert, 'write_mp3') as write:
             worker._process_job(job_id)
         self.assertEqual(closed, [True])

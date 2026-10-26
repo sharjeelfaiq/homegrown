@@ -15,6 +15,7 @@ import torch
 
 from .utils import resolve_device, suppress_flash_attn_warning
 from .prompt_cache import PromptCache, reference_key
+from .waveform_stream import prefix_skipping_waveform_stream
 
 logger = logging.getLogger(__name__)
 
@@ -1077,16 +1078,6 @@ class FasterQwen3TTS:
 
         speech_tokenizer = m.speech_tokenizer
 
-        # Hybrid decode strategy:
-        # 1. Accumulated decode for early chunks (correct, calibrates samples_per_frame)
-        # 2. Sliding window with 25-frame left context once calibrated (constant cost)
-        # This avoids boundary artifacts (pops) while keeping decode cost bounded.
-        context_frames = 25
-        min_calibration_frames = max(context_frames, chunk_size)
-        all_codes = []
-        prev_gen_audio_len = 0  # tracks position within the generated (non-ref) audio
-        samples_per_frame = None
-
         # Without CUDA graphs (CPU fallback) parity decoding is the only option.
         parity_mode = self._resolve_parity(parity_mode)
         stream_fn = parity_generate_streaming if parity_mode else fast_generate_streaming
@@ -1110,65 +1101,9 @@ class FasterQwen3TTS:
             stream_kwargs["predictor_graph"] = self.predictor_graph
             stream_kwargs["talker_graph"] = self.talker_graph
 
-        for codec_chunk, timing in stream_fn(**stream_kwargs):
-            all_codes.append(codec_chunk)
-            n_new = codec_chunk.shape[0]
-            all_flat = torch.cat(all_codes, dim=0)
-            n_total = all_flat.shape[0]
-
-            if samples_per_frame is None:
-                # Phase 1: accumulated decode until we can calibrate.
-                # In ICL mode prepend reference codes so the codec decoder has acoustic
-                # context from the reference audio (matches official implementation).
-                if ref_codes is not None:
-                    codes_input = torch.cat([ref_codes.to(all_flat.device), all_flat], dim=0)
-                else:
-                    codes_input = all_flat
-                audio_list, sr = speech_tokenizer.decode(
-                    {"audio_codes": codes_input.unsqueeze(0)}
-                )
-                audio = audio_list[0]
-                if hasattr(audio, 'cpu'):
-                    audio = audio.flatten().cpu().numpy()
-                else:
-                    audio = audio.flatten() if hasattr(audio, 'flatten') else audio
-
-                # Separate out reference audio portion; track position in generated audio only
-                if ref_codes is not None:
-                    ref_len = ref_codes.shape[0]
-                    total_len = codes_input.shape[0]
-                    ref_audio_cut = int(ref_len / max(total_len, 1) * len(audio))
-                    gen_audio = audio[ref_audio_cut:]
-                else:
-                    gen_audio = audio
-
-                new_audio = gen_audio[prev_gen_audio_len:]
-                prev_gen_audio_len = len(gen_audio)
-
-                if n_total >= min_calibration_frames:
-                    samples_per_frame = len(gen_audio) / n_total
-            else:
-                # Phase 2: sliding window with left context
-                ctx_start = max(0, n_total - n_new - context_frames)
-                window = all_flat[ctx_start:]
-                n_ctx = window.shape[0] - n_new
-
-                audio_list, sr = speech_tokenizer.decode(
-                    {"audio_codes": window.unsqueeze(0)}
-                )
-                audio = audio_list[0]
-                if hasattr(audio, 'cpu'):
-                    audio = audio.flatten().cpu().numpy()
-                else:
-                    audio = audio.flatten() if hasattr(audio, 'flatten') else audio
-
-                if n_ctx > 0:
-                    ctx_samples = int(round(n_ctx * samples_per_frame))
-                    new_audio = audio[ctx_samples:]
-                else:
-                    new_audio = audio
-
-            yield new_audio, sr, timing
+        yield from prefix_skipping_waveform_stream(
+            stream_fn(**stream_kwargs), speech_tokenizer, ref_codes, chunk_size,
+        )
 
     @torch.inference_mode()
     def generate_custom_voice(

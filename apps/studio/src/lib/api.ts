@@ -33,6 +33,8 @@ export interface Preset {
    *  no persisted field to report, and they are the ones worth flagging.
    *  `chunk_chars` below PADDING_SAFE_MIN_CHARS (150) means the clip is long
    *  enough to hurt output quality. */
+  /** Server processing time for cloning; absent on older voices. */
+  cloning_s?: number | null
   ref_seconds?: number | null
   chunk_chars?: number
   /** Number of successfully completed history records for this voice. */

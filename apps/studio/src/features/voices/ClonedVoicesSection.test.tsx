@@ -387,3 +387,16 @@ describe('ClonedVoicesSection', () => {
   })
 
 })
+
+
+it('opens voice details without selecting or deleting the voice', async () => {
+  const { props } = renderSection({ presets: [{ ...presets[2], cloning_s: 12.34, ref_seconds: 40 }] })
+  fireEvent.click(screen.getByRole('button', { name: 'More actions for Ada' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Details' }))
+  expect(screen.getByRole('dialog', { name: 'Voice details' })).toHaveTextContent('12.34 seconds')
+  expect(screen.getByRole('dialog')).toHaveTextContent('40 seconds')
+  expect(props.onSelect).not.toHaveBeenCalled()
+  expect(props.onDelete).not.toHaveBeenCalled()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})

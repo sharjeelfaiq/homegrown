@@ -95,3 +95,18 @@ describe('voiceover row states', () => {
     expect(reuse).toHaveBeenCalledTimes(3)
   })
 })
+
+
+it('opens completed voiceover details with generation time and full script', async () => {
+  const reuse = vi.fn()
+  render(<VoiceoverRow entry={completedEntry} nameControl={nameControl} name="My narration" downloadHref="/download" onDelete={vi.fn()} onRequeue={reuse} animateExit={false} />)
+  fireEvent.click(screen.getByRole('button', { name: 'More actions for My narration' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Details' }))
+  const dialog = screen.getByRole('dialog', { name: 'Voiceover details' })
+  expect(dialog).toHaveTextContent('My narration')
+  expect(dialog).toHaveTextContent('Generation time2 seconds')
+  expect(dialog).toHaveTextContent('A sample script.')
+  expect(reuse).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})

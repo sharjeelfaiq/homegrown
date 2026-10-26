@@ -26,9 +26,10 @@ import { AppTooltip } from '../../components/ui/Tooltip'
 import VoiceoverPlayer from '../../components/audio/VoiceoverPlayer'
 import HistoryRowHead, { type NameControl } from './HistoryRowHead'
 import { showUndoDeleteToast } from '../../components/ui/UndoDeleteToast'
-import { ArrowDown as ArrowDownIcon, ArrowUp as ArrowUpIcon, Check as CheckIcon, ChevronLeft, ChevronRight, X as CrossIcon, Download as DownloadIcon, Ellipsis as MoreIcon, Play as PlayIcon, Trash2 as TrashIcon } from 'lucide-react'
+import { Info, ArrowDown as ArrowDownIcon, ArrowUp as ArrowUpIcon, Check as CheckIcon, ChevronLeft, ChevronRight, X as CrossIcon, Download as DownloadIcon, Ellipsis as MoreIcon, Play as PlayIcon, Trash2 as TrashIcon } from 'lucide-react'
 import type { VoiceoverFilterState } from './VoiceoverFilters'
 import VoiceoverFilters from './VoiceoverFilters'
+import RecordDetailsModal from '../../components/ui/RecordDetailsModal'
 import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from './historyPageSize'
 import { fetchHistoryPage, historyQueryKey, normalizeHistoryRequest } from './historyQuery'
@@ -581,6 +582,7 @@ export function VoiceoverRow({
   menuPlacement?: 'up' | 'down'
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const reduced = usePrefersReducedMotion()
   return (
@@ -647,6 +649,7 @@ export function VoiceoverRow({
                 <MoreIcon size={15} />
               </Dropdown.Trigger>
               <Dropdown.Content side={menuPlacement === 'down' ? 'bottom' : 'top'} align="end" sideOffset={4} className="min-w-40">
+                    <Dropdown.Item className="dropdown-menu-item" onClick={() => setDetailsOpen(true)}><Info size={14} aria-hidden="true" />Details</Dropdown.Item>
                     <Dropdown.Item className="dropdown-menu-item dropdown-menu-item-danger" onClick={onDelete}>
                       <TrashIcon size={14} />Delete
                     </Dropdown.Item>
@@ -657,6 +660,7 @@ export function VoiceoverRow({
       </div>
 
       </div>
+      <RecordDetailsModal kind="voiceover" record={detailsOpen ? entry : null} name={name} onClose={() => setDetailsOpen(false)} />
     </motion.li>
   )
 }

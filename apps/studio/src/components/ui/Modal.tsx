@@ -10,7 +10,7 @@ interface Props {
   title: string
   onClose: () => void
   children: ReactNode
-  size?: 'default' | 'settings'
+  size?: 'default' | 'settings' | 'details'
 }
 
 const FOCUSABLE =
@@ -116,7 +116,7 @@ export default function Modal({ open, title, onClose, children, size = 'default'
         >
           <motion.div
             ref={panelRef}
-            className={`flex max-h-[min(85svh,720px)] w-[min(460px,100%)] flex-col overflow-hidden rounded-lg border border-hairline-strong bg-surface-card outline-none ${size === 'settings' ? 'settings-modal-panel' : ''}`}
+            className={`flex max-h-[min(85svh,720px)] w-[min(460px,100%)] flex-col overflow-hidden rounded-lg border border-hairline-strong bg-surface-card outline-none ${size === 'settings' ? 'settings-modal-panel' : size === 'details' ? 'h-[min(520px,85svh)]' : ''}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}

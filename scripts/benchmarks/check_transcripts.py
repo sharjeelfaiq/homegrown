@@ -23,6 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('phase', type=Path)
     parser.add_argument('--model', default='base')
+    parser.add_argument('--replay', action='store_true', help='Check paired identical-token waveform replay WAVs')
     args = parser.parse_args()
     os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
     from faster_whisper import WhisperModel
@@ -31,21 +32,27 @@ def main():
     private = json.loads((args.phase / 'inputs/input.json').read_text(encoding='utf-8'))
     report = json.loads((args.phase / 'report.json').read_text())
     results, transcripts = [], {}
-    for run in report['runs']:
-        if not run['complete'] or run['case'] == 'single-chunk':
+    if args.replay:
+        cases = [(f'{case}-{decoder}', args.phase / f'replay-{case}-{decoder}.wav')
+                 for case in ('first', 'warm-1') for decoder in ('legacy', 'bounded')]
+    else:
+        cases = [(run['case'], args.phase / f"{run['case']}-listening.mp3")
+                 for run in report['runs'] if run['complete'] and run['case'] != 'single-chunk']
+    for case, path in cases:
+        if not path.is_file():
             continue
-        path = args.phase / f"{run['case']}-listening.mp3"
         segments, info = model.transcribe(str(path), condition_on_previous_text=False,
                                          vad_filter=True, beam_size=5)
         text = ' '.join(s.text.strip() for s in segments).strip()
-        transcripts[run['case']] = text
-        results.append(dict(case=run['case'], language=info.language,
+        transcripts[case] = text
+        results.append(dict(case=case, language=info.language,
                             transcript_chars=len(text), wer=word_error_rate(private['text'], text)))
     # Never print private script/transcripts to terminal or tracked reports.
-    (args.phase / 'offline-transcripts.json').write_text(json.dumps(transcripts), encoding='utf-8')
+    prefix = 'replay-' if args.replay else ''
+    (args.phase / f'{prefix}offline-transcripts.json').write_text(json.dumps(transcripts), encoding='utf-8')
     result = dict(device='cpu', model=args.model, compute_type='int8', cases=results,
                   caveat='ASR discrepancies are not proof of acoustic defects; human listening is still required')
-    (args.phase / 'transcript-check.json').write_text(json.dumps(result, indent=2))
+    (args.phase / f'{prefix}transcript-check.json').write_text(json.dumps(result, indent=2))
     print(json.dumps(result, indent=2))
 
 

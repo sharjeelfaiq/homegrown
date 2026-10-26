@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ChevronLeft, ChevronRight, Download as DownloadIcon, Ellipsis as EllipsisIcon, LoaderCircle, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon, Upload as UploadIcon } from 'lucide-react'
+import { Info, ChevronLeft, ChevronRight, Download as DownloadIcon, Ellipsis as EllipsisIcon, LoaderCircle, Pause as PauseIcon, Play as PlayIcon, Trash2 as TrashIcon, Upload as UploadIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatToastTitle } from '../../lib/messageFormatting'
 import { mediaUrl, presetDownloadUrl, type Preset } from '../../lib/api'
@@ -9,6 +9,7 @@ import { useGenerationActivity } from '../generation/GenerationActivityContext'
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 import { Dropdown } from '../../components/ui/Dropdown'
 import DropdownSelect from '../../components/ui/DropdownSelect'
+import RecordDetailsModal from '../../components/ui/RecordDetailsModal'
 import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
 import InlineName from '../../components/ui/InlineName'
 import { useVoiceCloneQueue, type CloneQueueDisplayItem } from './useVoiceCloneQueue'
@@ -60,6 +61,7 @@ export default function ClonedVoicesSection({
   const [page, setPage] = useState(0)
   const [cloneQueue, setCloneQueue] = useState<CloneQueueDisplayItem[]>([])
   const [previewingId, setPreviewingId] = useState<string | null>(null)
+  const [detailsPreset, setDetailsPreset] = useState<Preset | null>(null)
   const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
   const rootRef = useRef<HTMLElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -317,6 +319,7 @@ export default function ClonedVoicesSection({
                     <Dropdown.Trigger className="icon-btn" aria-label={`More actions for ${preset.name}`}><EllipsisIcon size={14} /></Dropdown.Trigger>
                   </AppTooltip>
                   <Dropdown.Content side="bottom" align="end" sideOffset={4} className="row-actions-menu">
+                    <Dropdown.Item className="dropdown-menu-item" onClick={() => setDetailsPreset(preset)}><Info size={14} aria-hidden="true" />Details</Dropdown.Item>
                     <Dropdown.Item className="dropdown-menu-item dropdown-menu-item-danger gap-2" onClick={() => { stopPreview(); setDeletePreset(preset) }}><TrashIcon size={14} aria-hidden="true" /> Delete</Dropdown.Item>
                   </Dropdown.Content>
                 </Dropdown.Root>
@@ -370,6 +373,7 @@ export default function ClonedVoicesSection({
         </div>
         </>
       )}
+      <RecordDetailsModal kind="voice" record={detailsPreset} onClose={() => setDetailsPreset(null)} />
       <ConfirmDeleteModal
         open={deletePreset !== null}
         title="Delete voice?"

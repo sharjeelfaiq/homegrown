@@ -26,9 +26,10 @@ describe('history query request normalization', () => {
   it('projects private reference fields out of persisted voice data', () => {
     const projected = persistablePreset({
       id: 'voice', name: 'Ada', language: 'English', tag: '', preview_url: '/audio/preview',
-      created_at: 1, ref_seconds: 5, chunk_chars: 100, ref_text: 'private transcript', audio_path: 'private path',
+      created_at: 1, cloning_s: 12.5, ref_seconds: 5, chunk_chars: 100, ref_text: 'private transcript', audio_path: 'private path',
     })
     expect(projected).toMatchObject({ id: 'voice', name: 'Ada', preview_url: '/audio/preview' })
+    expect(projected.cloning_s).toBe(12.5)
     expect(projected.ref_text).toBe('')
     expect(projected.audio_path).toBe('')
   })

@@ -80,6 +80,10 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   `scripts/benchmarks/voice_generation.md` documents isolated offline profiling.
   `HOMEGROWN_STORAGE_DIR` can redirect source or packaged runtime storage;
   benchmark artifacts belong under ignored `.tmp/voice-speed/`.
+  Voice-clone waveform streaming skips discarded reference-only vocoder blocks
+  while preserving the original block alignment/context and PCM slicing; see
+  `docs/waveform-decoding-results.md`. The full reference still conditions codec
+  prediction. Keep inference timing instrumentation in benchmark scripts.
 - There is one fixed local user (`local-user`), no accounts, and no workspaces.
   Ordinary API actions, including individual voice and voiceover deletion, do
   not require authentication. Permanent bulk deletion is additionally gated by
@@ -127,6 +131,16 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   not mutate history.
 - The initial history skeleton is shown only when `isLoading` has no query
   data. Placeholder/cached history remains visible during refetches.
+
+Both completed voiceovers and cloned voices expose Details in their three-dot
+menus with an Info icon, using the shared RecordDetailsModal. Both details
+panels share a 460px width and 520px height, constrained to the viewport, with
+scrolling content. Script previews show at most 100 characters followed by an
+ellipsis when truncated. Voiceovers show persisted generation
+time; new clones persist server processing time as cloning_s (upload read,
+validation, trimming and transcription, excluding network upload and browser
+queue wait). Older voices show Not recorded. Voice cache projections retain
+cloning_s without retaining private reference transcripts or storage paths.
 
 ## UI and queue contract
 

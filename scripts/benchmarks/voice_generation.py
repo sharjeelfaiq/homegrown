@@ -85,6 +85,8 @@ class Measurements:
         self.token_group_starts = []
         self.final_pcm = None
         self.final_sample_rate = None
+        self.references = []
+        self.vocoder_calls = []
 
     def wrap(self, name, fn):
         def measured(*args, **kwargs):
@@ -97,7 +99,17 @@ class Measurements:
             start.record()
             wall = time.perf_counter()
             try:
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
+                if name == 'input_preparation_inclusive':
+                    reference = result[-1]
+                    self.references.append(reference.detach().clone() if reference is not None else None)
+                if name == 'vocoder':
+                    audio = result[0][0]
+                    samples = audio.numel() if hasattr(audio, 'numel') else audio.size
+                    self.vocoder_calls.append(dict(input_frames=int(args[0]['audio_codes'].shape[1]),
+                        output_samples=int(samples), wall_s=time.perf_counter() - wall,
+                        group=len(self.token_group_starts) - 1))
+                return result
             finally:
                 end.record()
                 self.records.append((name, time.perf_counter() - wall, start, end))
@@ -193,6 +205,8 @@ def main():
     parser.add_argument('--baseline', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--budget-seconds', type=int, default=600)
+    parser.add_argument('--decoder', choices=['legacy', 'bounded', 'prefix-skip'], default='legacy')
+    parser.add_argument('--waveform-replay', type=Path, help='Replay captured baseline tokens within this phase budget')
     args = parser.parse_args()
     if not 1 <= args.budget_seconds <= 600:
         parser.error('Each phase must use 1..600 seconds (20 minutes total approved)')
@@ -247,6 +261,8 @@ def main():
                         style=private['style'], language=private['language'],
                         max_seq_len=config.MAX_SEQ_LEN, dtype='bfloat16', attention='sdpa')
         from qwen import FasterQwen3TTS
+        from qwen.faster_qwen3_tts import DECODE_CHUNK_FRAMES
+        settings['vocoder_block_frames'] = DECODE_CHUNK_FRAMES
         settings['stream_defaults'] = {
             name: parameter.default for name, parameter in
             inspect.signature(FasterQwen3TTS.generate_voice_clone_streaming).parameters.items()
@@ -256,9 +272,11 @@ def main():
             raise ValueError('Generation settings/chunking differ from baseline')
         manifest['settings'] = settings
         (output / 'manifest.json').write_text(json.dumps(manifest, indent=2))
-        source_hashes = {str(p.relative_to(ROOT)): digest(p) for p in
-                         [*sorted((ROOT / 'engine/qwen').glob('*.py')), Path(__file__)]}
-        report = dict(phase=args.phase, source_hashes=source_hashes,
+        source_paths = [*sorted((ROOT / 'engine/qwen').glob('*.py')),
+                        *sorted(Path(__file__).parent.glob('*.py')),
+                        *sorted(Path(__file__).parent.glob('*.ps1'))]
+        source_hashes = {str(p.relative_to(ROOT)): digest(p) for p in source_paths}
+        report = dict(phase=args.phase, decoder=args.decoder, source_hashes=source_hashes,
                       platform=platform.platform(), python=sys.version,
                       versions={n: importlib.metadata.version(n) for n in
                                 ['torch', 'transformers', 'qwen-tts', 'numpy', 'soundfile']},
@@ -281,12 +299,25 @@ def main():
         torch.cuda.synchronize()
         report['load_s'] = time.perf_counter() - start
         report['gpu'] = torch.cuda.get_device_name()
+        tokenizer_model = model._tts.speech_tokenizer.model
+        decoder = tokenizer_model.decoder
+        report['decoder_contract'] = dict(stride=int(tokenizer_model.decode_upsample_rate),
+            total_upsample=int(decoder.total_upsample),
+            sliding_window=decoder.config.sliding_window, layer_types=decoder.config.layer_types,
+            decode_chunk_frames=int(inspect.signature(decoder.chunked_decode).parameters['chunk_size'].default),
+            left_context_frames=int(inspect.signature(decoder.chunked_decode).parameters['left_context_size'].default),
+            implementation_hash=digest(inspect.getfile(type(decoder))))
         save()
         if monitor.interfered.is_set():
             report['interference'] = 'Backend reappeared during loading; benchmark deferred'
             save()
             return
-        if args.phase == 'candidate' and time.monotonic() < deadline:
+        from bounded_waveform_candidate import install
+        install(model._tts, 'legacy')
+        legacy_stream = model._tts.generate_voice_clone_streaming
+        if args.decoder != 'legacy':
+            install(model._tts, args.decoder)
+        if args.phase == 'candidate' and args.decoder == 'legacy' and time.monotonic() < deadline:
             from candidate_diagnostics import run as diagnostics
             report['independent_microbenchmarks'] = diagnostics(torch)
             save()
@@ -324,6 +355,7 @@ def main():
                                (tts, '_build_talker_inputs_local', 'input_assembly'),
                                (tts.model.model.talker, 'forward', 'prefill'),
                                (tts.speech_tokenizer, 'decode', 'vocoder'),
+                               (tts.speech_tokenizer.model.decoder, 'forward', 'vocoder_block'),
                                (worker.audio_stitcher, 'trim_edge_silence', 'trimming'),
                                (worker.audio_stitcher, 'stitch_audio', 'stitching_inclusive'),
                                (worker.audio_convert, 'write_mp3', 'encoding'),
@@ -343,6 +375,7 @@ def main():
                 report['interference'] = 'Backend reappeared; comparison invalid'
             finally:
                 run['stages'] = measurements.resolve()
+                run['vocoder_calls'] = measurements.vocoder_calls
                 run['processing_s'] = time.perf_counter() - start
                 run['peak_allocated_bytes'] = torch.cuda.max_memory_allocated()
                 run['peak_reserved_bytes'] = torch.cuda.max_memory_reserved()
@@ -356,6 +389,8 @@ def main():
                 run['queue_wait_s'] = max(0, job['started_at'] - job['submitted_at']) if job['started_at'] else None
                 if measurements.tokens:
                     torch.save([t.cpu() for t in measurements.tokens], output / f'{case}-codec.pt')
+                    torch.save([r.cpu() if r is not None else None for r in measurements.references],
+                               output / f'{case}-references.pt')
                 if run['complete']:
                     entry = stores._history[0]
                     audio_path = config.GEN_DIR / Path(entry['audio_url']).name
@@ -371,6 +406,10 @@ def main():
                 save()
             if report.get('interference'):
                 break
+        if args.waveform_replay and not report.get('interference') and time.monotonic() < deadline:
+            from replay_waveforms import replay
+            report['waveform_replay'] = replay(model._tts, legacy_stream, args.waveform_replay,
+                                               output, deadline, monitor, args.decoder)
         report['budget_exhausted'] = time.monotonic() >= deadline
         save()
         print(str(output / 'report.json'))

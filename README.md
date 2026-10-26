@@ -301,5 +301,7 @@ docs/workflow.md   day-to-day Studio workflow
   [engine/qwen/README.md](engine/qwen/README.md) for the vendored wrapper.
 - Use the [isolated voice benchmark](scripts/benchmarks/voice_generation.md)
   for reproducible offline generation measurements without modifying user data.
+  The [waveform decoding evaluation](docs/waveform-decoding-results.md) documents
+  the retained optimization and its performance/quality evidence.
 - `docs/archive/` is archival material only; it documents superseded cloud and
   pre-migration workflows and is not executable guidance.

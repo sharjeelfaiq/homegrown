@@ -1,5 +1,9 @@
 # Voice generation measurements — 26 October 2026
 
+This is the earlier exploratory benchmark. A subsequent controlled evaluation
+retained a decoder optimization with a measured speedup; see
+[waveform-decoding-results.md](waveform-decoding-results.md).
+
 Retained: an instance-owned prompt LRU with 16 entries and a 16 MiB tensor-storage
 limit, full transcript/mode/batch/device/dtype identity, resolved file path,
 size and nanosecond modification time. Failed file inspection and oversized
