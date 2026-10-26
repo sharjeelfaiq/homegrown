@@ -13,8 +13,9 @@ import { bootStatusPlugin } from './tooling/vite-boot-status.js'
 // against the same base -- miss them and the API works while playback silently
 // 404s.
 //
-// bootStatusPlugin is a dev-only diagnostic route for inspecting the boot file.
-// Studio progress itself comes from /api/models in dev and packaged builds.
+// bootStatusPlugin is unrelated to the proxy -- it proxies nothing, reading
+// services/voice-api/storage/boot_status.json off disk instead, because during startup
+// the backend has no bound port to proxy TO. See vite-boot-status.ts.
 export default defineConfig({
   plugins: [react(), tailwindcss(), bootStatusPlugin()],
   test: {

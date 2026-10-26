@@ -7,7 +7,6 @@ import RuntimeModelReadout from './RuntimeModelReadout'
 
 const readyHealth: HealthResponse = {
   model_loaded: true,
-  generation_ready: true,
   sample_rate: 24000,
   device: 'cuda',
   device_reason: 'NVIDIA GeForce GTX 970 (sm_52)',
@@ -26,10 +25,9 @@ describe('RuntimeModelReadout', () => {
   })
 
   it('shows the CPU when the backend selected its CPU fallback', () => {
-    render(<RuntimeModelReadout health={{ ...readyHealth, model_loaded: false, generation_ready: false, device: 'cpu', device_reason: 'No usable GPU' }} loading={false} />)
+    render(<RuntimeModelReadout health={{ ...readyHealth, device: 'cpu', device_reason: 'No usable GPU' }} loading={false} />)
 
     expect(screen.getByText('CPU')).toBeInTheDocument()
-    expect(screen.getByText('Unavailable')).toBeInTheDocument()
   })
 
   it('never displays model names or model-type clues', () => {
@@ -45,20 +43,7 @@ describe('RuntimeModelReadout', () => {
     rerender(<RuntimeModelReadout health={{
       ...readyHealth,
       model_loaded: false,
-      generation_ready: false,
     }} loading={false} />)
-    expect(screen.getByText('Unavailable')).toBeInTheDocument()
-    expect(screen.getByText('NVIDIA GeForce GTX 970')).toBeInTheDocument()
-  })
-
-  it('reports model download progress while the engine is initializing', () => {
-    render(<RuntimeModelReadout
-      health={null}
-      loading
-      progress={{ phase: 'downloading', detail: '1.0 GB of 2.5 GB', percent: 42 }}
-    />)
-
-    expect(screen.getByText('Downloading 42%')).toBeInTheDocument()
-    expect(screen.getByText('Detecting…')).toBeInTheDocument()
+    expect(screen.getAllByText('Unavailable')).toHaveLength(2)
   })
 })

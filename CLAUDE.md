@@ -75,8 +75,8 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   skeletons; do not use Boneyard's Suspense wrapper because history uses
   ordinary React Query.
 - `engine/qwen/` is the vendored CUDA-graph TTS wrapper. The backend supports a
-  slow CPU fallback. Studio generation is enabled after a successful model load
-  on either device, and reports CPU's slow performance.
+  slow CPU fallback; Studio generation stays disabled unless health confirms
+  the model is loaded on CUDA.
 - There is one fixed local user (`local-user`), no accounts, and no workspaces.
   Ordinary API actions, including individual voice and voiceover deletion, do
   not require authentication. Permanent bulk deletion is additionally gated by
@@ -183,7 +183,7 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   suppresses the browser's default file-open behavior.
   Clone voice stays disabled until `wakeBackend` observes `model_loaded: true`.
   Generate additionally stays disabled until health confirms the model is
-  loaded on its active device; a successfully loaded CPU fallback enables it.
+  loaded on a CUDA device; a CPU fallback does not enable generation.
   During startup the Clone voice control and voice selection rows are disabled
   with the tooltip `Available when the voice model is ready.` Generate retains
   its model-loading tooltip. The API

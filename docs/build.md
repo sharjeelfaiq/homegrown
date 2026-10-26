@@ -81,16 +81,15 @@ first remove the same previous build outputs listed above.
 | Python 3.13 for the tested Windows dependency set | `python --version` | python.org |
 | Node 20.19+ or 22.12+, with npm | `node --version` | nodejs.org |
 | 7-Zip, incl. `7z.sfx` | `ls "/c/Program Files/7-Zip/7z.sfx"` | `winget install 7zip.7zip` |
-| NVIDIA GPU + working CUDA driver (recommended for faster Studio generation; CPU inference is supported after a successful load) | `nvidia-smi` | GeForce driver |
+| NVIDIA GPU + working CUDA driver (required for Studio generation; CPU supports voice management) | `nvidia-smi` | GeForce driver |
 
 ---
 
 ## 1. Python environment and model
 
 Complete [First-time setup](../README.md#first-time-setup) before building. It
-creates `.venv`, installs `services/voice-api/requirements.txt`, configures
-`services/voice-api/.env`, and installs Studio dependencies. Model downloads
-are on demand from Studio; a model is not required to build the app.
+creates `.venv`, installs `services/voice-api/requirements.txt`, downloads the
+model, configures `services/voice-api/.env`, and installs Studio dependencies.
 The API has no accounts or general authentication. Ordinary actions, including
 individual deletes, are unauthenticated; permanent bulk deletion additionally
 requires `HOMEGROWN_ADMIN_PASSWORD`. Use the packaged app only on a trusted
@@ -110,7 +109,7 @@ not a runtime dependency.
 Do these before spending 30 minutes freezing a broken build.
 
 `npm run build` runs eight validations: the five Python checks below, Studio
-tests, Studio lint, and the legacy splash source freshness check. All eight must pass; each
+tests, Studio lint, and the splash freshness check. All eight must pass; each
 exists because something once shipped broken past it. The build installs Studio
 dependencies before these validations, then runs `build_splash.py --check`
 last because it needs the Tailwind CLI from `apps/studio/node_modules`.
@@ -193,15 +192,17 @@ cd services/voice-api && TMP=../../.tmp TEMP=../../.tmp ../../.venv/Scripts/pyin
 cd desktop/launcher && TMP=../../.tmp TEMP=../../.tmp ../../.venv/Scripts/pyinstaller.exe launcher.spec --clean --noconfirm && cd ../..
 ```
 
-`build_splash.py` compiles the legacy launcher loading-screen source —
+`build_splash.py` compiles the launcher's loading screen —
 `desktop/launcher/splash/index.html` and `desktop/launcher/splash/styles.css` — with the
-Tailwind CLI and writes `desktop/launcher/_splash.py`. The current
-`launcher.py` does not import or display this generated page; the splash source
-is retained as a legacy asset. The repository build still checks that the
-generated module matches its sources.
+Tailwind CLI and writes `desktop/launcher/_splash.py`, which `launcher.py`
+imports. It must run **before** the launcher freeze, or the exe
+ships whatever `_splash.py` last held.
 
-`_splash.py` is committed; `python scripts/build/build_splash.py --check` fails
-if it is stale relative to its sources.
+That splash is the one surface that cannot use the Tailwind Play CDN the landing
+page uses: it has to paint with no backend and frequently no network, which is
+exactly when a CDN is unavailable. `_splash.py` is committed, so a build on a
+machine without npm still produces a working exe; `python scripts/build/build_splash.py
+--check` fails if it is stale relative to its sources.
 
 ## Brand assets
 
@@ -212,8 +213,8 @@ page's `favicon.ico` and `logo.svg`, and `desktop/assets/icon.ico` (the Windows
 executable icon used by `launcher.spec`). `--check` fails on a stale SVG or a
 missing or wrongly sized PNG/ICO. Pillow rasterises the PNG/ICO files, so their
 bytes are not compared. The mark is also inlined in `BrandMark.tsx`, the landing
-page's header and footer; change those copies together with the generator. The
-legacy launcher splash is not part of the active app launch flow.
+page's header and footer, and the launcher splash; change the bars in the
+generator and those copies together, then rebuild `_splash.py`.
 
 It is a generated **module**, not a data file. `desktop/launcher/launcher.spec` declares
 `datas=[]` and PyInstaller follows imports, so the spec needs no change.
@@ -240,9 +241,8 @@ mkdir -p dist/Homegrown/storage/references \
 
 `desktop/launcher/launcher.py` looks for `backend/backend.exe` beside itself; this is that layout.
 
-`models/` ships **empty**. Standard downloads to the configured `MODEL_PATH`
-or `<install>/models`; Higher quality uses `HIGHER_MODEL_PATH` or
-`<install>/storage/models/higher`.
+`models/` ships **empty** — the app downloads the model on first run into
+`<install>/models`.
 
 ---
 
@@ -268,8 +268,7 @@ Cheaper to catch a bad build here than after compressing 1.8 GB.
 
 Expect, in order:
 
-1. Studio opens within a few seconds once the local API serves the frontend;
-   model download and initialization are separate background work.
+1. A browser **loader within ~2 seconds** — not a blank desktop.
 2. `dist/Homegrown/storage/boot_status.json` appears during startup.
 3. `dist/Homegrown/storage/backend.log` gets written.
 4. The backend listens on `0.0.0.0:8731` for trusted LAN access, so Windows may show a firewall
@@ -282,9 +281,7 @@ Expect, in order:
      action=allow program="C:\Homegrown\backend\backend.exe" ^
      protocol=TCP localport=8731 enable=yes profile=private
    ```
-5. If a model is already installed, Studio shows its loading state until it is
-   ready. If none is installed, onboarding stays available; select Standard or
-   Higher quality to download it and follow progress in Studio.
+5. The loader redirects to the app once the model has loaded.
 6. In Studio, open the header **Settings** dialog. Confirm it offers a System
    choice and every named theme in a stable order. Select each named theme and
    confirm the options remain visible and in the same order, then select System
@@ -316,14 +313,15 @@ Expect, in order:
    immediately. Start FastAPI while the model is still loading: API-backed voice
    rows, language options, and uncached history or initial queue rows should
    show skeletons while the rest of Studio remains visible. Confirm
-   `/api/health` reports readiness and `/api/models` reports startup and
-   download progress. Model-dependent requests wait during initialization;
-   pending requests should finish after readiness or receive HTTP 503 if
-   startup fails. Generate and Clone voice should remain visible but disabled
-   during startup. After a successful load, both should enable when their form
-   prerequisites are met, including after CPU fallback; the assessment should
-   explain that CPU generation is slow. The packaged launcher opens Studio as
-   soon as the API serves the frontend, while model setup continues there.
+   `/api/health` responds with startup progress and other API requests wait for
+   initialization; pending requests should finish after readiness or receive
+   HTTP 503 if startup fails. Generate and Clone voice should remain visible but disabled
+   during startup. After loading, Clone voice should enable; Generate should
+   enable only when the model is reported on CUDA and the form prerequisites
+   are met. On CPU fallback, confirm Clone voice enables and Generate remains
+   disabled with a CUDA-required explanation. The packaged launcher displays
+   its browser splash while the backend initializes, then opens Studio after
+   readiness.
 8. In the Voices card, confirm the search covers cloned voices only.
    Search with a mixed-case substring and confirm only matching rows remain;
    check the 50/80/100 page-size choices (default 50), the matching total, and previous,
@@ -407,7 +405,7 @@ individual deletion, uploading voices, and generating audio. Permanent
 collection-wide deletion also requires the local `HOMEGROWN_ADMIN_PASSWORD`.
 Trusted networks only.
 
-If Studio never opens, check the launcher and `backend.log` for startup errors.
+If the loader never appears, the launcher exe is stale — step 4 did not rebuild.
 
 Stop the app before continuing.
 
@@ -458,14 +456,13 @@ a folder outside the repo, and run `Homegrown.exe` from there.
 3. Runs `Homegrown.exe` inside it.
 4. **SmartScreen warns once** — "Windows protected your PC" → More info → Run
    anyway. The exe is unsigned; only an Authenticode certificate removes this.
-5. On first launch, choose a model in Studio. Download size depends on the
-   choice and progress appears in Studio.
+5. First launch downloads the ~2.5 GB model, with progress shown in the loader.
 
-**Requirements to state to them:** Windows and enough free disk for the chosen
-model plus generated app data. An NVIDIA GPU with working CUDA drivers is
-recommended for faster generation; CPU generation is available after a
-successful load but can be very slow. The 4 GB VRAM figure is a historical
-tested profile, not a guaranteed minimum.
+**Requirements to state to them:** Windows and about 8 GB free disk, plus
+about 2.5 GB for the model download. Studio generation requires an NVIDIA GPU
+with working CUDA drivers; on CPU fallback, voice management remains available
+but Generate stays disabled. The
+4 GB VRAM figure is a historical tested profile, not a guaranteed minimum.
 No Python, no Node.
 
 There is no installer, no Start Menu entry and no uninstaller — uninstalling
@@ -478,7 +475,7 @@ means deleting the folder.
 | Symptom | Cause |
 |---|---|
 | `apps/studio/dist is missing` during step 4 | Step 3 was skipped |
-| Studio never opens | Check `backend.log`, port availability, and the frozen launcher build |
+| Loader never appears | Stale launcher exe — re-run step 4 |
 | Firewall prompt on first run | Expected when `backend.exe` binds `0.0.0.0:8731`; allow it only on a trusted private network |
 | Long-reference warning is missing | Backend predates the `POST /api/estimate` chunking check — rebuild |
 | PyInstaller runs out of disk | `TMP`/`TEMP` not redirected in step 4 |

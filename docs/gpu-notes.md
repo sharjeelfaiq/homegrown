@@ -2,9 +2,7 @@ LOCAL GPU NOTES — Homegrown (Qwen3-TTS-12Hz-0.6B)
 ======================================================================
 
 These are dated measurements and tuning notes from specific local GPUs, not a
-live inventory or guarantees about another machine. They cover GPU execution;
-the app also supports CPU inference after a successful model load, with much
-slower generation. Runtime constants can
+live inventory or guarantees about another machine. Runtime constants can
 change; check `services/voice-api/homegrown_api/config.py` for the values currently in source.
 The capacity notes below are observations, not a tested compatibility or
 performance guarantee.

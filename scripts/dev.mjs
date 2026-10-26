@@ -26,7 +26,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import concurrently from 'concurrently';
-import { modelPathWarning } from './dev/model-path-preflight.mjs';
 
 // Same convention as scripts/*.py: locate the repository from this file rather
 // than from the caller's working directory, so `npm run dev` works from anywhere.
@@ -57,18 +56,18 @@ if (!isFile(python)) {
 }
 
 const backendEnvPath = atRoot('services', 'voice-api', '.env');
-const backendEnv = isFile(backendEnvPath) ? fs.readFileSync(backendEnvPath, 'utf8') : '';
-const modelWarning = modelPathWarning({
-  envExists: isFile(backendEnvPath),
-  envText: backendEnv,
-  processModelPath: process.env.MODEL_PATH ?? '',
-});
-if (modelWarning) warn(modelWarning);
+if (!isFile(backendEnvPath)) {
+  die('services/voice-api/.env is missing. Copy services/voice-api/.env.example and set MODEL_PATH; see README.md: First-time setup.');
+}
+const backendEnv = fs.readFileSync(backendEnvPath, 'utf8');
+if (!/^MODEL_PATH=.+/m.test(backendEnv)) {
+  die('services/voice-api/.env has no MODEL_PATH. Set it to your downloaded model folder; see README.md: First-time setup.');
+}
 
 // ALLOWED_ORIGINS only matters for requests a browser sends straight to the
 // backend. Through the dev proxy they arrive from Vite instead, server-side,
 // and CORS never applies.
-if (backendEnv && !/^ALLOWED_ORIGINS=.*127\.0\.0\.1:5173/m.test(backendEnv)) {
+if (!/^ALLOWED_ORIGINS=.*127\.0\.0\.1:5173/m.test(backendEnv)) {
   warn('services/voice-api/.env ALLOWED_ORIGINS does not list http://127.0.0.1:5173 --');
   warn('harmless while the dev proxy is in use, but not if something bypasses it.');
 }
@@ -77,7 +76,7 @@ if (!isDir(atRoot('apps', 'studio', 'node_modules'))) {
   die('apps/studio/node_modules is missing. Run: npm install --prefix apps/studio');
 }
 
-console.log('    venv and Studio node_modules present; local .env/model paths are optional.');
+console.log('    venv, services/voice-api/.env and node_modules all present.');
 
 // apps/studio/dist only matters here as a footgun: the backend registers its SPA
 // catch-all when dist exists, so :8000 will serve a *built* copy of the app
@@ -94,7 +93,7 @@ if (isDir(atRoot('apps', 'studio', 'dist'))) {
 // those writes a permanent Block rule for that exe path, which nothing in the
 // app can undo. One prompt (Node, for :5173) is enough.
 bold('Frontend  http://localhost:5173');
-bold('Backend   http://127.0.0.1:8000   (starts after Studio; model setup continues in Studio when needed)');
+bold('Backend   http://127.0.0.1:8000   (starts after Studio is available; model loading can take up to 3 minutes)');
 
 const { result, commands } = concurrently(
   [
@@ -155,23 +154,6 @@ async function pollHealth() {
       process.stdout.write('\x1b[33m    CPU fallback: generation will take many minutes per chunk.\x1b[0m\n');
     }
     return;
-  }
-  if (body?.startup_error) {
-    process.stdout.write('\n\x1b[1m==> voice model needs attention -- open Studio for retry options\x1b[0m\n');
-    return;
-  }
-  if (body && body.model_loaded === false) {
-    try {
-      const models = await fetch('http://127.0.0.1:8000/api/models', {
-        signal: AbortSignal.timeout(2000),
-      }).then((res) => res.ok ? res.json() : null);
-      if (models && !models.selected && !models.busy) {
-        process.stdout.write('\n\x1b[1m==> Studio ready for first-run model setup -- open http://localhost:5173\x1b[0m\n');
-        return;
-      }
-    } catch {
-      // The backend may have answered health before the management route is ready.
-    }
   }
   // unref so this poller alone never holds the process open.
   readinessTimer = setTimeout(pollHealth, 2000).unref();

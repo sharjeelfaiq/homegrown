@@ -17,54 +17,6 @@ interface Props {
   onBulkDelete: (kind: 'history' | 'presets', adminPassword: string) => Promise<BulkDeleteResult>
 }
 
-interface ModelChoice { available: boolean; installed: boolean; device?: string; status?: string }
-
-function VoiceModelAvailability({ open }: { open: boolean }) {
-  const [choices, setChoices] = useState<Record<string, ModelChoice> | null>(null)
-  const [recommended, setRecommended] = useState('standard')
-  const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
-  useEffect(() => {
-    if (!open) return
-    let active = true
-    fetch('/api/models').then((response) => response.ok ? response.json() : null).then((body) => {
-      if (active) { setChoices(body?.choices ?? null); setRecommended(body?.recommended ?? 'standard') }
-    }).catch(() => { if (active) setChoices(null) })
-    return () => { active = false }
-  }, [open])
-  const labels = [['standard', 'Standard'], ['higher', 'Higher quality']] as const
-  return <section className="settings-section mt-6" aria-labelledby="voice-model-heading">
-    <h3 id="voice-model-heading" className="m-0 font-mono text-[11px] font-normal tracking-[0.1em] uppercase text-muted">Voice model</h3>
-    <div className="mt-3 grid gap-2">
-      {labels.map(([key, label]) => {
-        const choice = choices?.[key]
-        const available = choice?.available === true || choice?.status === 'Unknown'
-        return <div key={key} className={`model-setup-option ${available ? '' : 'model-setup-option-unavailable'}`}>
-          <span className="model-setup-option-copy"><strong>{label}{recommended === key ? ' · Recommended' : ''}</strong></span>
-          <span className="model-setup-option-tag">{!choice?.status || choice.status === 'Unknown' ? 'Fit unknown' : `${choice.status} · ${choice.device ?? 'Unknown'}${choice.device === 'CPU' ? ' · Slow' : ''}`}</span>
-          <button type="button" className="ghost-btn" disabled={busy || (choice?.available === false && choice?.status !== 'Unknown')} onClick={async () => {
-            setBusy(true); setMessage('')
-            try {
-              const selected = await fetch('/api/models/select', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selection: key }) })
-              const body = await selected.json()
-              if (!selected.ok) throw new Error(body.detail || 'Could not select this model.')
-              if (body.state === 'needs_download') {
-                const downloaded = await fetch('/api/models/download', { method: 'POST' })
-                const result = await downloaded.json()
-                if (!downloaded.ok) throw new Error(result.detail || 'Could not start the download.')
-                setMessage(`${label} download started.`)
-              } else setMessage(`${label} is loading.`)
-            } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not select this model.') }
-            finally { setBusy(false) }
-          }}>{choice?.installed ? 'Use model' : 'Download'}</button>
-        </div>
-      })}
-      {!choices && <p className="m-0 text-[12px] text-muted">Could not confirm model compatibility. Try again when the backend is available.</p>}
-      {message && <p role="status" className="m-0 text-[12px] text-muted">{message}</p>}
-    </div>
-  </section>
-}
-
 /** A small home for durable Studio preferences. */
 export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEnabledChange, onBulkDelete }: Props) {
   const [activeTab, setActiveTab] = useState<'appearance' | 'danger'>('appearance')
@@ -185,7 +137,6 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
         <div className="mt-4">
           <ThemeSwitch />
         </div>
-        <VoiceModelAvailability open={open && activeTab === 'appearance'} />
         <button
           type="button"
           role="switch"

@@ -12,7 +12,6 @@ import homegrown_api.routes.health as routes_health
 import homegrown_api.routes.history as routes_history
 import homegrown_api.routes.presets as routes_presets
 import homegrown_api.routes.queue as routes_queue
-import homegrown_api.routes.models as routes_models
 
 
 app = FastAPI(title="CloneVoicePrompt-style TTS API", lifespan=lifespan.lifespan)
@@ -20,17 +19,12 @@ app = FastAPI(title="CloneVoicePrompt-style TTS API", lifespan=lifespan.lifespan
 
 @app.middleware("http")
 async def wait_for_model(request: Request, call_next):
-    # Health and model management stay reachable while starting or onboarding.
-    # Model-dependent routes wait for initialization, and fail closed when no
-    # model is installed or a load/download operation fails.
-    # Queue reads are safe without an initialized model and keep the Studio's
-    # backend reachability signal accurate during onboarding. Generation and
-    # model-dependent queue mutations remain gated until a model is ready.
-    management = request.url.path in {"/api/models", "/api/models/select", "/api/models/download", "/api/models/cancel", "/api/models/restart", "/api/queue"}
-    if lifespan.startup_active() and request.url.path.startswith("/api/") and request.url.path != "/api/health" and not management:
+    # Health must stay available to the readiness poller. All other API work
+    # waits for startup, so reads and writes observe fully restored state too.
+    if lifespan.startup_active() and request.url.path.startswith("/api/") and request.url.path != "/api/health":
         ready = await lifespan.wait_until_ready(timeout=10 * 60)
         if not ready:
-            detail = "The voice model is not ready. Choose or retry a model in Studio."
+            detail = lifespan.readiness_error() or "Backend initialization timed out. Retry when startup finishes."
             return JSONResponse(
                 status_code=503, content={"detail": detail},
             )
@@ -54,7 +48,6 @@ app.mount("/refs", StaticFiles(directory=str(config.REF_DIR)), name="refs")
 
 app.include_router(routes_downloads.router)
 app.include_router(routes_health.router)
-app.include_router(routes_models.router)
 app.include_router(routes_generation.router)
 app.include_router(routes_presets.router)
 app.include_router(routes_history.router)

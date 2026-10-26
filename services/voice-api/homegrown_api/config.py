@@ -42,12 +42,6 @@ if getattr(sys, "frozen", False):
 else:
     STORAGE_DIR = BACKEND_DIR / "storage"
 
-# Higher quality always has an isolated installation directory under writable
-# local storage; it never reuses or replaces the existing Standard checkpoint.
-HIGHER_MODEL_PATH = os.environ.get(
-    "HIGHER_MODEL_PATH", str(STORAGE_DIR / "models" / "higher")
-)
-
 
 REF_DIR = STORAGE_DIR / "references"
 

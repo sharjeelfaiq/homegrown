@@ -12,8 +12,6 @@ import homegrown_api.generation.model as generation_model
 import homegrown_api.generation.schemas as generation_schemas
 import homegrown_api.generation.text_chunker as generation_text_chunker
 import homegrown_api.generation.worker as generation_worker
-import homegrown_api.model_download as model_download
-from homegrown_api.model_compatibility import compatibility
 import homegrown_api.persistence.media_paths as persistence_media_paths
 import homegrown_api.persistence.stores as persistence_stores
 
@@ -98,12 +96,6 @@ def generate(req: generation_schemas.GenerateRequest, user_id: str = Depends(dep
         history_revision = generation_worker._history_revision
     if generation_model._tts is None:
         raise HTTPException(503, "Model not loaded yet")
-    compatible, reason = compatibility(
-        model_download.active_choice(), generation_model._device,
-        generation_model._gpu_name, generation_model._gpu_memory_mib,
-    )
-    if not compatible:
-        raise HTTPException(503, reason or "Voice generation is unavailable on this device.")
     preset = persistence_stores._find_preset(req.preset_id)
     if preset is None or preset.get("user_id") != user_id or preset.get("is_builtin"):
         raise HTTPException(404, "Selected voice is unavailable. Choose a voice before generating.")
