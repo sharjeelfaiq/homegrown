@@ -73,7 +73,10 @@ startup task probes for a usable device, restores the queue, and loads
 Qwen3-TTS. `/api/health` remains available during startup; other `/api/*`
 requests wait for initialization and return a startup error or timeout if it
 does not complete. Vite proxies `/api`, `/audio`, and `/refs`, so Studio always
-uses same-origin API paths. It prints a LAN address when available.
+uses same-origin API paths. At 1600px and wider, Studio shows generic voice
+engine readiness and the active compute device in the outer left gutter. Model
+identifiers are not exposed through health status. It prints a LAN address
+when available.
 There are no accounts or general API authentication. Ordinary actions,
 including individual deletes, are unauthenticated. Permanent bulk deletion
 from Settings additionally requires the locally configured
@@ -152,9 +155,11 @@ Its footer places the language selector on the left and the compact **Generate**
 action on the right. Generate stays disabled until the script contains
 non-whitespace text, an available voice and a script language are selected,
 health confirms the model is loaded on a CUDA device, and no submission is in
-progress. During model startup, Generate and **Clone voice** are disabled; the
-loading tooltip says the voice model can take up to three minutes. If the
-backend falls back to CPU, Clone voice becomes available after model loading,
+progress. During model startup, Generate shows **Waiting for the voice model to
+load.** The language selector, voice picker, and **Clone voice** control remain
+visible but disabled; hovering them shows **Available when the voice model is
+ready.** If the backend falls back to CPU, Clone voice becomes available after
+model loading,
 but Generate stays disabled and Studio explains that CUDA is required. The
 voice, script-language, filter, and page-size selectors use one shared Base UI
 menu-backed dropdown style.
@@ -174,7 +179,11 @@ the textarea is not focused, and clips the inserted text to the 60,000-character
 limit. If clipboard access is unavailable or denied, Studio shows a toast with
 guidance to use Ctrl+V or check this site's browser permission. The clear
 button below Paste is disabled for an empty textarea and clears all script text
-when enabled.
+when enabled. Undo and Redo sit above the word/character count in the same
+right-side column. They cover typing, paste, clear, and scripts loaded from
+voiceover reuse; rapid typing is grouped. They are disabled when unavailable,
+support Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y while the textarea is
+focused, and retain up to 100 history steps.
 
 Studio initially focuses the Script textarea. Typing a printable character
 elsewhere returns focus there, while search fields and other editable controls
@@ -191,10 +200,12 @@ Clicking a row selects that voice; cloned-voice names are editable with their pe
 control, while preview, reference download, and delete actions remain on each
 row. In completed Voiceovers rows, the fixed-width editable name is
 followed by a truncated script preview and timestamp; playback has a seekable
-progress bar. Download is beside the three-dot menu, which contains Reuse
-transcript and Delete. Live rows keep the compact name/script layout and show
-queue or generation controls. Filters are in the popover beside search, and
-the total count is in the compact footer. Menus share the Base UI
+progress bar. Clicking a script preview reuses its transcript. Download is
+beside the three-dot menu, which contains Delete. Generating and queued rows
+reuse their transcript from the preview and do not have a three-dot menu. Live
+rows keep the compact name/script layout and show queue or generation controls.
+Filters are in the popover beside search, and the total count is in the compact
+footer. Menus share the Base UI
 dropdown primitives, tooltips use the shared Base UI tooltip, and interface
 icons use `lucide-react`. Animated status and undo countdown rings remain
 custom visuals.
@@ -229,10 +240,13 @@ the row shows `(measuring)`. In an interactive
 terminal it updates a live progress bar with elapsed time and current stage; CI
 and redirected output use ordinary one-line updates with no ANSI escape
 sequences. Child command output and machine-readable stage timing records are
-retained in the timestamped `.tmp/build-logs/build-<timestamp>.log` file. Successful output remains
-concise; a failure reports its stage, command, exit status, log path, and a
-bounded trailing diagnostic. The packaging order, artifacts, `.env.local`
-restoration, and final executable path are unchanged.
+retained in the timestamped `.tmp/build-logs/build-<timestamp>.log` file. The
+success summary shows `BUILD SUCCEEDED`, duration, installer path, and size.
+The installer path is absolute and clickable to open its containing directory
+in interactive terminals; redirected output shows the plain absolute path. A
+failure reports its stage, command, exit status, log path, and a bounded
+trailing diagnostic. The packaging order, artifacts, and `.env.local`
+restoration are unchanged.
 
 ## Marketing page
 

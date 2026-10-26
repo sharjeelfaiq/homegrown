@@ -73,27 +73,25 @@ describe('voiceover row states', () => {
     expect(screen.getByRole('button', { name: 'More actions for Voiceover 1' })).toBeInTheDocument()
   })
 
-  it('reuses the transcript from the preview and three-dot menu for completed, generating, and queued rows', async () => {
+  it('reuses transcripts from previews and only shows the overflow menu on completed rows', async () => {
     const reuse = vi.fn()
     const { rerender } = render(<PendingRow job={queuedJob} nameControl={nameControl} onCancel={vi.fn()} onReuse={reuse} />)
     fireEvent.click(screen.getByRole('button', { name: 'Reuse transcript for Voiceover 1' }))
     expect(reuse).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'More actions for Voiceover 1' }))
-    fireEvent.click(await screen.findByText('Reuse transcript'))
-    expect(reuse).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('button', { name: 'More actions for Voiceover 1' })).not.toBeInTheDocument()
 
     rerender(<PendingRow job={{ ...queuedJob, status: 'running', elapsed_s: 2 }} nameControl={nameControl} onCancel={vi.fn()} onReuse={reuse} />)
     fireEvent.click(screen.getByRole('button', { name: 'Reuse transcript for Voiceover 1' }))
+    expect(reuse).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('button', { name: 'More actions for Voiceover 1' })).not.toBeInTheDocument()
+
+    const onDelete = vi.fn()
+    rerender(<VoiceoverRow entry={completedEntry} nameControl={nameControl} name="Voiceover 1" downloadHref="/download" onDelete={onDelete} onRequeue={reuse} animateExit={false} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Reuse transcript for Voiceover 1' }))
     expect(reuse).toHaveBeenCalledTimes(3)
     fireEvent.click(screen.getByRole('button', { name: 'More actions for Voiceover 1' }))
-    fireEvent.click(await screen.findByText('Reuse transcript'))
-    expect(reuse).toHaveBeenCalledTimes(4)
-
-    rerender(<VoiceoverRow entry={completedEntry} nameControl={nameControl} name="Voiceover 1" downloadHref="/download" onDelete={vi.fn()} onRequeue={reuse} animateExit={false} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Reuse transcript for Voiceover 1' }))
-    expect(reuse).toHaveBeenCalledTimes(5)
-    fireEvent.click(screen.getByRole('button', { name: 'More actions for Voiceover 1' }))
-    fireEvent.click(await screen.findByText('Reuse transcript'))
-    expect(reuse).toHaveBeenCalledTimes(6)
+    fireEvent.click(await screen.findByText('Delete'))
+    expect(onDelete).toHaveBeenCalledTimes(1)
+    expect(reuse).toHaveBeenCalledTimes(3)
   })
 })

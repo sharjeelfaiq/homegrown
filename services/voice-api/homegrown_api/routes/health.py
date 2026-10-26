@@ -1,6 +1,5 @@
 """Routes health"""
 import platform
-import homegrown_api.config as config
 from fastapi import APIRouter, HTTPException
 
 import homegrown_api.generation.model as generation_model

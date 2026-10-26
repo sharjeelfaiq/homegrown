@@ -17,7 +17,10 @@ Open `http://localhost:5173`. The script starts Vite on `:5173` first, then
 FastAPI on `127.0.0.1:8000`. FastAPI begins serving while a background startup
 task probes the device, loads Qwen3-TTS, restores the queue, and starts the
 worker. The boot-status file reports the startup phase, and `/api/health`
-remains responsive with readiness and error details. Other `/api/*` requests
+remains responsive with readiness and error details. At viewport widths of
+1600px and wider, the Studio shows generic voice-engine readiness and the
+active compute device in the outer left gutter. It does not display model
+identifiers or model-type clues. Other `/api/*` requests
 wait up to ten minutes and receive HTTP 503 if initialization fails or times
 out. Vite proxies `/api`, `/audio`, and `/refs` to the API.
 `npm run dev` prints a LAN address because Vite listens on the network interfaces.
@@ -83,9 +86,9 @@ name starts from the filename, language is detected, and faster-whisper
 transcribes the reference. There is no language selector on upload.
 
 The Script editor uses a responsive height of `clamp(300px, 39svh, 400px)`.
-Its footer holds the word count, script-language control, and Generate action.
-The selected voice is highlighted in the voices card. The script text starts
-at the top of the textarea without a voice header.
+Its footer holds the script-language control on the left and Generate on the
+right. The word/character count appears inside the editor at the lower right.
+The selected voice is not repeated above the script text.
 The language control begins at **Select language**. Generation
 requires choosing an explicit language, even
 though the backend can fall back to the voice's stamped language. Choosing one
@@ -118,7 +121,12 @@ is focused, and appends when it is not. The paste is limited to the remaining
 space under the 60,000-character script limit. If access is unavailable or was
 denied, Studio shows a toast with guidance to use Ctrl+V or check this site's
 browser permission. The clear icon button below Paste is disabled when the
-textarea is empty; clicking it clears the script when text is present.
+textarea is empty; clicking it clears the script when text is present. Undo and
+Redo sit above the count in the same right-side column. They support typing,
+paste, clear, and scripts loaded from voiceover reuse; rapid typing is grouped,
+and the last 100 history steps are retained. Ctrl/Cmd+Z undoes, while
+Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes when the textarea is focused. Each
+control is disabled when its corresponding history is empty.
 
 Use the compact **Search voices** field in the Voices card to search names
 case-insensitively on the server. Only cloned voices appear in results and
@@ -160,9 +168,11 @@ Voices card and a script language in the footer, then select **Generate**. The b
 when the script has non-whitespace text, an available voice and language are
 selected, health confirms the model is loaded on a CUDA device, and no
 submission is in progress. Ctrl/Cmd+Enter generates when the form is ready.
-During startup, Generate and Clone voice are disabled and their tooltip says
-the voice model is loading and can take up to three minutes. If model loading
-falls back to CPU, Clone voice becomes available when loading completes but
+During startup, Generate shows **Waiting for the voice model to load.** The
+language selector, voice picker, and Clone voice control remain visible but
+disabled; hovering them shows **Available when the voice model is ready.** If
+model loading falls back to CPU,
+Clone voice becomes available when loading completes but
 Generate remains disabled because Studio generation requires CUDA. The compact
 Generate action is right-aligned in the editor footer. The fixed mascot is dragged by
 the mascot artwork itself, while its subdued side arrows cycle the numbered
@@ -217,10 +227,11 @@ the shared Base UI tooltip component, and interface icons use `lucide-react`.
 Each completed row keeps a fixed-width editable name followed by a truncated
 script preview and timestamp. Its transport row provides play/pause and a
 seekable progress bar; download and a three-dot menu sit at the right. The menu
-contains **Reuse transcript** and **Delete**. Reuse restores the saved script,
-voice, and language. Downloads produce an MP3. Live rows use the same compact
-name/script arrangement, with queue/progress controls instead of completed-row
-download and overflow actions.
+contains **Delete**. Clicking the script preview reuses the saved script, voice,
+and language. Generating and queued rows also reuse their script from the
+preview and have no three-dot menu. Downloads produce an MP3. Live rows use the
+same compact name/script arrangement, with queue/progress controls instead of
+completed-row download and overflow actions.
 
 Delete opens a confirmation with **Cancel** and **Delete**. Cancel leaves the
 voiceover untouched. Confirming schedules a server delete and shows a
@@ -266,7 +277,9 @@ reports readiness and errors; no full-screen startup gate covers the Studio.
 Generate and Clone voice
 remain disabled while the model loads. Once loading completes, Clone voice is
 available even on CPU fallback, while Generate stays disabled unless health
-confirms a CUDA device. If the backend is unavailable or model startup fails,
+confirms a CUDA device. The runtime readout shows loading or unavailable values
+instead of stale readiness or device details and hides below 1600px. If the backend is
+unavailable or model startup fails,
 a pulsing warning button at the lower left opens a modal with the reported
 message and a Retry action when available. A failed background history refresh
 leaves cached voiceovers visible and does not add an inline notice above the

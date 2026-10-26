@@ -12,7 +12,7 @@ import {
   type HistoryEntry,
   type QueueEntry,
 } from '../../lib/api'
-import { downloadName, formatClock, formatTimestampFull, timeAgo } from '../../lib/format'
+import { downloadName, formatClock, formatTimestampFull } from '../../lib/format'
 import { useGenerationActivity } from '../generation/GenerationActivityContext'
 import { useOptimisticProgress } from '../generation/useOptimisticProgress'
 import { toast } from 'sonner'
@@ -26,7 +26,7 @@ import { AppTooltip } from '../../components/ui/Tooltip'
 import VoiceoverPlayer from '../../components/audio/VoiceoverPlayer'
 import HistoryRowHead, { type NameControl } from './HistoryRowHead'
 import { showUndoDeleteToast } from '../../components/ui/UndoDeleteToast'
-import { ArrowDown as ArrowDownIcon, ArrowUp as ArrowUpIcon, Check as CheckIcon, ChevronLeft, ChevronRight, X as CrossIcon, Download as DownloadIcon, Ellipsis as MoreIcon, Play as PlayIcon, Trash2 as TrashIcon, WandSparkles as WandIcon } from 'lucide-react'
+import { ArrowDown as ArrowDownIcon, ArrowUp as ArrowUpIcon, Check as CheckIcon, ChevronLeft, ChevronRight, X as CrossIcon, Download as DownloadIcon, Ellipsis as MoreIcon, Play as PlayIcon, Trash2 as TrashIcon } from 'lucide-react'
 import type { VoiceoverFilterState } from './VoiceoverFilters'
 import VoiceoverFilters from './VoiceoverFilters'
 import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
@@ -63,6 +63,26 @@ interface Props {
   /** True before the first fetch has returned. Without it an empty column
    * tells a starting-up user to "pick a voice and press Generate", which is
    * advice they cannot act on yet. */
+}
+
+const SCRIPT_TOOLTIP_MAX_CHARACTERS = 100
+
+function limitScriptTooltip(text: string): string {
+  const characters = Array.from(text)
+  return characters.length > SCRIPT_TOOLTIP_MAX_CHARACTERS
+    ? `${characters.slice(0, SCRIPT_TOOLTIP_MAX_CHARACTERS).join('')}…`
+    : text
+}
+
+function ScriptReuseTooltip({ text }: { text: string }) {
+  return (
+    <div>
+      <div>{limitScriptTooltip(text)}</div>
+      <div className="mt-1.5 border-t border-edge pt-1 text-[10px] text-muted">
+        Click to reuse this script
+      </div>
+    </div>
+  )
 }
 
 /** Past this many chunks the boundary ticks fall below ~4px apart and read as
@@ -364,11 +384,11 @@ export function PendingRow({
       <HistoryRowHead
         {...nameControl}
         voiceName={failed ? job.preset_name : undefined}
-        nameTitle="Use pencil to rename voiceover"
+        nameTitle="Edit voiceover name"
         timestamp={!failed ? job.submitted_at : undefined}
-        timestampTitle={`Sent to generate ${formatTimestampFull(job.submitted_at)}`}
+        timestampTitle={`Queued at ${formatTimestampFull(job.submitted_at)}`}
         scriptPreview={!failed ? (
-          <AppTooltip content={job.text_preview}>
+          <AppTooltip content={<ScriptReuseTooltip text={job.text_preview} />}>
             <button
               type="button"
               className="result-text m-0 block min-w-0 overflow-hidden bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
@@ -401,7 +421,7 @@ export function PendingRow({
           failed
             ? reason
             : queued
-              ? 'Queued — starts when the current voiceover finishes'
+              ? 'Queued; starts after the current voiceover.'
               : chunkLabel
         }>
         <div
@@ -492,20 +512,6 @@ export function PendingRow({
               Retry
             </button>
           )}
-          {!failed && (
-            <Dropdown.Root>
-              <AppTooltip content="More actions">
-                <Dropdown.Trigger className="icon-btn" aria-label={`More actions for ${nameControl.name || nameControl.placeholder || 'this voiceover'}`}>
-                  <MoreIcon size={15} />
-                </Dropdown.Trigger>
-              </AppTooltip>
-              <Dropdown.Content side="top" align="end" sideOffset={4} className="min-w-40">
-                <Dropdown.Item className="dropdown-menu-item" onClick={onReuse}>
-                  <WandIcon size={14} />Reuse transcript
-                </Dropdown.Item>
-              </Dropdown.Content>
-            </Dropdown.Root>
-          )}
           {!failed && confirmingCancel ? (
             <>
               <AppTooltip content="Cancel generation">
@@ -576,9 +582,7 @@ export function VoiceoverRow({
 }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const created = timeAgo(entry.created_at)
   const reduced = usePrefersReducedMotion()
-
   return (
     // EXIT ONLY -- no initial/animate. The three ways a row appears here are a
     // job completing (which is a handoff from a PendingRow in the same slot, so
@@ -601,10 +605,10 @@ export function VoiceoverRow({
       <HistoryRowHead
         {...nameControl}
         timestamp={entry.created_at}
-        timestampTitle={`Generated ${formatTimestampFull(entry.created_at)}`}
-        nameTitle={`Created ${created} — use pencil to rename voiceover`}
+        timestampTitle={`Generated at ${formatTimestampFull(entry.created_at)}`}
+        nameTitle="Edit voiceover name"
         scriptPreview={(
-          <AppTooltip content={entry.text}>
+          <AppTooltip content={<ScriptReuseTooltip text={entry.text} />}>
             <button
               type="button"
               className="result-text m-0 block min-w-0 overflow-hidden bg-transparent p-0 text-left text-[12px] text-faint hover:text-ink"
@@ -643,9 +647,6 @@ export function VoiceoverRow({
                 <MoreIcon size={15} />
               </Dropdown.Trigger>
               <Dropdown.Content side={menuPlacement === 'down' ? 'bottom' : 'top'} align="end" sideOffset={4} className="min-w-40">
-                    <Dropdown.Item className="dropdown-menu-item" onClick={onRequeue}>
-                      <WandIcon size={14} />Reuse transcript
-                    </Dropdown.Item>
                     <Dropdown.Item className="dropdown-menu-item dropdown-menu-item-danger" onClick={onDelete}>
                       <TrashIcon size={14} />Delete
                     </Dropdown.Item>

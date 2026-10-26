@@ -1,0 +1,99 @@
+.settings-modal-panel .modal-body {
+  overflow: hidden;
+  padding: 0;
+}
+
+.settings-layout {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 142px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.settings-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid var(--line);
+  padding: 14px 10px;
+  background: var(--bg-nav);
+}
+
+.settings-sidebar-tab {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+
+.settings-sidebar-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.settings-sidebar-tab.is-active {
+  border-color: var(--line);
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.settings-sidebar-tab.is-danger svg {
+  color: var(--danger);
+}
+
+.settings-sidebar-tab:focus-visible,
+.settings-content:focus-visible {
+  outline: 2px solid var(--line-focus);
+  outline-offset: -2px;
+}
+
+.settings-content {
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+}
+
+.settings-content > .settings-section:not(.settings-danger-section) {
+  border-top: 0;
+  padding-top: 0;
+}
+
+@media (max-width: 520px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .settings-sidebar {
+    flex-direction: row;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 8px 10px;
+  }
+
+  .settings-sidebar-tab {
+    flex: 1;
+    justify-content: center;
+    padding-inline: 6px;
+  }
+
+  .settings-content {
+    padding: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-sidebar-tab {
+    transition: none;
+  }
+}

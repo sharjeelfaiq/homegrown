@@ -14,10 +14,19 @@ Theme, QueryClient, BrowserRouter, AudioActivity, then GenerationActivity.
 
 `app/StudioShell.tsx` coordinates the feature modules under `features/` and
 owns Studio-level keyboard behavior. The shell and static card controls render
-without waiting for backend startup; API-backed voice rows, language options,
-and uncached history or initial queue data use generated skeletons while their
-queries load. Clone voice remains disabled until the model is loaded, and
-Generate also requires health to report a CUDA device. `hooks/useTypeToScript.ts` focuses the
+without waiting for backend startup; API-backed voice rows and uncached history
+or initial queue data use generated skeletons while their queries load. During
+model startup, the language selector stays visible but disabled, and Clone
+voice and voice selection stay disabled; their hover hints say they become
+available when the model is ready. Language options use a generated skeleton
+if they are still loading after startup. Generate also requires health to
+report a CUDA device. `features/startup/RuntimeModelReadout` shows generic
+voice-engine readiness and the selected compute device in the outer left gutter
+at viewport widths of 1600px and wider; it hides below that width. Its values
+come from `/api/health`, and loading or unavailable values are labeled instead
+of inferred from the local machine. Health does not expose model identifiers
+or model-type clues.
+`hooks/useTypeToScript.ts` focuses the
 Script textarea on load and forwards eligible printable keys to it without
 intercepting searches, editable controls, menus, dialogs, modifiers, or IME
 composition. The Script editor owns clipboard paste and applies the remaining
@@ -25,7 +34,12 @@ composition. The Script editor owns clipboard paste and applies the remaining
 reads invoke the browser clipboard API directly; unavailable or denied reads
 produce a toast, while permission prompts are controlled by the browser. The
 editor's clear control is disabled for an empty script and clears its controlled
-value otherwise.
+value otherwise. `ScriptBlock` owns bounded Undo/Redo snapshots for typing,
+paste, clear, and parent-driven script replacements such as voiceover reuse.
+Rapid character edits are grouped, cursor selections are restored, and
+Ctrl/Cmd+Z plus Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y work while the textarea is
+focused. The Undo/Redo controls sit above the word/character count in the
+right-side control column.
 `features/voices/useVoiceCloneQueue.tsx` owns the browser-local FIFO of selected
 reference files and their toast lifecycles. It serializes requests through the
 shell's upload callback, pauses while the model is unavailable, and releases
@@ -52,8 +66,10 @@ legacy built-in rows so filters omit them while history retains its original
 voice name, transcript, and audio. `features/history` owns history query keys,
 persistence, pagination, and the presentation of live generation rows beside
 paginated completed history. Completed rows use the
-shared audio player and compact script preview; their overflow menu owns
-transcript reuse and individual deletion. `lib/audio` owns shared playback
+shared audio player and compact script preview; clicking that preview reuses
+the transcript, while the completed-row overflow menu owns individual deletion.
+Generating and queued rows reuse their transcript from their preview and have
+no overflow menu. `lib/audio` owns shared playback
 state; `lib/theme` owns theme state. `styles/tokens.css` is the palette source
 of truth. The shared React Query client scopes API keys to `local-user`, uses a
 one-minute stale time and 20-minute in-memory garbage-collection time, and
@@ -109,11 +125,12 @@ Mutable state is accessed through its owning module, so replacing a model or
 restoring the queue is visible to all callers. API routes are registered before
 the SPA catch-all. Unknown `/api/` paths remain HTTP 404 responses.
 The app keeps `/api/health` responsive during model initialization; it reports
-model/device readiness and startup errors. The boot-status file reports the
-startup phase. Other `/api/*` requests wait up to ten minutes for startup and
-receive HTTP 503 if initialization fails or times out. This lets the Studio
-report startup progress without sending model-dependent work to an
-uninitialized model.
+model/device readiness and startup errors without exposing model identifiers,
+model-type clues, or local model paths. The
+boot-status file reports the startup phase. Other `/api/*` requests wait up to
+ten minutes for startup and receive HTTP 503 if initialization fails or times
+out. This lets the Studio report startup progress without sending
+model-dependent work to an uninitialized model.
 
 ## Development and packaging
 

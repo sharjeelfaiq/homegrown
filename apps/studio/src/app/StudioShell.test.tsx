@@ -15,7 +15,11 @@ vi.mock('../lib/api', async (original) => ({
     { id: 'builtin', name: 'Built-in voice', is_builtin: true },
   ] }),
   listLanguages: vi.fn().mockResolvedValue({ languages: ['English'] }),
-  getHealth: vi.fn().mockResolvedValue({ model_loaded: true, device: 'cuda' }),
+  getHealth: vi.fn().mockResolvedValue({
+    model_loaded: true,
+    device: 'cuda',
+    device_reason: 'NVIDIA GeForce RTX 4090 (sm_89)',
+  }),
   deleteAllRecords: mocks.bulk, renamePreset: mocks.rename, deleteHistoryEntry: mocks.remove,
 }))
 vi.mock('../features/startup/wake', () => ({ wakeBackend: vi.fn().mockResolvedValue(undefined) }))
@@ -70,6 +74,14 @@ async function ready() {
   await waitFor(() => expect(screen.getByTestId('selected').textContent).toBe('uploaded'))
   return view
 }
+
+it('shows a generic voice engine status and active graphics card from backend health', async () => {
+  await ready()
+  expect(screen.getByText('Voice model')).toBeInTheDocument()
+  expect(screen.getAllByText('Active')).toHaveLength(2)
+  expect(screen.queryByText(/Qwen|custom voice model/i)).not.toBeInTheDocument()
+  expect(screen.getByText('NVIDIA GeForce RTX 4090')).toBeInTheDocument()
+})
 
 it('renders the Studio shell immediately while backend readiness is pending', async () => {
   const { wakeBackend } = await import('../features/startup/wake')

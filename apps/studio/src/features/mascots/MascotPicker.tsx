@@ -221,7 +221,7 @@ export default function MascotPicker({ anchorRef }: Props) {
       </AppTooltip>
       <span className="relative block shrink-0" style={{ width: size, height: size }}>
         <Mascot directions={selected.directions} reactions={selected.reactions} size={size} label={`${selected.label} Studio mascot`} />
-        <AppTooltip content="Drag or use arrow keys to resize the mascot">
+        <AppTooltip content="Drag or use arrow keys to resize">
           <button
             type="button"
             data-mascot-resize

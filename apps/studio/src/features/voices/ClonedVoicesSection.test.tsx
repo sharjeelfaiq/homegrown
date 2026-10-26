@@ -254,7 +254,7 @@ describe('ClonedVoicesSection', () => {
   it('disables Clone voice while the model loads and exposes the loading tooltip', () => {
     const { container } = renderSection({ modelReady: false, modelLoading: true })
     expect(screen.getByRole('button', { name: 'Clone voice' })).toBeDisabled()
-    expect(container.querySelector('[data-tooltip="Voice model is loading — this can take up to 3 minutes."]')).toBeTruthy()
+    expect(container.querySelector('[data-tooltip="Available when the voice model is ready."]')).toBeTruthy()
   })
 
   it('keeps Clone voice left-aligned with its original label and upload icon while cloning', () => {

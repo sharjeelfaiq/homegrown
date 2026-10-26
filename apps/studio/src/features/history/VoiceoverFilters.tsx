@@ -106,7 +106,7 @@ export default function VoiceoverFilters({ presets, history, value, onChange }: 
 
   return (
     <div className="relative shrink-0" ref={rootRef}>
-      <AppTooltip content={count ? `Filters (${count} active)` : 'Filters'}>
+      <AppTooltip content={count ? `Open filters (${count} active)` : 'Open filters'}>
         <button type="button" className="voiceover-filter-trigger icon-btn size-9 border border-control bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--line-focus)" aria-label={count ? `Filters (${count} active)` : 'Filters'} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
           <FilterIcon size={16} />
         </button>
