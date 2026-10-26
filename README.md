@@ -299,5 +299,7 @@ docs/workflow.md   day-to-day Studio workflow
   development or packaged app to an untrusted network.
 - See [docs/gpu-notes.md](docs/gpu-notes.md) for local-GPU measurements and
   [engine/qwen/README.md](engine/qwen/README.md) for the vendored wrapper.
+- Use the [isolated voice benchmark](scripts/benchmarks/voice_generation.md)
+  for reproducible offline generation measurements without modifying user data.
 - `docs/archive/` is archival material only; it documents superseded cloud and
   pre-migration workflows and is not executable guidance.

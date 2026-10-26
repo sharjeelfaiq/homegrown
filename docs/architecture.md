@@ -152,6 +152,9 @@ Source organization does not migrate runtime data. Development `.env` and
 `storage/` remain under `services/voice-api`. Packaged storage and model paths
 retain their existing environment overrides and layout. Models, caches,
 virtual environments and generated audio are local data, not source files.
+`HOMEGROWN_STORAGE_DIR` also overrides source-run storage so the offline voice
+benchmark can redirect every persistence owner before import. Benchmark scripts
+live under `scripts/benchmarks/`; artifacts stay in ignored `.tmp/voice-speed/`.
 The `.env.example` documents variable names only; the administrator password
 must remain in the ignored local `.env` and must never be copied into docs or
 committed.

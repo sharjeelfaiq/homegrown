@@ -14,6 +14,7 @@ import soundfile as sf
 import torch
 
 from .utils import resolve_device, suppress_flash_attn_warning
+from .prompt_cache import PromptCache, reference_key
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ class FasterQwen3TTS:
         self.max_seq_len = max_seq_len
         self.sample_rate = self._infer_sample_rate(base_model)
         self._warmed_up = False
-        self._voice_prompt_cache = {}  # Cache (ref_audio, ref_text) -> (vcp, ref_ids)
+        self._voice_prompt_cache = PromptCache()
 
     @property
     def _graphs_enabled(self) -> bool:
@@ -471,9 +472,14 @@ class FasterQwen3TTS:
         append_silence: bool,
     ) -> Tuple[Dict[str, Any], list, bool]:
         using_icl_mode = not xvec_only
-        cache_key = (str(ref_audio), ref_text, xvec_only, append_silence)
-        if cache_key in self._voice_prompt_cache:
-            vcp, ref_ids = self._voice_prompt_cache[cache_key]
+        def current_key():
+            return reference_key(ref_audio, ref_text, xvec_only, append_silence,
+                                 len(input_ids), self.device, self.dtype)
+
+        cache_key = current_key()
+        cached = self._voice_prompt_cache.get(cache_key)
+        if cached is not None:
+            vcp, ref_ids = cached
             return vcp, ref_ids, using_icl_mode
 
         if xvec_only:
@@ -490,7 +496,8 @@ class FasterQwen3TTS:
                 icl_mode=[False],
             )
             ref_ids = [None] * len(input_ids)
-            self._voice_prompt_cache[cache_key] = (vcp, ref_ids)
+            if cache_key == current_key():
+                self._voice_prompt_cache.put(cache_key, (vcp, ref_ids))
             return vcp, ref_ids, using_icl_mode
 
         silence_secs = 0.5 if append_silence else 0.0
@@ -509,7 +516,8 @@ class FasterQwen3TTS:
         else:
             ref_ids.append(None)
 
-        self._voice_prompt_cache[cache_key] = (vcp, ref_ids)
+        if cache_key == current_key():
+            self._voice_prompt_cache.put(cache_key, (vcp, ref_ids))
         return vcp, ref_ids, using_icl_mode
 
     def _prepare_generation(

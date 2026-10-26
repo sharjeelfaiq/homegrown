@@ -40,7 +40,7 @@ if getattr(sys, "frozen", False):
         or str(Path(sys.executable).parent.parent / "storage")
     )
 else:
-    STORAGE_DIR = BACKEND_DIR / "storage"
+    STORAGE_DIR = Path(os.environ.get("HOMEGROWN_STORAGE_DIR") or BACKEND_DIR / "storage")
 
 
 REF_DIR = STORAGE_DIR / "references"

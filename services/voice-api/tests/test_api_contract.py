@@ -389,6 +389,44 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(stores._history, [])
         write.assert_not_called()
 
+        # A canceled generator must release the generation lock for the next
+        # FIFO job, and only that subsequent job may reach persisted history.
+        following = self.submit('The next queued script.')
+        fake.generate_voice_clone_streaming = lambda **kwargs: iter([
+            (np.ones(24000, dtype=np.float32), 24000, {}),
+        ])
+        worker._pending_job_ids.remove(following)
+        with patch.object(worker.audio_convert, 'write_mp3'), patch.object(
+            budget, '_chunk_duration_is_sane', return_value=True,
+        ):
+            worker._process_job(following)
+        self.assertEqual(worker._jobs[following]['status'], 'done')
+        self.assertEqual([entry['text'] for entry in stores._load_json(config.HISTORY_FILE)],
+                         ['The next queued script.'])
+
+    def test_worker_retries_before_publishing_one_completed_history_entry(self):
+        fake = self.ready_voice()
+        job_id = self.submit()
+        worker._pending_job_ids.remove(job_id)
+        attempts = []
+
+        def stream(**kwargs):
+            attempts.append(kwargs)
+            if len(attempts) == 1:
+                raise RuntimeError('Transient generation failure')
+            yield np.ones(24000, dtype=np.float32), 24000, {}
+
+        fake.generate_voice_clone_streaming = stream
+        with patch.object(worker.audio_convert, 'write_mp3') as encode, patch.object(
+            budget, '_chunk_duration_is_sane', return_value=True,
+        ):
+            worker._process_job(job_id)
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(attempts[0], attempts[1])
+        encode.assert_called_once()
+        self.assertEqual(worker._jobs[job_id]['status'], 'done')
+        self.assertEqual(len(stores._load_json(config.HISTORY_FILE)), 1)
+
     def test_restart_restores_fifo_with_existing_json_format(self):
         self.ready_voice()
         ids = [self.submit('First script.'), self.submit('Second script.')]

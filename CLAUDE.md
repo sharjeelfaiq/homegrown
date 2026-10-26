@@ -77,6 +77,9 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - `engine/qwen/` is the vendored CUDA-graph TTS wrapper. The backend supports a
   slow CPU fallback; Studio generation stays disabled unless health confirms
   the model is loaded on CUDA.
+  `scripts/benchmarks/voice_generation.md` documents isolated offline profiling.
+  `HOMEGROWN_STORAGE_DIR` can redirect source or packaged runtime storage;
+  benchmark artifacts belong under ignored `.tmp/voice-speed/`.
 - There is one fixed local user (`local-user`), no accounts, and no workspaces.
   Ordinary API actions, including individual voice and voiceover deletion, do
   not require authentication. Permanent bulk deletion is additionally gated by

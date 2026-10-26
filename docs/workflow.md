@@ -4,6 +4,8 @@ This guide describes the current local Studio workflow. For first-time setup
 and safety boundaries, see [README.md](../README.md); for the frozen Windows
 build, see [build.md](build.md). GPU measurements are historical and collected
 on the hardware identified in [gpu-notes.md](gpu-notes.md).
+For isolated, offline generation profiling and paired comparison commands, see
+[the voice benchmark procedure](../scripts/benchmarks/voice_generation.md).
 
 ## Start and safety
 
