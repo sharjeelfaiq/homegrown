@@ -88,8 +88,8 @@ first remove the same previous build outputs listed above.
 ## 1. Python environment and model
 
 Complete [First-time setup](../README.md#first-time-setup) before building. It
-creates `.venv`, installs `services/voice-api/requirements.txt`, downloads the
-model, configures `services/voice-api/.env`, and installs Studio dependencies.
+creates `.venv`, installs `services/voice-api/requirements.txt`, configures
+`services/voice-api/.env`, and installs Studio dependencies.
 The API has no accounts or general authentication. Ordinary actions, including
 individual deletes, are unauthenticated; permanent bulk deletion additionally
 requires `HOMEGROWN_ADMIN_PASSWORD`. Use the packaged app only on a trusted
@@ -113,6 +113,8 @@ tests, Studio lint, and the splash freshness check. All eight must pass; each
 exists because something once shipped broken past it. The build installs Studio
 dependencies before these validations, then runs `build_splash.py --check`
 last because it needs the Tailwind CLI from `apps/studio/node_modules`.
+Brand freshness, backend/engine/benchmark tests, and build-helper tests are
+additional checks below; the packaging command does not run them automatically.
 
 ```bash
 # 1. No colour outside apps/studio/src/styles/tokens.css (reads 6-digit hex,
@@ -141,14 +143,18 @@ cd apps/studio && npm run test && npm run lint && cd ../..
 # 8. desktop/launcher/_splash.py must be current with its splash sources.
 python scripts/build/build_splash.py --check
 
+# Additional checks not run automatically by the packaging command:
+npm test
+node --test scripts/build/progress.test.mjs scripts/build/summary.test.mjs
+
 # 9. Brand assets (favicon, app icon, logo) must match their generator.
 python scripts/build/build_brand.py --check
 ```
 
 `npm run lint` currently reports `react(only-export-components)` Fast Refresh
 warnings in context/provider modules, `Dropdown.tsx`, `VoiceoverFilters.tsx`,
-and `HistoryList.tsx`, plus a `react-hooks(exhaustive-deps)` warning in
-`HistoryList.tsx`. Treat new lint errors or warnings beyond those findings as a
+plus `react-hooks(exhaustive-deps)` warnings in
+`GenerationActivityContext.tsx` and `HistoryList.tsx`. Treat new lint errors or warnings beyond those findings as a
 build issue.
 
 The Studio `test` script first regenerates the mascot catalog, runs its Node test
@@ -158,7 +164,8 @@ checks before Vite (`tsc -b && vite build`); section 3 runs it.
 
 When a loading fixture or its surrounding responsive layout changes, also
 regenerate the checked-in Boneyard assets before committing. In one terminal
-run `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`; in another:
+run `npm --prefix apps/studio run dev -- --host 127.0.0.1 --port 5173 --strictPort`
+from the repository root; in another:
 
 ```bash
 cd apps/studio && npm run bones:build
@@ -192,32 +199,22 @@ cd services/voice-api && TMP=../../.tmp TEMP=../../.tmp ../../.venv/Scripts/pyin
 cd desktop/launcher && TMP=../../.tmp TEMP=../../.tmp ../../.venv/Scripts/pyinstaller.exe launcher.spec --clean --noconfirm && cd ../..
 ```
 
-`build_splash.py` compiles the launcher's loading screen —
-`desktop/launcher/splash/index.html` and `desktop/launcher/splash/styles.css` — with the
-Tailwind CLI and writes `desktop/launcher/_splash.py`, which `launcher.py`
-imports. It must run **before** the launcher freeze, or the exe
-ships whatever `_splash.py` last held.
-
-That splash is the one surface that cannot use the Tailwind Play CDN the landing
-page uses: it has to paint with no backend and frequently no network, which is
-exactly when a CDN is unavailable. `_splash.py` is committed, so a build on a
-machine without npm still produces a working exe; `python scripts/build/build_splash.py
---check` fails if it is stale relative to its sources.
+`build_splash.py` compiles the retained splash sources in
+`desktop/launcher/splash/` into `desktop/launcher/_splash.py`. The build still
+checks and regenerates this committed asset, but the current `launcher.py`
+does not import or serve it. The launcher opens Studio when the backend serves
+the app; Studio owns model-startup status and API-loading placeholders.
+`python scripts/build/build_splash.py --check` verifies the retained generated
+asset against its sources; it does not verify current launcher rendering.
 
 ## Brand assets
 
-`scripts/build/build_brand.py` is the single source for the Homegrown mark (four
-waveform bars on a rounded tile, in `--bg-base` and `--accent-2`). It writes the
-Studio and landing-page `favicon.svg`, both `apple-touch-icon.png`, the landing
-page's `favicon.ico` and `logo.svg`, and `desktop/assets/icon.ico` (the Windows
-executable icon used by `launcher.spec`). `--check` fails on a stale SVG or a
-missing or wrongly sized PNG/ICO. Pillow rasterises the PNG/ICO files, so their
-bytes are not compared. The mark is also inlined in `BrandMark.tsx`, the landing
-page's header and footer, and the launcher splash; change the bars in the
-generator and those copies together, then rebuild `_splash.py`.
-
-It is a generated **module**, not a data file. `desktop/launcher/launcher.spec` declares
-`datas=[]` and PyInstaller follows imports, so the spec needs no change.
+`scripts/build/build_brand.py` generates Studio and marketing favicons,
+touch icons, the marketing logo, and `desktop/assets/icon.ico`. Its `--check`
+verifies SVG contents and PNG/ICO presence and dimensions. Raster bytes are not
+compared. `BrandMark.tsx`, the marketing page, and retained splash contain
+inline copies; update those with the generator when changing mark geometry.
+The launcher spec uses the generated Windows icon.
 
 `TMP`/`TEMP` are redirected off `C:` on purpose — PyInstaller unpacks several GB
 through the temp directory and will exhaust a small system drive.
@@ -268,7 +265,9 @@ Cheaper to catch a bad build here than after compressing 1.8 GB.
 
 Expect, in order:
 
-1. A browser **loader within ~2 seconds** — not a blank desktop.
+1. The launcher starts the backend hidden and opens Studio once health and
+   the HTML app respond. There is no separate browser splash; pre-bind startup
+   time depends on the machine.
 2. `dist/Homegrown/storage/boot_status.json` appears during startup.
 3. `dist/Homegrown/storage/backend.log` gets written.
 4. The backend listens on `0.0.0.0:8731` for trusted LAN access, so Windows may show a firewall
@@ -281,7 +280,8 @@ Expect, in order:
      action=allow program="C:\Homegrown\backend\backend.exe" ^
      protocol=TCP localport=8731 enable=yes profile=private
    ```
-5. The loader redirects to the app once the model has loaded.
+5. Studio opens while model initialization may still be running. Model status
+   and API-loading skeletons remain visible until readiness or a startup error.
 6. In Studio, open the header **Settings** dialog. Confirm it offers a System
    choice and every named theme in a stable order. Select each named theme and
    confirm the options remain visible and in the same order, then select System
@@ -319,9 +319,8 @@ Expect, in order:
    during startup. After loading, Clone voice should enable; Generate should
    enable only when the model is reported on CUDA and the form prerequisites
    are met. On CPU fallback, confirm Clone voice enables and Generate remains
-   disabled with a CUDA-required explanation. The packaged launcher displays
-   its browser splash while the backend initializes, then opens Studio after
-   readiness.
+   disabled with a CUDA-required explanation. The packaged launcher opens Studio as soon as the backend serves it,
+   without waiting for model readiness or showing a separate splash.
 8. In the Voices card, confirm the search covers cloned voices only.
    Search with a mixed-case substring and confirm only matching rows remain;
    check the 50/80/100 page-size choices (default 50), the matching total, and previous,
@@ -351,7 +350,10 @@ Expect, in order:
    At a narrow viewport, verify the header wraps without horizontal scrolling.
    Confirm a completed row shows its fixed-width editable name, truncated
    script preview, timestamp, and seekable playback. The download action and
-   three-dot menu should be visible and contain Delete. Clicking the script
+   three-dot menu should be visible and contain Details and Delete. Open Details
+   on a voice and a completed voiceover: panels should have the same dimensions
+   and formatting. Check cloning/generation time (Not recorded on older records)
+   and script truncation at 100 characters plus an ellipsis when longer. Clicking the script
    preview should restore the script, voice, and language. Generating and queued
    rows should also reuse from their script previews and should not show a
    three-dot menu. Live rows should use the same compact name/script layout with
@@ -405,7 +407,9 @@ individual deletion, uploading voices, and generating audio. Permanent
 collection-wide deletion also requires the local `HOMEGROWN_ADMIN_PASSWORD`.
 Trusted networks only.
 
-If the loader never appears, the launcher exe is stale — step 4 did not rebuild.
+If Studio never opens, inspect `storage/backend.log` and `boot_status.json`,
+then verify the app is served on port 8731. The current launcher has no separate
+browser splash.
 
 Stop the app before continuing.
 
@@ -456,7 +460,9 @@ a folder outside the repo, and run `Homegrown.exe` from there.
 3. Runs `Homegrown.exe` inside it.
 4. **SmartScreen warns once** — "Windows protected your PC" → More info → Run
    anyway. The exe is unsigned; only an Authenticode certificate removes this.
-5. First launch downloads the ~2.5 GB model, with progress shown in the loader.
+5. When model files are absent, first launch downloads them into `models/`;
+   the app uses an approximate 2.5 GB fallback for progress when size discovery
+   is unavailable. Studio shows download/model initialization status.
 
 **Requirements to state to them:** Windows and about 8 GB free disk, plus
 about 2.5 GB for the model download. Studio generation requires an NVIDIA GPU
@@ -475,7 +481,7 @@ means deleting the folder.
 | Symptom | Cause |
 |---|---|
 | `apps/studio/dist is missing` during step 4 | Step 3 was skipped |
-| Loader never appears | Stale launcher exe — re-run step 4 |
+| Studio never opens | Inspect `storage/backend.log`, boot status, and port 8731; no separate splash is expected |
 | Firewall prompt on first run | Expected when `backend.exe` binds `0.0.0.0:8731`; allow it only on a trusted private network |
 | Long-reference warning is missing | Backend predates the `POST /api/estimate` chunking check — rebuild |
 | PyInstaller runs out of disk | `TMP`/`TEMP` not redirected in step 4 |

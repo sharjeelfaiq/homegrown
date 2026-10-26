@@ -1,6 +1,11 @@
 # FasterQwen3TTS
 
-CUDA-graph-accelerated wrapper around [`qwen-tts`](https://github.com/QwenLM/Qwen3-TTS)'s `Qwen3TTSModel`. Captures the talker's decode step and the code predictor's 15-codebook loop as CUDA graphs for ~6-10x faster autoregressive TTS generation, while keeping the same generation API (voice cloning, custom voice, voice design).
+CUDA-graph-accelerated wrapper around
+[`qwen-tts`](https://github.com/QwenLM/Qwen3-TTS)'s `Qwen3TTSModel`. Captures the
+talker's decode step and the code predictor's 15-codebook loop as CUDA graphs to
+reduce autoregressive launch overhead. Performance depends on the hardware, model and
+input; this repository does not establish a universal speedup factor. It supports
+voice cloning, custom voice and voice design APIs.
 
 ## Requirements
 
@@ -14,13 +19,21 @@ CUDA-graph-accelerated wrapper around [`qwen-tts`](https://github.com/QwenLM/Qwe
 - `numpy`
 - `soundfile` (requires system `libsndfile`)
 
+For the Homegrown application, install the pinned dependencies using the root
+[setup guide](../../README.md#first-time-setup). The following unpinned command
+is only a standalone wrapper example; do not use it to upgrade the application
+environment:
+
 ```bash
 pip install -U qwen-tts torch transformers numpy soundfile
 ```
 
 ## External services / API requirements
 
-**None required for normal use.** This code makes no direct calls to any LLM, TTS, or cloud API, and reads no API keys or env vars.
+**No hosted inference service is required.** Inference runs locally. Model loading
+may access Hugging Face through upstream libraries. The wrapper reads
+`DECODE_CHUNK_FRAMES` (default 100) to cap vocoder launch size; upstream loaders
+also honor their own environment settings, including offline mode.
 
 The only implicit external dependency: `FasterQwen3TTS.from_pretrained(model_name, ...)` passes `model_name` straight to `qwen_tts.Qwen3TTSModel.from_pretrained`. If `model_name` is a Hugging Face Hub id (e.g. `"Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"`) rather than a local directory, `qwen-tts` will download weights from the Hub the first time it runs:
 
@@ -38,7 +51,9 @@ To avoid any network/API dependency at runtime, pre-download the model and pass 
 | `talker_graph.py` | CUDA graph capture for the talker's single-token decode step |
 | `generate.py` | Non-streaming generation loop (`fast_generate`) |
 | `sampling.py` | Shared logits sampling / repetition penalty helpers |
-| `utils.py` | Misc helpers (Flash Attention warning suppression) |
+| `utils.py` | CUDA usability probing, device resolution and warning suppression |
+| `prompt_cache.py` | Instance-owned reference-prompt LRU, bounded to 16 entries / 16 MiB |
+| `waveform_stream.py` | Prefix-skipping waveform assembly preserving legacy context and PCM slicing |
 | `streaming.py` | Chunked/streaming generation loop (`fast_generate_streaming`, `parity_generate_streaming`) |
 
 ## Quick start
@@ -47,7 +62,7 @@ To avoid any network/API dependency at runtime, pre-download the model and pass 
 from qwen import FasterQwen3TTS
 
 tts = FasterQwen3TTS.from_pretrained(
-    "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",  # HF Hub id or local model dir
+    "Qwen/Qwen3-TTS-12Hz-0.6B-Base",  # Base checkpoint for voice cloning
     device="cuda",
     dtype="bfloat16",
 )
@@ -87,3 +102,17 @@ Generate a new, free-form designed voice from an instruction string. Requires a 
 - Output sample rate is inferred from the underlying codec's `speech_tokenizer`, defaulting to 24000 Hz if it can't be determined.
 - `max_seq_len` bounds the talker's static KV cache; inputs producing a longer prefill than `max_seq_len` will raise `RuntimeError` — use shorter text or reference audio.
 - `parity_mode` (on streaming/generation paths that support it) disables CUDA graphs and falls back to standard HF `generate()` for debugging/parity checks against upstream `qwen-tts`.
+
+## Homegrown integration
+
+The application uses local model files, bfloat16, SDPA, and `MAX_SEQ_LEN` from
+`services/voice-api/homegrown_api/config.py` (1024 in the checked-in configuration).
+These application settings differ from the standalone wrapper defaults above.
+Reference-prompt cache keys include file identity, transcript, modes, batch,
+device and dtype; failed file inspection and oversized entries bypass caching.
+Voice-clone streaming skips reference-only vocoder blocks whose PCM would be
+discarded during calibration, then retains only the generated context tail.
+The full reference still conditions codec prediction. No benchmark CUDA timing
+is enabled in ordinary generation. See the
+[waveform evaluation](../../docs/waveform-decoding-results.md) for measured
+results and their limits.

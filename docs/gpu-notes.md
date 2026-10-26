@@ -7,6 +7,15 @@ change; check `services/voice-api/homegrown_api/config.py` for the values curren
 The capacity notes below are observations, not a tested compatibility or
 performance guarantee.
 
+LATEST CONTROLLED EVALUATION (2026-10-26)
+----------------------------------------
+See [waveform-decoding-results.md](waveform-decoding-results.md) for the later
+GTX 970 evaluation: warm median 79.53s to 49.03s on one frozen script/reference,
+with identical captured-token PCM for all tested pairs. Codec prediction
+remained about 41s; discarded reference-only decoding was reduced. These
+results supersede the older timing profile for that input, not every workload.
+No cross-GPU speedup was measured, and no human listening was performed.
+
 UI NOTE (current)
 ----------------------------------------
 The Generate action is a compact, right-aligned control in the Script editor
@@ -16,7 +25,7 @@ states. Confirm an actual generation on target hardware after UI changes:
 queueing, progress, completion, audio output, and the browser console are the
 meaningful integration checks.
 
-CURRENT SETUP (baseline for comparison)
+HISTORICAL SETUP (baseline for the older notes below)
 ----------------------------------------
 - GTX 960, 4GB VRAM, bfloat16, sdpa attention (no flash-attn installed)
   These measurements were taken on a GTX 960. A later session recorded a
@@ -31,8 +40,9 @@ CURRENT SETUP (baseline for comparison)
   (see the dated TDR record below); do not attribute those timeouts directly
   to memory pressure.
 - Generation is single-stream, autoregressive, one codec token at a time
-  (via CUDA graph replay) -- this is a LATENCY-bound workload, not a
-  throughput/FLOPs-bound one. A bigger GPU mainly buys headroom and
+  (via CUDA graph replay) -- its sequential dependency limits parallelism. The older notes did not
+  isolate memory bandwidth, arithmetic, kernel launch and CPU overhead well
+  enough to establish one exclusive hardware bottleneck. A bigger GPU mainly buys headroom and
   speed, not "more model capacity."
 
 CAPACITY NOTES (NOT A PURCHASE RECOMMENDATION)
@@ -58,7 +68,7 @@ VRAM TIER BREAKDOWN
     trim and per-preset context budget.
 
 40GB+ (A100 40GB/80GB, L40S 48GB)
-  - Only worth it for local experimentation with larger context budgets. The
+  - No value-for-money or workload comparison was performed for this tier. The
     application already has a persistent job queue and one worker; a global
     model lock serializes generation because CUDA graphs aren't reentrant.
     A bigger GPU alone does not provide parallel throughput. That would require
@@ -74,7 +84,8 @@ WHAT TO CHANGE IN THE CODE WHEN MOVING TO A BIGGER GPU
   context values listed above are experimental targets, not guarantees.
 - Raise CHUNK_MAX_CHARS accordingly (currently 800, tuned specifically
   for the 4GB/1024 config) -- fewer, larger chunks means fewer seams
-  and faster overall jobs.
+  and potentially less repeated chunk overhead; measure total time and quality
+  rather than assuming a speedup.
 - Flash Attention was not installed in the measured environment. Treat it as
   an optional, platform-dependent experiment rather than a supported app
   prerequisite; check compatibility and benchmark before making performance

@@ -21,10 +21,14 @@ Open `http://localhost:5173`. The script starts Vite on `:5173` first, then
 FastAPI on `127.0.0.1:8000`. FastAPI begins serving while a background startup
 task probes the device, loads Qwen3-TTS, restores the queue, and starts the
 worker. The boot-status file reports the startup phase, and `/api/health`
-remains responsive with readiness and error details. At viewport widths of
-1600px and wider, the Studio shows generic voice-engine readiness and the
-active compute device in the outer left gutter. It does not display model
-identifiers or model-type clues. Other `/api/*` requests
+remains responsive with readiness and error details. Studio shows voice-model and
+compute status through `RuntimeStatus`, mounted
+beside the Voices card. On screens below 760px it appears above the card; at
+760–1024px it occupies a left column, and at 1025px and wider it is positioned
+in the left gutter. The device name comes from `/api/health`; the last detected
+name is cached in localStorage for startup display and replaced by live health
+data. The backend tests the default CUDA GPU and falls back to CPU if unusable;
+it does not rank multiple GPUs. Health does not expose model identifiers. Other `/api/*` requests
 wait up to ten minutes and receive HTTP 503 if initialization fails or times
 out. Vite proxies `/api`, `/audio`, and `/refs` to the API.
 `npm run dev` prints a LAN address because Vite listens on the network interfaces.
@@ -94,8 +98,8 @@ Its footer holds the script-language control on the left and Generate on the
 right. The word/character count appears inside the editor at the lower right.
 The selected voice is not repeated above the script text.
 The language control begins at **Select language**. Generation
-requires choosing an explicit language, even
-though the backend can fall back to the voice's stamped language. Choosing one
+requires choosing an explicit language. API requests that omit language default
+to English; they do not inherit the selected voice's language. Choosing one
 of the loaded model's languages reads the script in that language with the same
 cloned voice. The choice stays until you change it and is not saved across
 reloads. The list comes from the loaded model, so a language it does not speak
@@ -163,7 +167,27 @@ until it is ready again.
 
 Voice names are stored by the API and appear on future voiceovers. Renaming a
 voice does not rewrite names already recorded in history. Reference downloads
-are the original uploaded audio.
+serve the saved reference clip: unchanged uploads retain their format, while
+long uploads have been trimmed and saved as MP3. The download is not a copy of
+the discarded portion of the upload.
+
+## Record details
+
+Choose **Details** (the info icon) from a voice or completed-voiceover
+three-dot menu. Both dialogs use the same 460px by 520px panel, constrained to
+the viewport, with scrolling content and consistent date/duration formatting.
+They show name, creation time and language. Voice details include reference
+duration, cloning time, completed voiceovers and a tag when present. Voiceover
+details include voice, audio duration, generation time, and a script preview
+limited to the first 100 characters, followed by an ellipsis only when longer.
+The full saved script remains available through reuse.
+
+Cloning time is server processing time for upload reading, validation, trimming
+and transcription; it excludes network upload and waiting in the browser clone
+queue. Generation time measures job processing through output preparation,
+excluding submission-to-start queue waiting. Missing historical measurements
+show **Not recorded**; a measured zero remains zero. Escape, the close button,
+or clicking the backdrop dismisses the dialog.
 
 ## Generate and cancel voiceovers
 
@@ -231,7 +255,7 @@ the shared Base UI tooltip component, and interface icons use `lucide-react`.
 Each completed row keeps a fixed-width editable name followed by a truncated
 script preview and timestamp. Its transport row provides play/pause and a
 seekable progress bar; download and a three-dot menu sit at the right. The menu
-contains **Delete**. Clicking the script preview reuses the saved script, voice,
+contains **Details** and **Delete**. Clicking the script preview reuses the saved script, voice,
 and language. Generating and queued rows also reuse their script from the
 preview and have no three-dot menu. Downloads produce an MP3. Live rows use the
 same compact name/script arrangement, with queue/progress controls instead of
@@ -266,7 +290,8 @@ Presets, completed history, and the generation queue are persisted under
 persists history pages, voice-list pages (including display counts), and model
 language options in localStorage for up to 24 hours; query data is stale after
 one minute and retained in memory for 20 minutes. Queue snapshots, readiness,
-scripts, uploads, and generated audio are excluded from that API cache. The
+composer drafts, uploads, and generated audio are excluded from that API cache.
+Completed-history records in the cache do include their saved script text. The
 queue is polled into memory while Studio is open; its server records still
 survive backend restarts. Browser-local names, history and voice page-size
 preferences, filter selections, theme choice, and mascot-visibility preference
@@ -281,8 +306,9 @@ reports readiness and errors; no full-screen startup gate covers the Studio.
 Generate and Clone voice
 remain disabled while the model loads. Once loading completes, Clone voice is
 available even on CPU fallback, while Generate stays disabled unless health
-confirms a CUDA device. The runtime readout shows loading or unavailable values
-instead of stale readiness or device details and hides below 1600px. If the backend is
+confirms a CUDA device. RuntimeStatus labels loading and unavailable states explicitly. The last
+detected hardware name can appear from the browser cache until live health
+updates it; the status surface is not limited to wide screens. If the backend is
 unavailable or model startup fails,
 a pulsing warning button at the lower left opens a modal with the reported
 message and a Retry action when available. A failed background history refresh

@@ -173,4 +173,4 @@ closure, subsequent-job execution, retries and persisted history.
 `npm run lint` passed with eight existing frontend warnings; the Studio
 production build passed. Build progress/summary tests passed (14), splash
 consistency matched, and `git diff --check` passed. No frontend or public API
-schema changes were made. All changes remain unstaged and uncommitted.
+schema changes were made during this evaluation.

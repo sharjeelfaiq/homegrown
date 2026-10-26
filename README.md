@@ -69,14 +69,20 @@ npm run dev
 
 Open `http://localhost:5173`. The script starts Vite first, then FastAPI on
 `127.0.0.1:8000`. FastAPI binds and serves the Studio while a background
-startup task probes for a usable device, restores the queue, and loads
-Qwen3-TTS. `/api/health` remains available during startup; other `/api/*`
+startup task ensures model files exist, probes for a usable device, loads
+Qwen3-TTS, then restores the queue and starts its worker. `/api/health` remains
+available during startup; other `/api/*`
 requests wait for initialization and return a startup error or timeout if it
 does not complete. Vite proxies `/api`, `/audio`, and `/refs`, so Studio always
-uses same-origin API paths. At 1600px and wider, Studio shows generic voice
-engine readiness and the active compute device in the outer left gutter. Model
-identifiers are not exposed through health status. It prints a LAN address
-when available.
+uses same-origin API paths. Studio shows voice-model and compute status through
+`RuntimeStatus`, mounted
+beside the Voices card. On screens below 760px it appears above the card; at
+760–1024px it occupies a left column, and at 1025px and wider it is positioned
+in the left gutter. The device name comes from `/api/health`; the last detected
+name is cached in localStorage for startup display and replaced by live health
+data. The backend tests the default CUDA GPU and falls back to CPU if unusable;
+it does not rank multiple GPUs. Health does not expose model identifiers. The dev
+script prints a LAN address when available.
 There are no accounts or general API authentication. Ordinary actions,
 including individual deletes, are unauthenticated. Permanent bulk deletion
 from Settings additionally requires the locally configured
@@ -146,7 +152,8 @@ To add a mascot, place a numbered pair in `apps/studio/public/mascots/`:
 regenerates `apps/studio/src/features/mascots/generated/mascotCatalog.ts`. Commit the two assets
 and that generated catalog together.
 
-Run `npm run test` for the Studio and backend unit suites. Backend tests use
+Run `npm run test` for the Studio, backend, colocated engine, and benchmark
+safety test suites. Backend tests use
 Python's `unittest` runner and never build or freeze the backend. The separate
 `npm run build` command packages the Windows application.
 
@@ -201,7 +208,7 @@ control, while preview, reference download, and delete actions remain on each
 row. In completed Voiceovers rows, the fixed-width editable name is
 followed by a truncated script preview and timestamp; playback has a seekable
 progress bar. Clicking a script preview reuses its transcript. Download is
-beside the three-dot menu, which contains Delete. Generating and queued rows
+beside the three-dot menu, which contains Details and Delete. Generating and queued rows
 reuse their transcript from the preview and do not have a three-dot menu. Live
 rows keep the compact name/script layout and show queue or generation controls.
 Filters are in the popover beside search, and the total count is in the compact
@@ -218,6 +225,17 @@ depending on queue rows being present. Press Escape or close it to dismiss it;
 use the header help button to replay it. It does not target transient queue
 rows or error states.
 
+Both voices and completed voiceovers offer **Details** in their three-dot menus.
+The shared dialog shows name, creation time, language, and duration; voices also
+show cloning time and completed-voiceover count, while voiceovers show their
+voice, generation time, and the first 100 script characters with an ellipsis
+when truncated. Older records without a measured time show **Not recorded**.
+Cloning time measures server processing through validation, trimming and
+transcription; it excludes network upload and the browser waiting queue.
+Generation time is measured from job start through output preparation, excluding
+queue wait. Both panels use a 460px width and 520px height, constrained to the
+viewport, with scrolling content.
+
 ## Packaged Windows app
 
 ```bash
@@ -225,8 +243,10 @@ npm run build
 ```
 
 This creates `dist/Homegrown-<version>.exe`. Run that self-extracting archive,
-then run the extracted `Homegrown.exe`; its browser loader appears before the
-local API initializes Qwen3-TTS. The packaged backend listens on port 8731 for
+then run the extracted `Homegrown.exe`. The launcher starts the backend hidden
+and opens Studio once the app is serving, while model initialization continues
+in the background. Startup status and API-loading skeletons appear in Studio;
+the launcher does not open a separate browser splash. The packaged backend listens on port 8731 for
 trusted LAN use. Ordinary API actions are unauthenticated; permanent bulk
 deletion also requires the local `HOMEGROWN_ADMIN_PASSWORD`. Never expose it to
 an untrusted network. The detailed,
@@ -280,7 +300,7 @@ services/
 engine/
   qwen/            vendored FasterQwen3TTS wrapper
 desktop/
-  launcher/        browser loader and launcher executable
+  launcher/        launcher executable and retained generated splash assets
   installer/       legacy NSIS source (not the supported packaging path)
   assets/          desktop icon assets
 scripts/           development, build, checks, marketing, migrations

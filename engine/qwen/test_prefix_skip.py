@@ -68,8 +68,10 @@ class PrefixSkipTests(unittest.TestCase):
         # Frozen baseline implementation, independent of the production helper.
         import sys
         from pathlib import Path
-        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/benchmarks'))
-        from legacy_waveform_stream import legacy_waveform_stream
+        with patch.object(sys, 'path', [
+            str(Path(__file__).resolve().parents[2] / 'scripts/benchmarks'), *sys.path,
+        ]):
+            from legacy_waveform_stream import legacy_waveform_stream
         for sizes in ([1], [12, 1], [12, 12, 12, 12, 3], [25, 25, 7], [101, 101, 3]):
             for ref_len in (0, 1, 24, 25, 99, 100, 101, 199, 500, 507):
                 with self.subTest(sizes=sizes, reference=ref_len):

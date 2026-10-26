@@ -145,8 +145,8 @@ CPU transfer when a yield crosses internal blocks; tests cover that case.
 `npm test`, frontend lint, Studio build, 14 build progress/summary tests and
 splash consistency passed. Lint retains eight pre-existing frontend warnings.
 The final targeted engine/benchmark run passed 17 tests, including the public
-entry point and disabled-instrumentation checks. Changes are left unstaged,
-uncommitted and unpushed. Backend CUDA readiness is verified after restoration.
+entry point and disabled-instrumentation checks. Backend CUDA readiness was
+verified after restoration at the conclusion of this evaluation.
 
 See [the benchmark procedure](../scripts/benchmarks/voice_generation.md) for
 fresh-directory commands. Results apply to this hardware, model, input and

@@ -97,7 +97,7 @@ describe('voiceover row states', () => {
 })
 
 
-it('opens completed voiceover details with generation time and full script', async () => {
+it('opens completed voiceover details with generation time and script preview', async () => {
   const reuse = vi.fn()
   render(<VoiceoverRow entry={completedEntry} nameControl={nameControl} name="My narration" downloadHref="/download" onDelete={vi.fn()} onRequeue={reuse} animateExit={false} />)
   fireEvent.click(screen.getByRole('button', { name: 'More actions for My narration' }))

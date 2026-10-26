@@ -112,10 +112,14 @@ captured tokens, verifies the old/new generated decoder windows, and compares
 decoded MP3 PCM. Shared reference prefixes remain unchanged. Its adjacent-sample
 measure is a general diagnostic, not a seam-specific listening assessment.
 
-The bounded-history candidate lives in `codec_history_candidate.py` solely for
-experiments; ordinary generation retains its original assembly. Suppression
-vectorization likewise remains a microbenchmark. See the checked-in
-[measurement report](../../docs/voice-speed-results.md) for the retention decision.
+The standalone bounded-history candidate in `codec_history_candidate.py` remains
+benchmark-only; it was not retained in the initial evaluation. Production now
+uses `engine/qwen/waveform_stream.py`, which retains full generated history only
+during calibration and uses a bounded tail afterward as part of the later
+prefix-skipping implementation. Suppression vectorization remains a
+microbenchmark. See the [initial measurement report](../../docs/voice-speed-results.md)
+and [subsequent waveform evaluation](../../docs/waveform-decoding-results.md)
+for their separate retention decisions.
 
 Run regression coverage with `npm test` (backend, colocated engine and benchmark
 safety tests are included). Targeted checks:

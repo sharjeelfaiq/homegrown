@@ -16,22 +16,30 @@ type Props = { onClose: () => void } & (
 /** Shared record presentation; processing times are measured server-side. */
 export default function RecordDetailsModal(props: Props) {
   const record = props.record
-  const rows: [string, string][] = record ? [
-    ['Name', props.kind === 'voice' ? props.record!.name : props.name],
-    ['Created', formatTimestampFull(record.created_at)],
-    ['Language', record.language || 'Not recorded'],
-    ...(props.kind === 'voice' ? [
-      ['Reference duration', seconds(props.record!.ref_seconds)],
-      ['Cloning time', seconds(props.record!.cloning_s)],
-      ['Completed voiceovers', props.record!.completed_voiceovers?.toLocaleString() ?? 'Not recorded'],
-      ...(props.record!.tag ? [['Tag', props.record!.tag]] : []),
-    ] as [string, string][] : [
-      ['Voice', props.record!.preset_name || 'Not recorded'],
-      ['Audio duration', seconds(props.record!.duration_s)],
-      ['Generation time', seconds(props.record!.generation_s)],
-      ['Script', props.record!.text.length > 100 ? `${props.record!.text.slice(0, 100)}?` : props.record!.text],
-    ] as [string, string][]),
-  ] : []
+  const rows: [string, string][] = []
+  if (props.kind === 'voice' && props.record !== null) {
+    const voice = props.record
+    rows.push(
+      ['Name', voice.name],
+      ['Created', formatTimestampFull(voice.created_at)],
+      ['Language', voice.language || 'Not recorded'],
+      ['Reference duration', seconds(voice.ref_seconds)],
+      ['Cloning time', seconds(voice.cloning_s)],
+      ['Completed voiceovers', voice.completed_voiceovers?.toLocaleString() ?? 'Not recorded'],
+    )
+    if (voice.tag) rows.push(['Tag', voice.tag])
+  } else if (props.kind === 'voiceover' && props.record !== null) {
+    const voiceover = props.record
+    rows.push(
+      ['Name', props.name],
+      ['Created', formatTimestampFull(voiceover.created_at)],
+      ['Language', voiceover.language || 'Not recorded'],
+      ['Voice', voiceover.preset_name || 'Not recorded'],
+      ['Audio duration', seconds(voiceover.duration_s)],
+      ['Generation time', seconds(voiceover.generation_s)],
+      ['Script', voiceover.text.length > 100 ? `${voiceover.text.slice(0, 100)}\u2026` : voiceover.text],
+    )
+  }
   return (
     <Modal size="details" open={record !== null} title={props.kind === 'voice' ? 'Voice details' : 'Voiceover details'} onClose={props.onClose}>
       <dl className="m-0 divide-y divide-hairline text-[13px]">

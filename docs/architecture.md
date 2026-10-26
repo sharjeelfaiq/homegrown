@@ -20,12 +20,13 @@ model startup, the language selector stays visible but disabled, and Clone
 voice and voice selection stay disabled; their hover hints say they become
 available when the model is ready. Language options use a generated skeleton
 if they are still loading after startup. Generate also requires health to
-report a CUDA device. `features/startup/RuntimeModelReadout` shows generic
-voice-engine readiness and the selected compute device in the outer left gutter
-at viewport widths of 1600px and wider; it hides below that width. Its values
-come from `/api/health`, and loading or unavailable values are labeled instead
-of inferred from the local machine. Health does not expose model identifiers
-or model-type clues.
+report a CUDA device. Studio shows voice-model and compute status through `RuntimeStatus`, mounted
+beside the Voices card. On screens below 760px it appears above the card; at
+760–1024px it occupies a left column, and at 1025px and wider it is positioned
+in the left gutter. The device name comes from `/api/health`; the last detected
+name is cached in localStorage for startup display and replaced by live health
+data. The backend tests the default CUDA GPU and falls back to CPU if unusable;
+it does not rank multiple GPUs. Health does not expose model identifiers.
 `hooks/useTypeToScript.ts` focuses the
 Script textarea on load and forwards eligible printable keys to it without
 intercepting searches, editable controls, menus, dialogs, modifiers, or IME
@@ -67,7 +68,14 @@ voice name, transcript, and audio. `features/history` owns history query keys,
 persistence, pagination, and the presentation of live generation rows beside
 paginated completed history. Completed rows use the
 shared audio player and compact script preview; clicking that preview reuses
-the transcript, while the completed-row overflow menu owns individual deletion.
+the transcript, while the completed-row overflow menu offers Details and
+individual deletion. Both voice and voiceover menus open the shared
+`components/ui/RecordDetailsModal.tsx`; it preserves common dimensions and
+formatting, shows measured timings with legacy missing-value fallbacks, and
+limits the script preview to 100 characters plus an ellipsis when truncated.
+New presets persist server clone processing time as `cloning_s`; history retains
+job processing time as `generation_s`. Voice cache projections retain cloning
+time while blanking reference transcripts and storage paths.
 Generating and queued rows reuse their transcript from their preview and have
 no overflow menu. `lib/audio` owns shared playback
 state; `lib/theme` owns theme state. `styles/tokens.css` is the palette source
@@ -75,7 +83,7 @@ of truth. The shared React Query client scopes API keys to `local-user`, uses a
 one-minute stale time and 20-minute in-memory garbage-collection time, and
 persists history pages, voice-list pages, and language options for 24 hours.
 Persisted voice records contain row/action fields but omit reference transcripts
-and storage paths. Queue snapshots, readiness, scripts, uploads, and generated
+and storage paths. Queue snapshots, readiness, composer drafts, uploads, and generated
 audio are not written to this browser API cache; live queue data is memory-only.
 
 Mascot sheets remain at `/mascots/`. The catalog generator writes

@@ -7,7 +7,10 @@ Python version and platform.
 
 ## 1. Install a CUDA-enabled PyTorch build
 
-Check your driver's CUDA version first (`nvidia-smi`), then install a matching wheel. This repo was verified with CUDA 12.6 wheels on a driver supporting CUDA 13.0 (drivers are backward compatible):
+Check your driver's CUDA version first (`nvidia-smi`), then install a matching wheel.
+The October 2026 application benchmark used PyTorch 2.11.0+cu126 and driver
+560.94. That records one working environment, not a compatibility guarantee
+for every GPU. For a standalone environment, the CUDA 12.6 index is:
 
 ```bash
 pip install --index-url https://download.pytorch.org/whl/cu126 torch --upgrade
@@ -17,7 +20,10 @@ Verify:
 ```bash
 python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
-Expect a version ending in `+cu126`, `True`, and your GPU name. If `cuda.is_available()` is `False`, you got a CPU-only wheel — check `pip index versions torch` and the `--index-url` matches your CUDA version and Python version.
+With that index, expect a CUDA-enabled build and the actual GPU name. CUDA
+availability can be false because of a CPU-only wheel, driver issues, or no
+supported device. The application additionally checks compiled architecture
+support and executes a test operation before selecting CUDA.
 
 ## 2. Install the rest of the dependencies
 
@@ -110,11 +116,17 @@ sf.write("out_stream.wav", np.concatenate(chunks), sr)
 python run.py
 ```
 
-The first call to `generate_voice_clone`/`generate_voice_clone_streaming` captures the CUDA graphs (takes several seconds); subsequent calls reuse them and are fast.
+The first call to `generate_voice_clone`/`generate_voice_clone_streaming` captures
+the CUDA graphs when CUDA is selected; later calls reuse them.
+Capture time and warm performance depend on the machine and input.
 
 ## VRAM notes (4GB cards)
 
-This was verified to peak at ~4.2GB/4.3GB VRAM used with `max_seq_len=256` and `max_new_tokens=128` on the 0.6B model — right at the edge. If you hit `CUDA out of memory`:
+Older standalone notes reported about 4.2–4.3 GB of memory use without
+distinguishing allocated, reserved, device and shared memory. Do not treat that
+as a verified 4 GB VRAM requirement. Controlled application measurements are in
+[the waveform evaluation](../../docs/waveform-decoding-results.md).
+If you hit `CUDA out of memory`:
 - Lower `max_seq_len` further (e.g. 128–192)
 - Lower `max_new_tokens`
 - Close other GPU-using apps first (check `nvidia-smi` for baseline usage)
@@ -124,7 +136,7 @@ This was verified to peak at ~4.2GB/4.3GB VRAM used with `max_seq_len=256` and `
 
 | Symptom | Fix |
 |---|---|
-| `ValueError: CUDA graphs require CUDA device` | Your torch build is CPU-only — redo step 1 with the right `--index-url` |
+| `ValueError: CUDA graphs require CUDA device` | A graph-only path requires usable CUDA; inspect device probing and PyTorch/driver compatibility |
 | `ModuleNotFoundError: No module named 'qwen_tts'` | Redo step 2 |
 | `CUDA out of memory` | See VRAM notes above |
 | `"SoX could not be found!"` warning on import | Harmless — comes from a transitive audio dependency probing for the optional `sox` CLI; ignore it |
