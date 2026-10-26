@@ -21,6 +21,7 @@ import { useErrorToast } from '../hooks/useErrorToast'
 import { useTheme } from '../lib/theme/ThemeContext'
 import { themeMode } from '../lib/theme/theme'
 import { useBootStatus } from '../features/startup/useBootStatus'
+import RuntimeStatus from '../features/startup/RuntimeStatus'
 import { useHotkeys } from '../hooks/useHotkeys'
 import { useTypeToScript } from '../hooks/useTypeToScript'
 import { wakeBackend } from '../features/startup/wake'
@@ -41,6 +42,7 @@ import {
   type Estimate,
   type HistoryEntry,
   type HistoryPage,
+  type HealthResponse,
   type Preset,
 } from '../lib/api'
 import { apiQueryKeys, fetchLanguages, fetchVoices, historyQueryClient, invalidateHistory, invalidateVoices, persistablePreset } from '../features/history/historyQuery'
@@ -71,6 +73,8 @@ export default function StudioShell() {
     try { localStorage.setItem('homegrown-mascot-enabled', String(next)) } catch { /* storage is optional */ }
   }, [])
   const [modelStatus, setModelStatus] = useState<'checking' | 'ready' | 'down'>('checking')
+  const [startupHealth, setStartupHealth] = useState<HealthResponse | null>(null)
+  const [startupBackendLost, setStartupBackendLost] = useState(false)
   const [modelOnGpu, setModelOnGpu] = useState(false)
   const { startTour } = useOnboardingTour(modelStatus)
   const [wakeMessage, setWakeMessage] = useState<string | null>(null)
@@ -189,13 +193,25 @@ export default function StudioShell() {
 
   useEffect(() => {
     let cancelled = false
+    let reachedBackend = false
     bootFailedRef.current = false
     setModelStatus('checking')
     setModelOnGpu(false)
+    setStartupHealth(null)
+    setStartupBackendLost(false)
     setLanguagesValidated(false)
     setCpuNotice(null)
     setWakeMessage(null)
-    wakeBackend()
+    wakeBackend(undefined, (health) => {
+      if (cancelled) return
+      if (health) {
+        reachedBackend = true
+        setStartupHealth(health)
+        setStartupBackendLost(false)
+      } else if (reachedBackend) {
+        setStartupBackendLost(true)
+      }
+    })
       .then(() => {
         if (cancelled || bootFailedRef.current) return
         setModelStatus('ready')
@@ -666,18 +682,21 @@ export default function StudioShell() {
               reference silently multiplies both chunk count and render time.
               The backend only logged this; now it reaches the person who can
               act on it. */}
-          <ClonedVoicesSection
-            presets={presets}
-            selectedPresetId={voiceId}
-            onSelect={setVoiceId}
-            onRename={handleRenamePreset}
-            loading={presetsLoading || modelStatus === 'checking'}
-            modelReady={modelReady && !bulkBusy}
-            modelLoading={modelLoading}
-            onAddVoice={handleAddVoice}
-            onDelete={handleDeletePreset}
-            onCloneBusyChange={handleCloneBusyChange}
-          />
+          <div className="voice-manager-anchor">
+            <RuntimeStatus boot={boot} modelStatus={modelStatus} health={startupHealth} backendLost={startupBackendLost} />
+            <ClonedVoicesSection
+              presets={presets}
+              selectedPresetId={voiceId}
+              onSelect={setVoiceId}
+              onRename={handleRenamePreset}
+              loading={presetsLoading || modelStatus === 'checking'}
+              modelReady={modelReady && !bulkBusy}
+              modelLoading={modelLoading}
+              onAddVoice={handleAddVoice}
+              onDelete={handleDeletePreset}
+              onCloneBusyChange={handleCloneBusyChange}
+            />
+          </div>
 
           {/* GenerateButton stays a button throughout -- progress now lives in
               the Voiceovers column, as the first row, where the finished
@@ -700,7 +719,6 @@ export default function StudioShell() {
             languages={languages}
             languagesLoading={languagesLoading}
             languageEnabled={languagesValidated}
-            selectedVoiceName={selectedVoice?.name ?? null}
             language={languageOverride}
             onLanguageChange={setLanguageOverride}
             generateAction={<GenerateButton

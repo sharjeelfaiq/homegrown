@@ -84,8 +84,8 @@ transcribes the reference. There is no language selector on upload.
 
 The Script editor uses a responsive height of `clamp(300px, 39svh, 400px)`.
 Its footer holds the word count, script-language control, and Generate action.
-The selected voice is repeated in a truncated reminder above the script text;
-it updates with voice selection and does not change generation prerequisites.
+The selected voice is highlighted in the voices card. The script text starts
+at the top of the textarea without a voice header.
 The language control begins at **Select language**. Generation
 requires choosing an explicit language, even
 though the backend can fall back to the voice's stamped language. Choosing one

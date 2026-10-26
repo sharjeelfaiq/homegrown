@@ -32,24 +32,11 @@ Set `HOMEGROWN_ADMIN_PASSWORD` to a private value in that local `.env` if you
 need the permanent bulk-delete actions in Settings. Leave it out of source
 control; without it, bulk deletion is disabled.
 
-Download the model once (the default location is the ignored `models/`
-directory), then set `MODEL_PATH` in `services/voice-api/.env` to its absolute
-Windows path. The app has no sign-in or authentication; use it only on a
-trusted network:
-
-```bash
-PY=.venv/Scripts/python.exe; [ -f "$PY" ] || PY=.venv/bin/python
-MODEL_DIR="${MODEL_DIR:-$PWD/models}" "$PY" - <<'PYEOF'
-from huggingface_hub import snapshot_download
-import os
-
-snapshot_download(
-    "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-    local_dir=os.environ["MODEL_DIR"],
-    ignore_patterns=["*.msgpack", "*.h5", "flax_model*"],
-)
-PYEOF
-```
+Set `MODEL_PATH` in `services/voice-api/.env` to the directory where you want
+the model stored. On first launch, the backend downloads the model there if it
+is missing, then loads it onto the selected device before enabling voice
+operations. The app has no sign-in or authentication; use it only on a trusted
+network:
 
 ## Repairing a broken Python environment
 
@@ -177,8 +164,8 @@ and use smaller text than the script-language selector.
 Unselected dropdown inputs use **Select {field label}** as their default
 option (for example, **Select language**); fields with an existing setting
 continue to show that setting. The language control is 150px wide. The selected
-voice appears in a truncated reminder above the script text, leaving the
-footer for the language selector and Generate action.
+voice is highlighted in the voices card. The script text starts at the top of
+the editor, with the language selector and Generate action in its footer.
 
 The textarea has a **Paste from clipboard** button in its top-right corner.
 Clicking it calls the browser clipboard API, which can show the browser's own

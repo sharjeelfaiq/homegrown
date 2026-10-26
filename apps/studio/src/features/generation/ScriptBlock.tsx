@@ -16,7 +16,6 @@ interface Props {
   languages: string[]
   languagesLoading?: boolean
   languageEnabled?: boolean
-  selectedVoiceName?: string | null
   language: string | null
   onLanguageChange: (language: string | null) => void
   /** Owned by StudioShell because submission state belongs there. */
@@ -32,7 +31,6 @@ export default function ScriptBlock({
   languages,
   languagesLoading = false,
   languageEnabled = true,
-  selectedVoiceName = null,
   language,
   onLanguageChange,
   generateAction,
@@ -113,18 +111,10 @@ export default function ScriptBlock({
   return (
     <div className="script-editor grid h-[clamp(300px,39svh,400px)] min-h-[clamp(300px,39svh,400px)] max-h-[clamp(300px,39svh,400px)] grid-rows-[minmax(0,1fr)_auto] overflow-visible rounded-md border border-transparent bg-surface-card" data-tour="script-editor">
       <div className="script-editor-input">
-        <div
-          className="script-voice-reminder"
-          aria-label={`Selected voice: ${selectedVoiceName || 'No voice selected'}`}
-          title={selectedVoiceName || 'No voice selected'}
-        >
-          <span className="script-voice-reminder-label">Voice</span>
-          <span className="script-voice-reminder-name">{selectedVoiceName || 'No voice selected'}</span>
-        </div>
         <textarea
           ref={textareaRef ?? localTextareaRef}
           autoFocus
-          className="block h-full min-h-0 w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pr-14 pt-10 pb-8 text-[15px]/[1.7] outline-none placeholder:text-faint"
+          className="block h-full min-h-0 w-full resize-none overflow-y-auto border-none bg-transparent px-[18px] pr-14 pt-3 pb-8 text-[15px]/[1.7] outline-none placeholder:text-faint"
           placeholder="Type or paste a script…"
           value={text}
           onChange={(event) => onTextChange(event.target.value)}

@@ -856,38 +856,6 @@ body {
   min-height: 0;
 }
 
-.script-voice-reminder {
-  position: absolute;
-  z-index: 3;
-  top: 9px;
-  right: 48px;
-  left: 14px;
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 6px;
-  overflow: hidden;
-  padding: 2px 4px;
-  border-radius: 4px;
-  background-color: var(--bg-card);
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 16px;
-  pointer-events: none;
-}
-
-.script-voice-reminder-label {
-  flex: none;
-  color: var(--text-faint);
-}
-
-.script-voice-reminder-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .script-paste-button {
   position: absolute;
   z-index: 2;

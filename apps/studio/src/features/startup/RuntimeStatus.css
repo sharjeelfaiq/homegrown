@@ -1,0 +1,136 @@
+.voice-manager-anchor {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.runtime-status {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+  color: var(--text-muted);
+}
+
+.runtime-status-item {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.runtime-status-label {
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.runtime-status-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.runtime-status-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.runtime-status-value i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-faint);
+}
+
+.runtime-status-value.is-active i {
+  background: var(--accent-2);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent-2) 65%, transparent);
+}
+
+.runtime-status-value.is-loading i {
+  background: var(--accent);
+}
+
+.runtime-status-value.is-unavailable i {
+  background: var(--danger);
+}
+
+.runtime-status-detail {
+  max-width: 230px;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.runtime-status-detail.is-error {
+  color: var(--danger-text);
+}
+
+.runtime-status-progress {
+  width: min(100%, 190px);
+  height: 2px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.runtime-status-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 300ms ease;
+}
+
+@media (width >= 760px) and (width < 1025px) {
+  .voice-manager-anchor {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+  }
+
+  .runtime-status {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    margin-top: 190px;
+    margin-bottom: 0;
+    pointer-events: none;
+  }
+
+  .voice-manager-anchor > .cloned-voices-section {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+@media (width >= 1025px) {
+  .voice-manager-anchor {
+    flex: 1 1 0%;
+    min-height: 0;
+  }
+
+  /* On wide screens the workspace is centered, leaving a generous gutter
+     before its first card. Put startup details in that gutter so they sit
+     beside the voice manager without changing either card's width. */
+  .runtime-status {
+    position: absolute;
+    top: 105px;
+    left: calc(-14px - max(0px, (100vw - var(--shell)) / 2));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    width: 210px;
+    margin: 0;
+    pointer-events: none;
+  }
+}

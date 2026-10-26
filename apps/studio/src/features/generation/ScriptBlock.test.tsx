@@ -10,14 +10,13 @@ const toastError = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: toastError } }))
 vi.mock('boneyard-js/react', () => ({ Skeleton: ({ children }: { children: ReactNode }) => children }))
 
-function renderScriptBlock(selectedVoiceName: string | null = null) {
+function renderScriptBlock() {
   return render(
     <ScriptBlock
       text=""
       onTextChange={vi.fn()}
       presetId={null}
       languages={['English', 'German']}
-      selectedVoiceName={selectedVoiceName}
       language={null}
       onLanguageChange={vi.fn()}
       generateAction={<button type="button">Generate</button>}
@@ -83,33 +82,6 @@ describe('ScriptBlock footer', () => {
     expect(footer).toContainElement(screen.getByRole('button', { name: 'Generate' }))
     expect(footer.querySelector('.script-language-control')).toBeTruthy()
     expect(footer).toHaveTextContent('Select language')
-    expect(screen.getByLabelText('Selected voice: No voice selected')).toBeInTheDocument()
-    expect(container.querySelector('.script-editor-input')).toContainElement(screen.getByLabelText('Selected voice: No voice selected'))
-  })
-
-  it('shows the selected voice above the script and updates when selection changes', () => {
-    const { rerender, container } = renderScriptBlock('Narrator')
-    const input = container.querySelector('.script-editor-input')!
-    const reminder = screen.getByLabelText('Selected voice: Narrator')
-    expect(input).toContainElement(reminder)
-    expect(reminder.querySelector('.script-voice-reminder-name')).toHaveTextContent('Narrator')
-    expect(container.querySelector('.script-editor-selection .script-language-control')).toBeInTheDocument()
-    expect(container.querySelector('.script-selected-voice')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Generate' })).toBeInTheDocument()
-
-    rerender(
-      <ScriptBlock
-        text=""
-        onTextChange={vi.fn()}
-        presetId={null}
-        languages={['English', 'German']}
-        selectedVoiceName="Updated narrator"
-        language={null}
-        onLanguageChange={vi.fn()}
-        generateAction={<button type="button">Generate</button>}
-      />,
-    )
-    expect(screen.getByLabelText('Selected voice: Updated narrator')).toBeInTheDocument()
   })
 
   it('keeps the language control and options menu compact and lists English first', async () => {

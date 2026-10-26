@@ -1,4 +1,5 @@
 """Routes health"""
+import platform
 import homegrown_api.config as config
 from fastapi import APIRouter, HTTPException
 
@@ -10,7 +11,13 @@ router = APIRouter()
 
 @router.get("/api/health")
 def health():
+    device_name = None
+    if generation_model._device.startswith("cuda"):
+        device_name = generation_model._device_reason.split(" (sm_")[0]
+    elif generation_model._device == "cpu":
+        device_name = platform.processor() or "CPU"
     return {
+        "device_name": device_name,
         "model_loaded": generation_model._tts is not None,
         "sample_rate": generation_model._tts.sample_rate if generation_model._tts else None,
         "device": generation_model._device,

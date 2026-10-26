@@ -1,5 +1,6 @@
 """Shared model and device state."""
 import homegrown_api.config as config
+import sys
 import threading
 from typing import Optional, TYPE_CHECKING
 
@@ -89,6 +90,24 @@ def load_model() -> None:
     global _tts
     import torch
     from qwen import FasterQwen3TTS
+
+    # Transformers opens safetensors with mmap by default. On Windows, the
+    # mmap-backed tensor storage can trigger a native 0xC0000005 during
+    # _load_state_dict_into_meta_model (observed with Torch 2.11 / safetensors
+    # 0.8.0). The safetensors pread backend avoids that invalid storage access.
+    # Keep the workaround local to Windows; mmap remains the faster path on
+    # platforms where it is stable.
+    if sys.platform == "win32":
+        import transformers.modeling_utils as modeling_utils
+
+        original_safe_open = modeling_utils.safe_open
+        if not getattr(original_safe_open, "_homegrown_pread", False):
+            def safe_open_with_pread(*args, **kwargs):
+                kwargs.setdefault("backend", "pread")
+                return original_safe_open(*args, **kwargs)
+
+            safe_open_with_pread._homegrown_pread = True
+            modeling_utils.safe_open = safe_open_with_pread
 
     _tts = FasterQwen3TTS.from_pretrained(
         config.MODEL_PATH,

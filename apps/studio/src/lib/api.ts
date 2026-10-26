@@ -1,4 +1,5 @@
-interface HealthResponse {
+export interface HealthResponse {
+  device_name?: string | null
   model_loaded: boolean
   sample_rate: number | null
   /** 'cuda' | 'cpu'. Optional: older backends don't send it. */

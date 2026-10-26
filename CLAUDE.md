@@ -243,8 +243,8 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   run a normal Studio command, and commit the assets with its regenerated
   catalog. Mascot 2 (the Cat sheets) is the default when it exists.
 - Generate is a compact right-aligned action in the Script editor footer; the
-  language selector is left-aligned. The selected voice appears in a truncated
-  reminder above the textarea text, outside the footer. Its tooltip exposes the Ctrl/Cmd+Enter
+  language selector is left-aligned. The selected voice is highlighted only in
+  the voices card; the textarea has no voice header. Generate's tooltip exposes the Ctrl/Cmd+Enter
   shortcut when ready and the model-loading explanation while startup blocks
   it. Keep `.generate-action-auxiliary` visually stable and do not reintroduce
   shortcut or prerequisite copy beside the action.

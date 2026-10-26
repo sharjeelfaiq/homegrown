@@ -1,4 +1,4 @@
-"""Download the packaged voice model during background ASGI startup."""
+"""Download the voice model when missing during background ASGI startup."""
 import fnmatch
 import threading
 from pathlib import Path

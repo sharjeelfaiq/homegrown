@@ -1,4 +1,4 @@
-import { getHealth } from '../../lib/api'
+import { getHealth, type HealthResponse } from '../../lib/api'
 
 type WakeStatus = 'starting' | 'ready' | 'error'
 
@@ -15,14 +15,16 @@ const LOCAL_TIMEOUT_MS = 10 * 60_000
 
 const CLIENT_TIMEOUT_MS = LOCAL_TIMEOUT_MS
 
-async function callWake(): Promise<WakeResponse> {
+async function callWake(onHealth?: (health: HealthResponse | null) => void): Promise<WakeResponse> {
   try {
     const health = await getHealth()
+    onHealth?.(health)
     if (health.model_loaded) return { status: 'ready' }
     return health.startup_error
       ? { status: 'error', message: health.startup_error }
       : { status: 'starting' }
   } catch {
+    onHealth?.(null)
       // A refused connection is normal while a cold backend process starts.
     return { status: 'starting' }
   }
@@ -35,6 +37,7 @@ async function callWake(): Promise<WakeResponse> {
  * can show live progress ("Warming up... 42s"). */
 export function wakeBackend(
   onStatus?: (status: WakeStatus, elapsedMs: number) => void,
+  onHealth?: (health: HealthResponse | null) => void,
 ): Promise<void> {
   const startedAt = Date.now()
   return new Promise((resolve, reject) => {
@@ -47,7 +50,7 @@ export function wakeBackend(
       }
       let result: WakeResponse
       try {
-        result = await callWake()
+        result = await callWake(onHealth)
       } catch {
         // Transient network hiccup calling our own same-origin endpoint --
         // keep polling rather than failing the whole flow on one blip.

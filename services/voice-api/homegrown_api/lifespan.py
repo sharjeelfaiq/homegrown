@@ -2,7 +2,6 @@
 import asyncio
 import homegrown_api.config as config
 import os
-import sys
 import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -52,8 +51,9 @@ async def wait_until_ready(timeout: float) -> bool:
 def _initialize_model() -> None:
     global _startup_error, _worker_thread
     try:
-        if getattr(sys, "frozen", False):
-            model_download.download_model_if_needed()
+        # Both development and packaged launches may start with an empty model
+        # directory. Ensure the snapshot exists before attempting to load it.
+        model_download.download_model_if_needed()
         persistence_stores._migrate_preset_media_paths()
 
         boot_status.write(config.STORAGE_DIR, boot_status.PHASE_IMPORTING)

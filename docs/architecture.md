@@ -80,9 +80,10 @@ declares package metadata; it does not replace or duplicate dependency pins.
 - `dependencies.py` supplies the fixed local-user dependency and password gate
   for permanent collection-wide deletion. There is no account authentication.
 - `lifespan.py` starts model initialization in a background thread during ASGI
-  lifespan startup, then yields without waiting for it. Initialization probes
-  the device, loads the model, restores persisted queue state, and starts the
-  worker before publishing ready; failures publish an error status.
+  lifespan startup, then yields without waiting for it. Initialization
+  downloads the model snapshot when it is missing, probes the device, loads the
+  model, restores persisted queue state, and starts the worker before publishing
+  ready; failures publish an error status.
 - `generation/model.py` owns model and device state; `generation/worker.py`
   owns job dictionaries, FIFO ordering and worker synchronization.
 - `generation/budget.py` owns reference and sequence budgeting.
