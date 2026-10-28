@@ -136,6 +136,17 @@ requires the `HOMEGROWN_ADMIN_PASSWORD` configured in
 `services/voice-api/.env`; if it is unset, bulk deletion is unavailable. Bulk
 deletion has no Undo.
 
+Settings also provides **Backup**. After entering the configured
+`HOMEGROWN_ADMIN_PASSWORD`, Studio downloads a ZIP containing persisted voices,
+history, queue state, transcripts, and referenced audio files. Missing media is
+reported in the archive manifest without preventing the JSON snapshot. Backups
+contain private user data; browser-local preferences and cache, model files,
+logs, `.env`, and other secrets or unrelated storage files are excluded. **Restore
+backup** requires the same password and a confirmation because it replaces the
+current application data. Homegrown creates an automatic pre-restore backup,
+validates the complete ZIP, and refuses to change live data when validation
+fails. Browser preferences, query cache, and `.env` are never restored.
+
 The Studio mascot is a session-local viewport companion. On wide screens it
 rests at the Voiceovers section's lower-left corner, and on narrow screens at
 the viewport's lower-left, until you drag the mascot artwork itself; after a

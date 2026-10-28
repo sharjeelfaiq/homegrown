@@ -4,6 +4,7 @@ import json
 import tempfile
 import threading
 import unittest
+import zipfile
 from contextlib import ExitStack
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -17,6 +18,7 @@ from homegrown_api import config
 from homegrown_api.app import app
 from homegrown_api.generation import budget, model, worker
 from homegrown_api.persistence import stores
+from homegrown_api.routes import backup as backup_route
 
 
 class ApiContractTests(unittest.TestCase):
@@ -105,10 +107,138 @@ class ApiContractTests(unittest.TestCase):
             '/api/queue/{job_id}/cancel': {'post'},
             '/api/queue/{job_id}/retry': {'post'},
             '/api/queue/{job_id}': {'delete'}, '/api/queue/reorder': {'post'},
+            '/api/backup': {'post'},
+            '/api/backup/restore': {'post'},
         }
         paths = app.openapi()['paths']
         actual = {p: set(methods) for p, methods in paths.items() if p.startswith('/api/')}
         self.assertEqual(actual, expected)
+
+    def test_backup_contains_snapshots_referenced_media_and_manifest(self):
+        (config.REF_DIR / 'shared.mp3').write_bytes(b'reference')
+        (config.GEN_DIR / 'generated.mp3').write_bytes(b'generated')
+        (config.GEN_DIR / 'unrelated.mp3').write_bytes(b'ignore')
+        stores._presets.extend([
+            {'id': 'builtin', 'name': 'Built in', 'is_builtin': True, 'audio_path': 'references/shared.mp3'},
+            {'id': 'voice', 'name': 'Voice', 'audio_path': 'references/shared.mp3'},
+        ])
+        stores._history.append({'id': 'history', 'preset_id': 'voice', 'audio_url': '/audio/generated.mp3', 'text': 'Transcript'})
+        config.QUEUE_FILE.write_text('[{"job_id":"queued"}]', encoding='utf-8')
+        response = self.client.post('/api/backup', headers={'X-Homegrown-Admin-Password': 'test-admin-password'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn('attachment; filename="homegrown-backup-', response.headers['content-disposition'])
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            names = set(archive.namelist())
+            self.assertEqual(names, {'manifest.json', 'presets.json', 'history.json', 'queue.json', 'references/shared.mp3', 'generated/generated.mp3'})
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['format_version'], 1)
+            self.assertEqual(manifest['stores'], ['presets', 'history', 'queue'])
+            self.assertEqual(manifest['counts'], {'presets': 2, 'history': 1, 'queue': 1})
+            self.assertTrue(manifest['created_at'])
+            self.assertEqual(json.loads(archive.read('presets.json')), stores._presets)
+            self.assertEqual(archive.read('references/shared.mp3'), b'reference')
+
+    def test_backup_reports_missing_media_without_scanning_unrelated_storage(self):
+        stores._presets.append({'id': 'missing', 'audio_path': 'references/missing.mp3'})
+        (config.STORAGE_DIR / '.env').write_text('SECRET=bad', encoding='utf-8')
+        (config.STORAGE_DIR / 'cache.tmp').write_bytes(b'ignore')
+        response = self.client.post('/api/backup', headers={'X-Homegrown-Admin-Password': 'test-admin-password'})
+        self.assertEqual(response.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(len(manifest['warnings']), 1)
+            self.assertIn('missing', manifest['warnings'][0])
+            self.assertNotIn('.env', archive.namelist())
+            self.assertNotIn('cache.tmp', archive.namelist())
+
+    def test_backup_uses_existing_admin_gate_and_refuses_active_work(self):
+        self.assertEqual(self.client.post('/api/backup').status_code, 401)
+        self.assertEqual(self.client.post('/api/backup', headers={'X-Homegrown-Admin-Password': 'wrong'}).status_code, 401)
+        with patch.object(config, 'ADMIN_PASSWORD', ''):
+            self.assertEqual(self.client.post('/api/backup').status_code, 503)
+        worker._jobs['active'] = {'status': 'running'}
+        response = self.client.post('/api/backup', headers={'X-Homegrown-Admin-Password': 'test-admin-password'})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.restore(self.make_restore_zip()).status_code, 409)
+        worker._jobs.clear()
+        stores._active_reference_uploads = 1
+        try:
+            response = self.client.post('/api/backup', headers={'X-Homegrown-Admin-Password': 'test-admin-password'})
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(self.restore(self.make_restore_zip()).status_code, 409)
+        finally:
+            stores._active_reference_uploads = 0
+
+    def make_restore_zip(self, presets=None, history=None, queue=None, extra=None, version=1):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w') as archive:
+            archive.writestr('manifest.json', json.dumps({
+                'format_version': version,
+                'created_at': '2026-01-01T00:00:00+00:00',
+                'app_version': None,
+                'stores': ['presets', 'history', 'queue'],
+                'counts': {'presets': len(presets or []), 'history': len(history or []), 'queue': len(queue or [])},
+                'warnings': [],
+            }))
+            archive.writestr('presets.json', json.dumps(presets or []))
+            archive.writestr('history.json', json.dumps(history or []))
+            archive.writestr('queue.json', json.dumps(queue or []))
+            for name, content in (extra or {}).items():
+                archive.writestr(name, content)
+        return buf.getvalue()
+
+    def restore(self, payload, password='test-admin-password'):
+        return self.client.post(
+            '/api/backup/restore',
+            headers={'X-Homegrown-Admin-Password': password},
+            files={'backup': ('backup.zip', payload, 'application/zip')},
+        )
+
+    def test_restore_replaces_data_creates_pre_restore_backup_and_reloads_memory(self):
+        (config.REF_DIR / 'old.mp3').write_bytes(b'old')
+        stores._presets.append({'id': 'old', 'audio_path': 'references/old.mp3'})
+        config.PRESETS_FILE.write_text(json.dumps(stores._presets), encoding='utf-8')
+        payload = self.make_restore_zip()
+        response = self.restore(payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(stores._presets, [])
+        self.assertEqual(json.loads(config.PRESETS_FILE.read_text()), [])
+        pre_restore = list((config.STORAGE_DIR / 'backups').glob('homegrown-pre-restore-*.zip'))
+        self.assertEqual(len(pre_restore), 1)
+        self.assertTrue(zipfile.is_zipfile(pre_restore[0]))
+        self.assertFalse((config.REF_DIR / 'old.mp3').exists())
+
+    def test_restore_rejects_invalid_archive_without_mutating_live_data(self):
+        stores._presets.append({'id': 'keep', 'audio_path': 'references/keep.mp3'})
+        before = list(stores._presets)
+        response = self.restore(b'not a zip')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(stores._presets, before)
+        self.assertFalse((config.STORAGE_DIR / 'backups').exists())
+        self.assertEqual(self.restore(self.make_restore_zip(version=2)).status_code, 400)
+        malformed = self.make_restore_zip()
+        broken = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(malformed)) as source, zipfile.ZipFile(broken, 'w') as target:
+            for info in source.infolist():
+                target.writestr(info.filename, b'{' if info.filename == 'history.json' else source.read(info.filename))
+        self.assertEqual(self.restore(broken.getvalue()).status_code, 400)
+        self.assertEqual(stores._presets, before)
+
+    def test_restore_rejects_traversal_missing_media_and_duplicate_ids(self):
+        traversal = self.make_restore_zip(extra={'../outside.txt': b'bad'})
+        self.assertEqual(self.restore(traversal).status_code, 400)
+        missing = self.make_restore_zip(presets=[{'id': 'voice', 'audio_path': 'references/missing.mp3'}])
+        self.assertEqual(self.restore(missing).status_code, 400)
+        duplicate = self.make_restore_zip(presets=[{'id': 'voice', 'audio_path': 'references/a.mp3'}, {'id': 'voice', 'audio_path': 'references/b.mp3'}], extra={'references/a.mp3': b'a', 'references/b.mp3': b'b'})
+        self.assertEqual(self.restore(duplicate).status_code, 400)
+        self.assertEqual(self.restore(self.make_restore_zip(), password='wrong').status_code, 401)
+
+    def test_restore_rolls_back_when_replacement_fails(self):
+        stores._presets.append({'id': 'keep', 'audio_path': 'references/keep.mp3'})
+        with patch.object(backup_route, '_replace_storage', side_effect=OSError('simulated replacement failure')):
+            response = self.restore(self.make_restore_zip())
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(stores._presets, [{'id': 'keep', 'audio_path': 'references/keep.mp3'}])
 
     def test_health_reports_readiness_without_exposing_model_identity(self):
         loaded_model = SimpleNamespace(tts_model_type='base')

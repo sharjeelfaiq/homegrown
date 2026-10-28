@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 import homegrown_api.lifespan as lifespan
 import homegrown_api.routes.downloads as routes_downloads
+import homegrown_api.routes.backup as routes_backup
 import homegrown_api.routes.generation as routes_generation
 import homegrown_api.routes.health as routes_health
 import homegrown_api.routes.history as routes_history
@@ -52,6 +53,7 @@ app.include_router(routes_generation.router)
 app.include_router(routes_presets.router)
 app.include_router(routes_history.router)
 app.include_router(routes_queue.router)
+app.include_router(routes_backup.router)
 
 # ---- Frontend (production) --------------------------------------------------
 # Serves the built React app so the packaged backend's port is the

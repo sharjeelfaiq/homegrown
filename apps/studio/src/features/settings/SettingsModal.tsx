@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { Palette, TriangleAlert } from 'lucide-react'
+import { Archive, Palette, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatToastDescription, formatToastTitle } from '../../lib/messageFormatting'
 import Modal from '../../components/ui/Modal'
 import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
 import StatusMark from '../../components/ui/StatusMark'
-import type { BulkDeleteResult } from '../../lib/api'
+import type { BackupDownload, BulkDeleteResult, RestoreResult } from '../../lib/api'
 import ThemeSwitch from './ThemeSwitch'
 import './SettingsModal.css'
 
@@ -15,19 +15,26 @@ interface Props {
   mascotEnabled: boolean
   onMascotEnabledChange: (next: boolean) => void
   onBulkDelete: (kind: 'history' | 'presets', adminPassword: string) => Promise<BulkDeleteResult>
+  onBackup: (adminPassword: string) => Promise<BackupDownload>
+  onRestore: (adminPassword: string, file: File) => Promise<RestoreResult>
 }
 
 /** A small home for durable Studio preferences. */
-export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEnabledChange, onBulkDelete }: Props) {
-  const [activeTab, setActiveTab] = useState<'appearance' | 'danger'>('appearance')
+export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEnabledChange, onBulkDelete, onBackup, onRestore }: Props) {
+  const [activeTab, setActiveTab] = useState<'appearance' | 'backup' | 'danger'>('appearance')
   const [confirm, setConfirm] = useState<'history' | 'presets' | null>(null)
   const [busy, setBusy] = useState(false)
   const [passwordStep, setPasswordStep] = useState(false)
   const [adminPassword, setAdminPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [backupPrompt, setBackupPrompt] = useState(false)
+  const [restorePrompt, setRestorePrompt] = useState(false)
+  const [restoreConfirm, setRestoreConfirm] = useState(false)
+  const [restoreFile, setRestoreFile] = useState<File | null>(null)
+  const restoreInputRef = useRef<HTMLInputElement>(null)
   const busyRef = useRef(false)
   useEffect(() => {
-    if (!open) setActiveTab('appearance')
+    if (!open) { setActiveTab('appearance'); setBackupPrompt(false); setRestorePrompt(false); setRestoreConfirm(false); setRestoreFile(null); setPasswordStep(false); setAdminPassword(''); setPasswordError('') }
   }, [open])
   async function removeAll(kind: 'history' | 'presets', password: string): Promise<boolean> {
     if (busyRef.current) return false
@@ -60,6 +67,59 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
     setPasswordStep(false)
     setAdminPassword('')
     setPasswordError('')
+    setBackupPrompt(false)
+    setRestorePrompt(false)
+    setRestoreConfirm(false)
+    setRestoreFile(null)
+    if (restoreInputRef.current) restoreInputRef.current.value = ''
+  }
+
+  async function submitBackup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!adminPassword) { setPasswordError('Enter the admin password to continue.'); return }
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    setPasswordError('')
+    const id = toast(formatToastTitle('Creating backup…'), { duration: Infinity, icon: <StatusMark status="running" size={18} color="var(--progress)" /> })
+    try {
+      const result = await onBackup(adminPassword)
+      const url = URL.createObjectURL(result.blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = result.filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      toast(formatToastTitle('Backup downloaded.'), { id, duration: 1500, icon: <StatusMark status="done" size={18} doneColor="var(--green)" /> })
+      closeConfirmation()
+    } catch (error) {
+      toast.dismiss(id)
+      setPasswordError(error instanceof Error ? error.message : 'Could not create the backup.')
+      toast.error(formatToastTitle('Backup failed.'), { description: formatToastDescription(error instanceof Error ? error.message : 'Could not create the backup.') })
+    } finally { busyRef.current = false; setBusy(false) }
+  }
+
+  async function submitRestore(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!restoreFile) { setPasswordError('Choose a ZIP backup to restore.'); return }
+    if (!adminPassword) { setPasswordError('Enter the admin password to continue.'); return }
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    setPasswordError('')
+    const id = toast(formatToastTitle('Restoring backup…'), { duration: Infinity, icon: <StatusMark status="running" size={18} color="var(--progress)" /> })
+    try {
+      await onRestore(adminPassword, restoreFile)
+      toast(formatToastTitle('Backup restored.'), { id, duration: 1500, icon: <StatusMark status="done" size={18} doneColor="var(--green)" /> })
+      closeConfirmation()
+    } catch (error) {
+      toast.dismiss(id)
+      const message = error instanceof Error ? error.message : 'Could not restore the backup.'
+      setPasswordError(message)
+      toast.error(formatToastTitle('Restore failed.'), { description: formatToastDescription(message) })
+    } finally { busyRef.current = false; setBusy(false) }
   }
 
   async function submitAdminPassword(event: FormEvent<HTMLFormElement>) {
@@ -85,12 +145,12 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
     event.preventDefault()
     const nextTab = tabs[nextIndex]
     nextTab.focus()
-    setActiveTab(nextTab.dataset.settingsTab as 'appearance' | 'danger')
+    setActiveTab(nextTab.dataset.settingsTab as 'appearance' | 'backup' | 'danger')
   }
 
   return (
     <>
-    <Modal open={open && confirm === null} title="Settings" onClose={onClose} size="settings">
+    <Modal open={open && confirm === null && !backupPrompt && !restorePrompt && !restoreConfirm} title="Settings" onClose={onClose} size="settings">
       <div className="settings-layout">
         <div className="settings-sidebar" role="tablist" aria-label="Settings sections" onKeyDown={handleTabKeyDown}>
           <button
@@ -107,6 +167,11 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
             <Palette size={15} aria-hidden="true" />
             <span>Appearance</span>
           </button>
+          <button
+            id="settings-tab-backup" type="button" role="tab" aria-selected={activeTab === 'backup'} aria-controls="settings-panel-backup"
+            tabIndex={activeTab === 'backup' ? 0 : -1} data-settings-tab="backup"
+            className={`settings-sidebar-tab ${activeTab === 'backup' ? 'is-active' : ''}`} onClick={() => setActiveTab('backup')}
+          ><Archive size={15} aria-hidden="true" /><span>Backup</span></button>
           <button
             id="settings-tab-danger"
             type="button"
@@ -151,6 +216,16 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
           <span className={`relative h-5 w-9 rounded-full transition-colors ${mascotEnabled ? 'bg-audio' : 'bg-surface-card border border-control'}`} aria-hidden="true"><span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${mascotEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} /></span>
         </button>
       </section>
+        : activeTab === 'backup' ? <section className="settings-section" aria-labelledby="backup-heading">
+        <div className="flex items-center gap-2"><Archive size={15} className="text-muted" aria-hidden="true" /><h3 id="backup-heading" className="m-0 font-mono text-[11px] font-normal tracking-[0.1em] uppercase text-muted">Backup</h3></div>
+        <p className="settings-section-description">Download a password-protected snapshot of your persisted voices, history, queue state, transcripts, and referenced audio.</p>
+        <p className="settings-section-description">Browser preferences and cache, model files, logs, <code>.env</code>, and other unrelated or secret files are excluded. The backup contains private user data.</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="ghost-btn" disabled={busy} onClick={() => { setBackupPrompt(true); setAdminPassword(''); setPasswordError('') }}>Download backup</button>
+          <input ref={restoreInputRef} type="file" accept=".zip,application/zip" aria-label="Backup ZIP file" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) { setRestoreFile(file); setRestoreConfirm(true); setPasswordError('') } }} disabled={busy} />
+          <button type="button" className="ghost-btn" disabled={busy} onClick={() => restoreInputRef.current?.click()}>Restore backup</button>
+        </div>
+      </section>
         : <section className="settings-section settings-danger-section" aria-labelledby="danger-zone-heading">
         <div className="flex items-center gap-2">
           <TriangleAlert size={15} className="text-danger" aria-hidden="true" />
@@ -188,9 +263,18 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
       onConfirm={() => setPasswordStep(true)}
       closeOnConfirm={false}
     />
-    <Modal open={open && confirm !== null && passwordStep} title="Admin password required" onClose={busy ? () => {} : closeConfirmation}>
-      <form className="flex flex-col gap-4" onSubmit={submitAdminPassword}>
-        <p className="m-0 text-[13px]/[1.55] text-muted">Enter the admin password to permanently delete {confirm === 'history' ? 'all generated voiceovers' : 'all uploaded voices'}.</p>
+    <ConfirmDeleteModal
+      open={open && restoreConfirm}
+      title="Replace all application data with this backup?"
+      description="This permanently replaces current voices, history, queue state, transcripts, and referenced audio. A pre-restore backup will be created automatically. Do not continue unless you are certain this ZIP is the backup you want to restore."
+      onClose={closeConfirmation}
+      onConfirm={() => { setRestoreConfirm(false); setRestorePrompt(true); setAdminPassword(''); setPasswordError('') }}
+      closeOnConfirm={false}
+      confirmLabel="Restore"
+    />
+    <Modal open={open && ((confirm !== null && passwordStep) || backupPrompt || restorePrompt)} title="Admin password required" onClose={busy ? () => {} : closeConfirmation}>
+      <form className="flex flex-col gap-4" onSubmit={restorePrompt ? submitRestore : backupPrompt ? submitBackup : submitAdminPassword}>
+        <p className="m-0 text-[13px]/[1.55] text-muted">Enter the admin password to {restorePrompt ? 'replace all application data with this backup' : backupPrompt ? 'download a backup containing private user data' : `permanently delete ${confirm === 'history' ? 'all generated voiceovers' : 'all uploaded voices'}`}.</p>
         <label className="flex flex-col gap-2 text-[13px] font-medium text-ink" htmlFor="bulk-delete-admin-password">
           Admin password
           <input
@@ -199,7 +283,6 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
             name="admin-password"
             autoComplete="current-password"
             autoFocus
-            required
             value={adminPassword}
             onChange={(event) => setAdminPassword(event.currentTarget.value)}
             className="voiceover-search h-10 w-full rounded-sm border border-control bg-surface-raised px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-(--line-focus)"
@@ -211,7 +294,7 @@ export default function SettingsModal({ open, onClose, mascotEnabled, onMascotEn
         {passwordError && <p id="admin-password-error" role="alert" className="m-0 text-[12px] text-danger">{passwordError}</p>}
         <div className="flex justify-end gap-2.5">
           <button type="button" className="ghost-btn" onClick={closeConfirmation} disabled={busy}>Cancel</button>
-          <button type="submit" className="ghost-btn ghost-btn-danger" disabled={busy}>Delete permanently</button>
+          <button type="submit" className={`ghost-btn ${backupPrompt || restorePrompt ? '' : 'ghost-btn-danger'}`} disabled={busy}>{restorePrompt ? 'Restore backup' : backupPrompt ? 'Download backup' : 'Delete permanently'}</button>
         </div>
       </form>
     </Modal>

@@ -82,6 +82,18 @@ deleting uploaded voices. The second confirmation requires the password set as
 backend refuses the operation. Never commit that `.env` file. The app reports
 any audio files it could not remove.
 
+The **Backup** section downloads a password-protected ZIP of persisted voices,
+history, queue state, transcripts, and referenced audio. It requires the same
+`HOMEGROWN_ADMIN_PASSWORD` configured in `services/voice-api/.env`. The archive
+is private user data and should be stored accordingly. Browser preferences and
+cache, model files, logs, `.env`, other secrets, and unrelated storage contents
+are excluded. Missing referenced media is listed in the archive manifest.
+**Restore backup** requires the same password and a strong confirmation. It
+validates the entire ZIP, creates an automatic pre-restore backup, then replaces
+the application stores and referenced media only after validation succeeds.
+Generation and cloning must be idle. Browser preferences, query cache, and
+`.env` are never restored.
+
 ## Create and manage voices
 
 Choose **Clone voice** in the Voices card to select one or more audio files,

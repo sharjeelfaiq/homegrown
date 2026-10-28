@@ -147,6 +147,22 @@ def _restore_queue_on_startup() -> None:
         config.logger.info("Restored %d queued job(s) from queue.json", restored)
 
 
+def _reload_queue_from_storage_locked() -> None:
+    """Replace in-memory queue state from queue.json after a data restore.
+
+    Caller holds ``_jobs_lock`` and has already ensured no active work exists.
+    """
+    global _current_running_job_id
+    _jobs.clear()
+    _pending_job_ids.clear()
+    _current_running_job_id = None
+    _restore_queue_on_startup()
+    if _pending_job_ids:
+        _queue_event.set()
+    else:
+        _queue_event.clear()
+
+
 # ---- Worker -----------------------------------------------------------------
 
 def _process_job(job_id: str) -> None:

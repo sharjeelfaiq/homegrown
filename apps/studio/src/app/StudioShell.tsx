@@ -35,6 +35,8 @@ import {
   createPreset,
   deleteHistoryEntry,
   deleteAllRecords,
+  downloadBackup,
+  restoreBackup,
   deletePreset,
   getHealth,
   getQueueScript,
@@ -764,7 +766,17 @@ export default function StudioShell() {
         onClose={() => setSettingsOpen(false)}
         mascotEnabled={mascotEnabled}
         onMascotEnabledChange={setMascotPreference}
-        onBulkDelete={async (kind, adminPassword) => {
+          onBackup={async (adminPassword) => downloadBackup(adminPassword)}
+          onRestore={async (adminPassword, file) => {
+            const result = await restoreBackup(adminPassword, file)
+            historyQueryClient.removeQueries({ queryKey: ['voiceover-history'] })
+            historyQueryClient.removeQueries({ queryKey: apiQueryKeys.voices })
+            historyQueryClient.removeQueries({ queryKey: apiQueryKeys.queue })
+            await Promise.all([invalidateHistory(), invalidateVoices()])
+            setHistoryReset((value) => value + 1)
+            return result
+          }}
+          onBulkDelete={async (kind, adminPassword) => {
           if (bulkDeleting.current) throw new Error('A bulk deletion is already in progress.')
           if (submitting || warmingUp) throw new Error('Wait for the current generation submission to finish before bulk deletion.')
           if (kind === 'presets' && cloneBusy.current) throw new Error('Wait for all queued voices to finish cloning before deleting uploaded voices.')

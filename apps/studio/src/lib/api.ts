@@ -239,6 +239,39 @@ export function deleteAllRecords(kind: 'history' | 'presets', adminPassword: str
   }).then(parseOrThrow<BulkDeleteResult>)
 }
 
+export interface BackupDownload { blob: Blob; filename: string }
+export interface RestoreResult { ok: boolean; pre_restore_backup: string }
+
+export async function downloadBackup(adminPassword: string): Promise<BackupDownload> {
+  const response = await fetch(apiUrl('/api/backup'), {
+    method: 'POST',
+    headers: { 'X-Homegrown-Admin-Password': adminPassword },
+  })
+  if (!response.ok) {
+    let detail = response.statusText
+    try {
+      const body = (await response.json()) as ApiErrorBody
+      if (body.detail) detail = body.detail
+    } catch {
+      // Keep the HTTP status text when the backend did not return JSON.
+    }
+    throw new ApiError(detail)
+  }
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const match = disposition.match(/filename="?([^";]+)"?/i)
+  return { blob: await response.blob(), filename: match?.[1] || 'homegrown-backup.zip' }
+}
+
+export function restoreBackup(adminPassword: string, file: File): Promise<RestoreResult> {
+  const form = new FormData()
+  form.append('backup', file)
+  return fetch(apiUrl('/api/backup/restore'), {
+    method: 'POST',
+    headers: { 'X-Homegrown-Admin-Password': adminPassword },
+    body: form,
+  }).then(parseOrThrow<RestoreResult>)
+}
+
 export interface HistoryPage {
   history: HistoryEntry[]
   /** Total entries for this user across all pages, before slicing. */

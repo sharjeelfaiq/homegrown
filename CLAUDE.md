@@ -273,6 +273,11 @@ cloning_s without retaining private reference transcripts or storage paths.
   reported separately from successful record deletion. Keyboard focus styles
   use the `--line-focus` token where provided. The Script editor textarea has no
   active outline, and focusing it does not change the editor frame border.
+- Settings Backup downloads a password-protected ZIP of persisted application
+  data and can restore one only after strong confirmation. Restore validates the
+  entire archive, creates a pre-restore backup, refuses active generation or
+  cloning, and never restores browser-local preferences, query cache, `.env`, or
+  unrelated storage files.
 - The mascot catalog is generated from top-level numbered pairs in
   `apps/studio/public/mascots/`: `<id>a.webp` is directions and `<id>b.webp`
   is reactions. Do not hand-edit `src/features/mascots/generated/mascotCatalog.ts`; add a pair,

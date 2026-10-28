@@ -128,6 +128,17 @@ declares package metadata; it does not replace or duplicate dependency pins.
   an unset password rejects those requests. The Settings UI asks for it only in
   the second confirmation step.
 - `routes/` exposes health, presets, generation, history, queue and download APIs.
+- `routes/backup.py` exposes password-protected `POST /api/backup`. It holds the
+  worker and persistence locks while snapshotting presets, history, and queue,
+  then writes only validated referenced media into an in-memory ZIP. Its
+  manifest records counts and missing-media warnings. Backups include persisted
+  voice data, transcripts, queue state, and referenced audio, but exclude
+  browser-local preferences/cache, model files, logs, `.env`, secrets, and
+  unrelated storage contents. `POST /api/backup/restore` validates a complete
+  ZIP in a sibling staging directory, writes an automatic pre-restore ZIP,
+  performs a rollback-capable storage swap under the worker/store locks, and
+  reloads the in-memory stores and queue. Restore never imports browser state,
+  query cache, `.env`, or unrelated files.
 
 Mutable state is accessed through its owning module, so replacing a model or
 restoring the queue is visible to all callers. API routes are registered before
