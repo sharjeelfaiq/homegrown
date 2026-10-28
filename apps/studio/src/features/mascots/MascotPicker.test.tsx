@@ -68,6 +68,7 @@ describe('MascotPicker', () => {
   it('only starts a drag after a small movement threshold and keeps navigation clicks isolated', () => {
     renderPicker()
     const picker = screen.getByTestId('mascot-picker')
+    expect(picker).toHaveAttribute('data-flow-layout', 'true')
     const next = screen.getByRole('button', { name: 'Show next mascot; current mascot is Mascot 2' })
 
     const mascot = screen.getByTestId('mascot')
@@ -75,7 +76,7 @@ describe('MascotPicker', () => {
     fireEvent.pointerMove(mascot, { pointerId: 4, clientX: 23, clientY: 742 })
     expect(picker).toHaveAttribute('data-dragged', 'false')
     fireEvent.pointerMove(mascot, { pointerId: 4, clientX: 100, clientY: 650 })
-    expect(picker).toHaveAttribute('data-dragged', 'false')
+    expect(picker).toHaveAttribute('data-dragged', 'true')
     expect(HTMLElement.prototype.setPointerCapture).toHaveBeenCalledWith(4)
     fireEvent.pointerUp(picker, { pointerId: 4 })
     expect(picker).toHaveAttribute('data-dragged', 'true')

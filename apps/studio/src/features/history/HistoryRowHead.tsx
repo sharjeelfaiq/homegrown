@@ -28,7 +28,7 @@ export default function HistoryRowHead({
   timestampTitle?: string
 }) {
   return (
-    <div className="flex min-h-[26px] min-w-0 items-center justify-between gap-1.5">
+    <div className="history-row-head flex min-h-[26px] min-w-0 items-center justify-between gap-1.5">
       <div className={scriptPreview ? 'history-name-script' : 'contents'}>
         <InlineName
           value={name}
@@ -42,9 +42,9 @@ export default function HistoryRowHead({
       </div>
 
       {scriptPreview && <span className="flex-none text-[12px] text-muted" aria-hidden="true">-</span>}
-      {scriptPreview && <div className="min-w-0 flex-1 overflow-hidden">{scriptPreview}</div>}
+      {scriptPreview && <div className="history-row-script min-w-0 flex-1 overflow-hidden">{scriptPreview}</div>}
 
-      <div className={`ml-auto flex min-w-0 items-center justify-end gap-3 ${scriptPreview ? 'flex-none' : 'flex-1'}`}>
+      <div className={`history-row-meta ml-auto flex min-w-0 items-center justify-end gap-3 ${scriptPreview ? 'flex-none' : 'flex-1'}`}>
         {voiceName && (
           <AppTooltip content={`Voice: ${voiceName}`}>
             <span className="mono min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-right text-[11px] text-faint">

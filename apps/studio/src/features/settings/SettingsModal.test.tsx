@@ -54,6 +54,21 @@ it('shows Backup before Danger Zone and opens its password prompt', () => {
   expect(screen.getByRole('alert')).toHaveTextContent('Enter the admin password')
 })
 
+it('keeps the settings navigation and content regions responsive and accessible', () => {
+  setup()
+  const dialog = screen.getByRole('dialog', { name: 'Settings' })
+  const tablist = screen.getByRole('tablist', { name: 'Settings sections' })
+  const panel = screen.getByRole('tabpanel')
+
+  expect(dialog).toHaveClass('settings-modal-panel')
+  expect(tablist).toHaveClass('settings-sidebar')
+  expect(panel).toHaveClass('settings-content')
+  expect(screen.getAllByRole('tab')).toHaveLength(3)
+  expect(screen.getByRole('tab', { name: 'Appearance' })).toBeVisible()
+  expect(screen.getByRole('tab', { name: 'Backup' })).toBeVisible()
+  expect(screen.getByRole('tab', { name: 'Danger Zone' })).toBeVisible()
+})
+
 it('downloads a backup and resets the prompt', async () => {
   const onBackup = vi.fn().mockResolvedValue({ blob: new Blob(['backup']), filename: 'homegrown-backup-test.zip' })
   setup(undefined, onBackup)

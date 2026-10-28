@@ -76,12 +76,35 @@ describe('ClonedVoicesSection', () => {
     expect(screen.getByRole('option', { name: /Ada/ })).toHaveClass('-mx-2')
   })
 
+  it('shows selected and actively used voice names beside Clone voice', () => {
+    runningPresetIds.add('ada')
+    const { container } = renderSection({ selectedPresetId: 'qwen-vivian' })
+
+    const toolbar = container.querySelector('.cloned-voices-toolbar')!
+    const cloneButton = screen.getByRole('button', { name: 'Clone voice' })
+    const selected = screen.getByLabelText('Selected: Vivian')
+    const generating = screen.getByLabelText('Generating: Ada')
+
+    expect(selected).toHaveTextContent('Selected: Vivian')
+    expect(generating).toHaveTextContent('Generating: Ada')
+    expect(selected).toHaveClass('voice-status-selected')
+    expect(generating).toHaveClass('voice-status-generating')
+    expect(selected).toHaveClass('voice-status-value')
+    expect(generating).toHaveClass('voice-status-value')
+    expect(toolbar.contains(cloneButton)).toBe(true)
+    expect(toolbar.contains(selected)).toBe(true)
+    expect(toolbar.contains(generating)).toBe(true)
+    expect(cloneButton.compareDocumentPosition(selected) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('shows each voice’s completed voiceover count, including zero', () => {
     renderSection({ presets: presets.map((preset) => preset.id === 'ada'
       ? { ...preset, completed_voiceovers: 4 }
       : preset.id === 'bruno' ? { ...preset, completed_voiceovers: 0 } : preset) })
     expect(screen.getByLabelText('4 completed voiceovers')).toBeInTheDocument()
     expect(screen.getByLabelText('0 completed voiceovers')).toBeInTheDocument()
+    expect(screen.getByLabelText('4 completed voiceovers').querySelector('.voice-generation-count-number')).toHaveTextContent('4')
+    expect(screen.getByLabelText('4 completed voiceovers').querySelector('.voice-generation-count-label')).toHaveTextContent('voiceovers')
   })
 
   it('places the pulsing generation indicator before the completed voiceover count', () => {

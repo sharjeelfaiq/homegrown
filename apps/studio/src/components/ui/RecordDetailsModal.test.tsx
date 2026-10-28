@@ -35,6 +35,17 @@ it('preserves missing and zero generation times', () => {
   expect(screen.getByText('Generation time').nextElementSibling).toHaveTextContent('0 seconds')
 })
 
+it.each([
+  [59.5, '59.5 seconds'],
+  [60, '1 minute 0 seconds'],
+  [125.25, '2 minutes 5.25 seconds'],
+  [3600, '1 hour'],
+  [3665, '1 hour 1 minute 5 seconds'],
+])('formats %s seconds in readable units', (duration, expected) => {
+  render(<RecordDetailsModal kind="voiceover" record={{ ...voiceover, duration_s: duration }} name="Voiceover 1" onClose={vi.fn()} />)
+  expect(screen.getByText('Audio duration').nextElementSibling).toHaveTextContent(expected)
+})
+
 it('renders no dialog for either missing record', () => {
   const { rerender } = render(<RecordDetailsModal kind="voice" record={null} onClose={vi.fn()} />)
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

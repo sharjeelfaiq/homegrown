@@ -13,7 +13,9 @@ type Props = {
 
 const EDGE_INSET = 16
 const DRAG_THRESHOLD = 6
-const WIDE_QUERY = '(min-width: 1025px)'
+// The mascot can float beside history only when the centered workspace leaves
+// enough room; at intermediate desktop widths it stays in document flow.
+const WIDE_QUERY = '(min-width: 1600px)'
 const MASCOT_QUERY = '(min-width: 640px)'
 const MIN_SIZE = 56
 const MAX_SIZE = 176
@@ -40,6 +42,7 @@ export default function MascotPicker({ anchorRef }: Props) {
   const [selectedId, setSelectedId] = useState<number>(initialMascotId)
   const [position, setPosition] = useState<Position | null>(null)
   const [hasDragged, setHasDragged] = useState(false)
+  const [flowLayout, setFlowLayout] = useState(() => !window.matchMedia?.(WIDE_QUERY).matches)
   // Size is session-local in-memory state, exactly like position: nothing is
   // written to localStorage or the server.
   const [size, setSize] = useState<number>(defaultSize)
@@ -73,19 +76,24 @@ export default function MascotPicker({ anchorRef }: Props) {
       // responsive default for the current viewport.
       if (!hasResized) setSize(defaultSize())
 
+      const wide = window.matchMedia?.(WIDE_QUERY).matches ?? false
+      setFlowLayout(!wide)
+
       if (hasDragged) {
         setPosition((current) => current ? clamp(current) : current)
         return
       }
 
+      if (!wide) {
+        setPosition(null)
+        return
+      }
+
       const anchor = anchorRef.current
-      if (window.matchMedia?.(WIDE_QUERY).matches && anchor) {
+      if (anchor) {
         const rect = anchor.getBoundingClientRect()
         const pickerHeight = pickerRef.current?.getBoundingClientRect().height ?? 0
         setPosition(clamp({ x: rect.left, y: rect.bottom - pickerHeight }))
-      } else {
-        const pickerHeight = pickerRef.current?.getBoundingClientRect().height ?? 0
-        setPosition(clamp({ x: EDGE_INSET, y: window.innerHeight - pickerHeight - EDGE_INSET }))
       }
     }
 
@@ -121,7 +129,8 @@ export default function MascotPicker({ anchorRef }: Props) {
     // A fresh gesture retires any click still owed to the previous drag.
     suppressClickRef.current = false
     if (event.button !== 0 || (event.target as Element).closest('[data-mascot-navigation], [data-mascot-resize]')) return
-    const origin = position ?? clamp({ x: EDGE_INSET, y: EDGE_INSET })
+    const rect = pickerRef.current?.getBoundingClientRect()
+    const origin = position ?? clamp({ x: rect?.left ?? EDGE_INSET, y: rect?.top ?? EDGE_INSET })
     // Deliberately no pointer capture yet: capturing here retargets the
     // pointerup away from the mascot's own button, so the browser never
     // synthesizes its click and the boop reaction never plays.
@@ -135,6 +144,7 @@ export default function MascotPicker({ anchorRef }: Props) {
     const dy = event.clientY - drag.startY
     if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
     drag.moved = true
+    setHasDragged(true)
     if (!drag.captured) {
       drag.captured = true
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -199,8 +209,9 @@ export default function MascotPicker({ anchorRef }: Props) {
   return (
     <div
       ref={pickerRef}
-      className="fixed z-[200] flex shrink-0 touch-none select-none items-center gap-1 cursor-grab active:cursor-grabbing"
-      style={position ? { left: position.x, top: position.y } : { visibility: 'hidden' }}
+      className="mascot-picker fixed z-[200] flex shrink-0 touch-none select-none items-center gap-1 cursor-grab active:cursor-grabbing"
+      data-flow-layout={flowLayout}
+      style={flowLayout && !hasDragged ? undefined : position ? { left: position.x, top: position.y } : { visibility: 'hidden' }}
       role="group"
       aria-label="Studio mascot"
       aria-describedby="mascot-drag-instructions"

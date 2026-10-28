@@ -82,13 +82,37 @@
   }
 
   .settings-sidebar-tab {
+    min-width: 0;
     flex: 1;
     justify-content: center;
+    gap: 6px;
     padding-inline: 6px;
+    text-align: center;
+  }
+
+  .settings-sidebar-tab span {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .settings-content {
     padding: 14px;
+  }
+}
+
+@media (max-width: 380px) {
+  .settings-sidebar {
+    gap: 2px;
+    padding-inline: 6px;
+  }
+
+  .settings-sidebar-tab {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 48px;
+    padding-block: 5px;
+    font-size: 11px;
+    line-height: 1.15;
   }
 }
 

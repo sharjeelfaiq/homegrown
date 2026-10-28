@@ -356,19 +356,18 @@ export function PendingRow({
       transition={{ duration: reduced ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
       className={voiceoverRowClassName(rowStatus, [
         // px-2 -mx-2 is padding that COSTS NOTHING, and the pair is the whole
-        // trick. This row is tinted (amber running, purple queued, red
-        // cancelling) while VoiceoverRow is not, so its content sits against a
-        // coloured edge and reads as cramped -- but padding it inward moves the
-        // progress track, and the track is aligned to a finished row's waveform
+        // trick. Pending rows and VoiceoverRow share the same neutral surface,
+        // so this keeps their content edges aligned. Padding it inward moves
+        // the progress track, which must align with a finished row's waveform
         // on both edges. That was measured going wrong once: a bare px-2 here
         // put the bar 8px inside the waveform at dL +8.0 / dR -8.1 in the real
         // app, while a synthetic harness (which gave both row kinds px-2)
         // reported 0.0 and hid it for an iteration.
         //
         // The negative margin cancels the padding for layout, so the CONTENT
-        // does not move at all -- only the tint, the hairline and the
-        // is-canceling stripe grow 8px outward into .result-list's own 12px of
-        // side padding. Content stays on the finished row's pixel (dL 0.0 /
+        // does not move at all -- the row's bottom hairline reaches 8px
+        // outward into .result-list's own 12px of side padding.
+        // Content stays on the finished row's pixel (dL 0.0 /
         // dR -0.1 re-measured after this), and the band gains its breathing
         // room. Keep the two numbers equal.
         // is-over used to sit beside this, tinting the clock once elapsed

@@ -3,9 +3,27 @@ import type { HistoryEntry, Preset } from '../../lib/api'
 import { formatTimestampFull } from '../../lib/format'
 
 function seconds(value: number | null | undefined) {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} seconds`
-    : 'Not recorded'
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return 'Not recorded'
+
+  const formatUnit = (amount: number, unit: string) => `${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit}${amount === 1 ? '' : 's'}`
+  if (value < 60) return formatUnit(value, 'second')
+
+  // Round to hundredths before splitting units so a value such as 59:59.999
+  // carries cleanly into the next minute rather than displaying 60 seconds.
+  const rounded = Math.round(value * 100) / 100
+  const hours = Math.floor(rounded / 3600)
+  const minutes = Math.floor((rounded % 3600) / 60)
+  const remainder = Math.round((rounded % 60) * 100) / 100
+
+  if (hours > 0) {
+    return [
+      formatUnit(hours, 'hour'),
+      ...(minutes > 0 ? [formatUnit(minutes, 'minute')] : []),
+      ...(remainder > 0 ? [formatUnit(remainder, 'second')] : []),
+    ].join(' ')
+  }
+
+  return `${formatUnit(minutes, 'minute')} ${formatUnit(remainder, 'second')}`
 }
 
 type Props = { onClose: () => void } & (

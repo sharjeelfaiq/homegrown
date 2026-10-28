@@ -71,6 +71,10 @@ export default function ClonedVoicesSection({
   const enqueueVoiceFiles = useVoiceCloneQueue({ modelReady, onAddVoice, onBusyChange: onCloneBusyChange, onQueueChange: setCloneQueue })
   const { setActiveAudio, releaseAudio } = useAudioActivity()
   const { runningPresetIds } = useGenerationActivity()
+  const selectedVoiceName = presets.find((preset) => preset.id === selectedPresetId)?.name
+  const generatingVoiceNames = [...runningPresetIds]
+    .map((id) => presets.find((preset) => preset.id === id)?.name)
+    .filter((name): name is string => Boolean(name))
   const reduced = usePrefersReducedMotion()
 
   useEffect(() => () => {
@@ -248,6 +252,14 @@ export default function ClonedVoicesSection({
             </button>
           </AppTooltip>
         </span>
+        <div className="voice-statuses ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[11px] leading-5" aria-label="Voice status">
+          <span className="voice-status-value voice-status-selected" aria-label={`Selected: ${selectedVoiceName ?? 'None'}`} title={`Selected: ${selectedVoiceName ?? 'None'}`}>
+            <span className="font-medium">Selected:</span>{' '}{selectedVoiceName ?? 'None'}
+          </span>
+          <span className="voice-status-value voice-status-generating" aria-label={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`} title={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`}>
+            <span className="font-medium">Generating:</span>{' '}{generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}
+          </span>
+        </div>
       </div>
       {loading && presets.length === 0 && !pageQuery.data && visibleCloneQueue.length === 0 ? (
         <Skeleton
@@ -280,7 +292,7 @@ export default function ClonedVoicesSection({
           ) : visiblePresets.map((preset) => {
             const voiceCount = (
               <span className="voice-generation-count mono flex-none text-[10px] text-faint" aria-label={`${preset.completed_voiceovers ?? 0} completed voiceovers`}>
-                {preset.completed_voiceovers ?? 0} voiceover{preset.completed_voiceovers === 1 ? '' : 's'}
+                <span className="voice-generation-count-number">{preset.completed_voiceovers ?? 0}</span><span className="voice-generation-count-label"> voiceover{preset.completed_voiceovers === 1 ? '' : 's'}</span>
               </span>
             )
             const pickerDetails = (

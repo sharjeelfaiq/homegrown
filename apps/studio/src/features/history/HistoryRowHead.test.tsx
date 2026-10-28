@@ -26,6 +26,8 @@ describe('completed voiceover row heading', () => {
     expect(stamp?.getAttribute('datetime')).toBe(new Date(timestamp * 1000).toISOString())
     expect(header?.textContent).not.toContain('Selected voice')
     expect(header?.classList.contains('min-h-[26px]')).toBe(true)
+    expect(header?.classList.contains('history-row-head')).toBe(true)
+    expect(container.querySelector('.history-row-meta time.result-stamp')).toBe(stamp)
   })
 
   it('keeps the editable name in a fixed-width slot before the script preview', () => {
@@ -40,6 +42,10 @@ describe('completed voiceover row heading', () => {
     )
 
     expect(container.querySelector('.history-name-script')).not.toBeNull()
+    expect(container.querySelector('.history-row-head')).not.toBeNull()
+    expect(container.querySelector('.history-row-script')).not.toBeNull()
+    expect(container.querySelector('.history-row-meta')).not.toBeNull()
+    expect(container.querySelector('.history-row-script')?.textContent).toContain('Sample transcript')
     expect(getByText('-')).toBeTruthy()
     expect(getByText('Sample transcript')).toBeTruthy()
   })

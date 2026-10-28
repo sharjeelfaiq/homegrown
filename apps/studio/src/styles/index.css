@@ -748,6 +748,46 @@ body {
   color: var(--text-faint);
 }
 
+/* On a phone the desktop footer's fixed 220px pager competes with the page
+   size control and total count. Give the pager its own full-width row on
+   narrow cards so none of the controls are clipped or forced off-screen. */
+@media (max-width: 520px) {
+  .voiceover-pager {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label count"
+      "pages pages";
+    height: auto;
+    min-height: 72px;
+    row-gap: 8px;
+    padding: 8px;
+    transform: none;
+  }
+
+  .voiceover-pager > label {
+    grid-area: label;
+    min-width: 0;
+  }
+
+  .voiceover-pager > nav {
+    grid-area: pages;
+    width: 100%;
+  }
+
+  .voiceover-pager-count {
+    grid-area: count;
+  }
+
+  .voiceover-pager-list {
+    justify-content: space-between;
+  }
+
+  .voiceover-pager-list button {
+    min-width: 32px;
+    min-height: 32px;
+  }
+}
+
 /* Inert once there is only one page. The nav also carries the `inert`
    attribute, which is what actually removes it from the tab order and blocks
    clicks; this is only the paint. */
@@ -982,6 +1022,27 @@ body {
   /* Match the Voiceovers card's compact horizontal rhythm: the control row
      shares its divider, inset, and 40px target height with that card's footer. */
   min-height: 40px;
+  flex-wrap: wrap;
+}
+
+.voice-statuses {
+  flex: 1 1 180px;
+}
+
+.voice-status-value {
+  flex: 0 0 160px;
+  width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-status-selected {
+  color: var(--accent-2);
+}
+
+.voice-status-generating {
+  color: var(--green);
 }
 
 .cloned-voices-empty {
@@ -1340,6 +1401,73 @@ body {
   }
 }
 
+/* A narrow history row needs a readable title and script preview. The desktop
+   header puts all three beside each other, leaving only a few characters for
+   the title on phones. Put the timestamp beside the title and the preview on
+   its own second line. */
+@media (max-width: 520px) {
+  .history-row-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 2px;
+  }
+
+  .history-row-head > .history-name-script {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    width: auto;
+    max-width: 100%;
+    flex-basis: auto;
+  }
+
+  .history-row-head > .history-row-script {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 22px;
+  }
+
+  .history-row-head > .history-row-meta {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 0;
+    margin-left: 0;
+  }
+
+  .history-row-head > .history-row-meta .result-stamp {
+    min-width: max-content;
+  }
+
+  .history-row-head > [aria-hidden="true"] {
+    display: none;
+  }
+}
+
+@media (max-width: 380px) {
+  .voice-generation-count-label {
+    display: none;
+  }
+
+  .voice-menu-pick .voice-picker-option-details {
+    flex: 1 1 0;
+  }
+
+  .voice-menu-pick .voice-picker-option-details > span:first-child,
+  .voice-menu-pick .inline-name-shell {
+    flex: 1 1 0;
+    max-width: none;
+  }
+
+  .voice-menu-pick .voice-picker-name {
+    width: 0;
+    max-width: 100%;
+    flex: 1 1 0;
+  }
+}
+
 .dropdown-menu-positioner {
   z-index: 150;
   outline: none;
@@ -1684,36 +1812,33 @@ body {
    17ch fits a localized date/time such as "Sep 19, 02:32 PM" without clipping.
    The full timestamp remains available in its native tooltip.
 
-   --text-faint, the same weight as a finished row's clock: this is reference
-   information you look up, never something to notice. */
+   --text-muted is one quiet step clearer than the script preview while
+   remaining secondary to the voiceover name. */
 @utility result-stamp {
   flex: none;
   width: 17ch;
   font-size: 11px;
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-muted) 84%, var(--accent-2) 16%);
   text-align: right;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* A queued row is the same row in a different colour -- amber means the GPU
-   is working on it, purple means it is waiting its turn, red means it is
-   stopping (see is-canceling, which this rule used to say did not exist).
+/* A queued row keeps the shared neutral surface; its track outline and status
+   label use the queued colour. Amber means the GPU is working, purple means it
+   is waiting its turn, and red means it is stopping.
 
-   Queued rows deliberately have no progress track: their reorder buttons and
-   `Queued` label occupy that line instead. The label carries the state colour
+   A queued row has the same neutral track as completed/running rows, but no
+   filled progress yet. The `Queued` label and outline carry its state colour
    without pretending that work has started.
 
    Colour is not the only signal, and deliberately so -- roughly 1 in 12 men
    would not read hue alone. In greyscale a queued row still reads "Queued"
    where a running row has a ticking clock. */
 @utility is-queued {
-  background: var(--queued-soft);
-  box-shadow: inset 2px 0 0 var(--queued-line);
-
   & .result-bar {
-    background: var(--queued-soft);
+    background: var(--bg-raised);
     box-shadow: inset 0 0 0 1px var(--queued-line);
   }
 
@@ -1722,8 +1847,8 @@ body {
   }
 }
 
-/* A running row is AMBER -- the tint and the bar fill, amber already meaning
-   "the GPU is working on this" everywhere else in this column.
+/* A running row uses the progress colour on its bar fill and readout. The row
+   surface stays neutral like completed and queued voiceovers.
 
    This block used to describe a clock reading `1:12 / ~2:30`. Both halves of
    that are gone: the `~estimate` denominator went when the estimator was
@@ -1736,9 +1861,6 @@ body {
    Not in is-queued's block: a queued row has not started, and is already
    purple. */
 @utility is-running {
-  background: var(--progress-soft);
-  box-shadow: inset 2px 0 0 var(--progress-line);
-
   & .result-time {
     /* --progress IS a raw token now (tokens.css layer 1, one per theme). It
        was not when this rule was written: the clock used var(--accent) and a
@@ -1772,9 +1894,8 @@ body {
   }
 }
 
-/* Cancelled: the work is stopping, so every amber thing on the row hands over
-   to --danger at once -- the tint, the bar fill that is now frozen at the last
-   committed chunk, the still dot, and the clock.
+/* Cancelled: the work is stopping, so the bar fill hands over to --danger
+   while remaining frozen at the last committed chunk, along with the clock.
 
    This state used to have NO colour of its own, and the comment on is-queued
    said why: the job is still running until the current chunk ends, so painting
@@ -1789,9 +1910,6 @@ body {
    colour; the two cannot both apply anyway, since `running` and `canceling` are
    different statuses. */
 @utility is-canceling {
-  background: var(--danger-soft);
-  box-shadow: inset 2px 0 0 var(--danger);
-
   & .result-bar-fill {
     background: var(--danger);
   }
@@ -1853,7 +1971,11 @@ body {
      button; letting either strip size itself makes the progress bar and
      waveform different widths. Keep the spare space on the left and pin the
      controls to the right, so their flexible tracks share both endpoints. */
-  min-width: 58px;
+  /* The queued row has two reorder controls in addition to Cancel. Reserve
+     their full width on every row so the seek/progress track ends at the same
+     x-coordinate for completed, running, and queued voiceovers. */
+  flex: 0 0 60px;
+  width: 60px;
   justify-content: flex-end;
 
   /* A touch screen has neither :hover nor :focus-within until you have
@@ -1870,6 +1992,40 @@ body {
 
   @media (pointer: coarse) {
     gap: 4px;
+  }
+}
+
+@media (max-width: 520px) {
+  /* Keep the queued reorder controls reachable while giving the track a
+     useful minimum width on phone-sized result cards. */
+  .result-actions {
+    flex-basis: 60px;
+    width: 60px;
+  }
+
+  .result-time {
+    width: 8ch;
+  }
+}
+
+@media (pointer: fine) {
+  /* Reorder actions are secondary to the Cancel control. Tighten their
+     desktop hit-box spacing slightly so the shared action slot can be smaller. */
+  .result-actions {
+    gap: 0;
+  }
+
+  .result-actions [aria-label="Reorder queued generation"] .icon-btn {
+    width: 26px;
+  }
+}
+
+@media (pointer: coarse) {
+  /* Coarse-pointer icon buttons grow to 40px targets; preserve room for the
+     queued reorder controls and Cancel without changing track alignment. */
+  .result-actions {
+    flex-basis: 144px;
+    width: 144px;
   }
 }
 
@@ -1905,6 +2061,7 @@ body {
        of the same context and therefore below the canvas, so the page colour is
        unchanged in every theme and the overscroll area still fills. */
     background: transparent;
+    overflow-x: hidden;
     color: var(--text-primary);
     font-family: var(--font-body);
     font-size: 15px;
@@ -1963,6 +2120,17 @@ body {
   border: 1px solid var(--progress-line);
   border-radius: 999px;
   box-shadow: var(--shadow-menu);
+}
+
+/* When the workspace itself scrolls, keep the optional mascot in document
+   flow after the history card so it cannot sit on top of the editor or rows.
+   Dragging promotes it back to its viewport-fixed position. */
+.mascot-picker[data-flow-layout="true"][data-dragged="false"] {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  align-self: flex-end;
+  margin: 12px 8px 0;
 }
 
 .backend-warning-button:hover {
