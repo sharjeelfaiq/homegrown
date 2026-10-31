@@ -34,12 +34,12 @@ from homegrown_api import boot_status
 # having timed out during startup, which is a badly wrong diagnosis.
 PORT = 8731
 
-REPO_ID = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+REPO_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 IGNORE_PATTERNS = ["*.msgpack", "*.h5", "flax_model*"]
 
 # Fallback when the size of the repo can't be looked up (offline-ish HF API,
 # rate limit). Only used to render a progress bar, never to decide anything.
-APPROX_MODEL_BYTES = 2_500_000_000
+APPROX_MODEL_BYTES = 4_000_000_000
 
 
 def _storage_dir() -> Path:
@@ -145,7 +145,7 @@ def _download_model_if_needed() -> None:
         message = (
             f"Failed to download the AI voice model:\n\n{e}\n\n"
             "Check your internet connection and try again.\n"
-            "The model only needs to download once (~2.5GB)."
+            "The model only needs to download once (~4GB)."
         )
         # Both channels: the flag file feeds the launcher's browser loader, the
         # message box covers someone running backend.exe on its own.
