@@ -1,0 +1,2 @@
+Homegrown.
+Your voice never leaves home: clone a voice from one clip and generate voiceovers entirely on your own GPU. No cloud, no accounts.

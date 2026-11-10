@@ -1,0 +1,147 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Archivo Variable";
+      src: url("assets/fonts/archivo-variable.woff2") format("woff2");
+      font-weight: 100 900;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background-color: #0d0e13;
+      background-image:
+        radial-gradient(ellipse 50% 55% at 30% 52%, rgba(28, 197, 227, 0.09), transparent 70%),
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 96px 96px, 96px 96px;
+      color: #f5f6f8;
+    }
+    #hear-head {
+      position: absolute;
+      left: 160px;
+      top: 112px;
+      display: flex;
+      align-items: baseline;
+      gap: 22px;
+    }
+    #hear-num {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 30px;
+      font-weight: 500;
+      color: #1cc5e3;
+    }
+    #hear-title {
+      font-family: "Archivo Variable", sans-serif;
+      font-weight: 800;
+      font-size: 60px;
+      line-height: 1;
+      letter-spacing: 0.01em;
+    }
+    #hear-frame {
+      position: absolute;
+      left: 160px;
+      top: 236px;
+      width: 1000px;
+      height: 532px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #14151a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6), 0 0 70px rgba(28, 197, 227, 0.12);
+    }
+    .hear-zoom {
+      position: absolute;
+      inset: 0;
+      transform-origin: 94% 83%;
+    }
+    .hear-video {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #hear-caption {
+      position: absolute;
+      left: 160px;
+      top: 806px;
+      width: 1000px;
+      font-family: Inter, sans-serif;
+      font-size: 30px;
+      color: #a9adba;
+    }
+    #hear-caption b {
+      color: #f5f6f8;
+      font-weight: 600;
+    }
+    #hear-lyrics {
+      position: absolute;
+      left: 1240px;
+      top: 250px;
+      width: 560px;
+    }
+    #hear-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 28px;
+      letter-spacing: 0.1em;
+      color: #1cc5e3;
+    }
+    #hear-label-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 6px;
+      background: #1cc5e3;
+      box-shadow: 0 0 14px rgba(28, 197, 227, 0.8);
+    }
+    .hear-line {
+      margin-top: 22px;
+      font-family: "Archivo Variable", sans-serif;
+      font-weight: 700;
+      font-size: 46px;
+      line-height: 1.16;
+      color: #f5f6f8;
+    }
+  </style>
+  <div id="root" data-composition-id="hear" data-width="1920" data-height="1080">
+    <div id="hear-head">
+      <div id="hear-num">04</div>
+      <div id="hear-title" data-var-text="hear-title">HEAR IT</div>
+    </div>
+    <div id="hear-frame">
+      <div class="hear-zoom" id="hear-zoom-0">
+        <img id="hear-still" class="hear-video clip" data-start="0" data-duration="9" data-track-index="0" src="assets/stills/playing.png" alt="" />
+      </div>
+    </div>
+    <div id="hear-caption">Generated on this machine, <b>in the voice you just cloned.</b></div>
+    <div id="hear-lyrics">
+      <div id="hear-label"><div id="hear-label-dot"></div>NOW PLAYING · MY VO</div>
+      <div class="hear-line" id="hear-line-1">They think they’ve seen pain.</div>
+      <div class="hear-line" id="hear-line-2">They haven’t.</div>
+      <div class="hear-line" id="hear-line-3">Not like mine.</div>
+      <div class="hear-line" id="hear-line-4">Not in the places where men go to disappear and never come back.</div>
+    </div>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo("#hear-head", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 0.1);
+    tl.fromTo("#hear-frame", { opacity: 0, scale: 0.96 }, { opacity: 1, scale: 1, duration: 0.6, ease: "power3.out" }, 0);
+    tl.fromTo("#hear-zoom-0", { scale: 1.7 }, { scale: 1.86, duration: 9, ease: "none" }, 0);
+    tl.fromTo("#hear-caption", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 0.9);
+    tl.fromTo("#hear-label", { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "power2.out" }, 1.2);
+    // Phrase-synced to the cloned voice (clip starts at local 1.5).
+    tl.fromTo("#hear-line-1", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.25, ease: "power3.out" }, 1.5);
+    tl.fromTo("#hear-line-2", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.25, ease: "power3.out" }, 3.45);
+    tl.to("#hear-line-1", { opacity: 0.38, duration: 0.3, ease: "power1.out" }, 3.45);
+    tl.fromTo("#hear-line-3", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.25, ease: "power3.out" }, 4.34);
+    tl.to("#hear-line-2", { opacity: 0.38, duration: 0.3, ease: "power1.out" }, 4.34);
+    tl.fromTo("#hear-line-4", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.25, ease: "power3.out" }, 5.49);
+    tl.to("#hear-line-3", { opacity: 0.38, duration: 0.3, ease: "power1.out" }, 5.49);
+    tl.to(["#hear-frame", "#hear-head", "#hear-caption", "#hear-lyrics"], { opacity: 0, duration: 0.3, ease: "power2.in" }, 8.68);
+    window.__timelines["hear"] = tl;
+  </script>
+</template>

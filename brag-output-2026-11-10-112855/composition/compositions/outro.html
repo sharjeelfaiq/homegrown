@@ -1,0 +1,89 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Archivo Variable";
+      src: url("assets/fonts/archivo-variable.woff2") format("woff2");
+      font-weight: 100 900;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background-color: #0d0e13;
+      background-image:
+        radial-gradient(ellipse 55% 45% at 50% 46%, rgba(28, 197, 227, 0.12), transparent 70%),
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 96px 96px, 96px 96px;
+      color: #f5f6f8;
+    }
+    #outro-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 44px;
+    }
+    #outro-lockup {
+      display: flex;
+      align-items: center;
+      gap: 48px;
+    }
+    #outro-mark {
+      width: 150px;
+      height: 150px;
+    }
+    #outro-wordmark {
+      font-family: "Archivo Variable", sans-serif;
+      font-weight: 900;
+      font-size: 196px;
+      line-height: 1;
+      letter-spacing: 0.06em;
+      color: #80e3f4;
+      -webkit-mask-image: radial-gradient(circle, #000 2.3px, transparent 3.1px);
+      mask-image: radial-gradient(circle, #000 2.3px, transparent 3.1px);
+      -webkit-mask-size: 7.5px 7.5px;
+      mask-size: 7.5px 7.5px;
+    }
+    #outro-tagline {
+      font-family: "Archivo Variable", sans-serif;
+      font-weight: 650;
+      font-size: 56px;
+      color: #f5f6f8;
+    }
+    #outro-foot {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 28px;
+      letter-spacing: 0.12em;
+      color: #a9adba;
+    }
+  </style>
+  <div id="root" data-composition-id="outro" data-width="1920" data-height="1080">
+    <div id="outro-center">
+      <div id="outro-lockup">
+        <svg id="outro-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect width="32" height="32" rx="7" fill="#14151a" />
+          <g fill="#1cc5e3">
+            <rect x="5" y="12" width="4" height="8" rx="2" />
+            <rect x="12" y="5" width="4" height="22" rx="2" />
+            <rect x="19" y="9" width="4" height="14" rx="2" />
+            <rect x="26" y="13" width="4" height="6" rx="2" />
+          </g>
+        </svg>
+        <div id="outro-wordmark">HOMEGROWN</div>
+      </div>
+      <div id="outro-tagline" data-var-text="outro-tagline">Your voice never leaves home.</div>
+      <div id="outro-foot">PRIVATE VOICE CLONING · ON YOUR OWN GPU</div>
+    </div>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo("#outro-mark", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.5, ease: "power3.out" }, 0.05);
+    tl.fromTo("#outro-wordmark", { opacity: 0, scale: 1.08 }, { opacity: 1, scale: 1, duration: 0.6, ease: "expo.out" }, 0.1);
+    tl.fromTo("#outro-tagline", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.6);
+    tl.fromTo("#outro-foot", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power1.out" }, 1.1);
+    window.__timelines["outro"] = tl;
+  </script>
+</template>

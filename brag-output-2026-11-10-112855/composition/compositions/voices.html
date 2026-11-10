@@ -1,0 +1,154 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Archivo Variable";
+      src: url("assets/fonts/archivo-variable.woff2") format("woff2");
+      font-weight: 100 900;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background-color: #0d0e13;
+      background-image:
+        radial-gradient(ellipse 60% 55% at 50% 58%, rgba(28, 197, 227, 0.08), transparent 70%),
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 96px 96px, 96px 96px;
+      color: #f5f6f8;
+    }
+    #voices-head {
+      position: absolute;
+      left: 240px;
+      top: 112px;
+      display: flex;
+      align-items: baseline;
+      gap: 22px;
+    }
+    #voices-num {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 30px;
+      font-weight: 500;
+      color: #1cc5e3;
+    }
+    #voices-title {
+      font-family: "Archivo Variable", sans-serif;
+      font-weight: 800;
+      font-size: 60px;
+      line-height: 1;
+      letter-spacing: 0.01em;
+    }
+    #voices-frame {
+      position: absolute;
+      left: 240px;
+      top: 236px;
+      width: 1440px;
+      height: 766px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #14151a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6), 0 0 70px rgba(28, 197, 227, 0.1);
+    }
+    .voices-zoom {
+      position: absolute;
+      inset: 0;
+    }
+    .voices-media {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .voices-ring {
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      margin: -32px 0 0 -32px;
+      border-radius: 50%;
+      border: 3px solid #1cc5e3;
+      box-shadow: 0 0 18px rgba(28, 197, 227, 0.7);
+      opacity: 0;
+    }
+    .voices-box {
+      position: absolute;
+      border-radius: 8px;
+      border: 2px solid #1cc5e3;
+      box-shadow: 0 0 0 4px rgba(28, 197, 227, 0.18), 0 0 24px rgba(28, 197, 227, 0.55);
+      opacity: 0;
+    }
+    #voices-dip {
+      position: absolute;
+      inset: 0;
+      background: #0d0e13;
+      opacity: 0;
+    }
+    #voices-zoom-0 { transform-origin: 30% 30%; }
+    #voices-zoom-1 { transform-origin: 35% 40%; }
+
+    #voices-sub {
+      position: absolute;
+      left: 50%;
+      top: 846px;
+      transform: translateX(-50%);
+    }
+    #voices-sub-card {
+      padding: 20px 36px 24px;
+      border-radius: 14px;
+      background: rgba(13, 14, 19, 0.94);
+      border: 1px solid rgba(28, 197, 227, 0.45);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      text-align: center;
+      white-space: nowrap;
+    }
+    #voices-sub-label {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 28px;
+      letter-spacing: 0.12em;
+      color: #1cc5e3;
+    }
+    #voices-sub-line {
+      margin-top: 8px;
+      font-family: "Archivo Variable", sans-serif;
+      font-weight: 650;
+      font-size: 40px;
+      color: #f5f6f8;
+    }
+  </style>
+  <div id="root" data-composition-id="voices" data-width="1920" data-height="1080">
+    <div id="voices-head">
+      <div id="voices-title" data-var-text="voices-title">ANY VOICE.</div>
+    </div>
+    <div id="voices-frame">
+      <div class="voices-zoom" id="voices-zoom-0">
+        <img id="voices-media-0" class="voices-media clip" data-start="0" data-duration="3.0" data-track-index="0" src="assets/stills/clone2.png" alt="" />
+      </div>
+      <div class="voices-zoom" id="voices-zoom-1">
+        <img id="voices-media-1" class="voices-media clip" data-start="3.0" data-duration="4.0" data-track-index="0" src="assets/stills/gen2.png" alt="" />
+      </div>
+      <div id="voices-dip"></div>
+    </div>
+    <div id="voices-sub">
+      <div id="voices-sub-card">
+        <div id="voices-sub-label">SECOND VOICE · SAME SCRIPT</div>
+        <div id="voices-sub-line" data-var-text="voices-sub-line">“They think they’ve seen pain. They haven’t.”</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo("#voices-head", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 0.1);
+    tl.fromTo("#voices-frame", { opacity: 0, scale: 0.96 }, { opacity: 1, scale: 1, duration: 0.6, ease: "power3.out" }, 0);
+    tl.fromTo("#voices-zoom-0", { scale: 1.0 }, { scale: 1.12, duration: 3.0, ease: "power1.inOut" }, 0);
+    tl.fromTo("#voices-zoom-1", { scale: 1.08 }, { scale: 1.14, duration: 4.0, ease: "power1.inOut" }, 3.0);
+    tl.fromTo("#voices-dip", { opacity: 0 }, { opacity: 0.9, duration: 0.12, ease: "none" }, 2.88);
+    tl.to("#voices-dip", { opacity: 0, duration: 0.25, ease: "power1.out" }, 3.0);
+    tl.fromTo("#voices-sub-card", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" }, 4.05);
+    tl.to("#voices-sub-card", { opacity: 0, duration: 0.3, ease: "power2.in" }, 6.62);
+    tl.to("#voices-frame", { opacity: 0, duration: 0.35, ease: "power2.in" }, 6.62);
+    tl.to("#voices-head", { opacity: 0, duration: 0.35, ease: "power2.in" }, 6.62);
+    window.__timelines["voices"] = tl;
+  </script>
+</template>

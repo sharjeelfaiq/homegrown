@@ -1,0 +1,105 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Archivo Variable";
+      src: url("assets/fonts/archivo-variable.woff2") format("woff2");
+      font-weight: 100 900;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background-color: #0d0e13;
+      background-image:
+        radial-gradient(ellipse 60% 50% at 50% 46%, rgba(28, 197, 227, 0.09), transparent 70%),
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 96px 96px, 96px 96px;
+      color: #f5f6f8;
+    }
+    #hook-stack {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 34px;
+    }
+    #hook-mark {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      height: 132px;
+    }
+    .hook-bar {
+      width: 22px;
+      border-radius: 11px;
+      background: #1cc5e3;
+      transform-origin: 50% 50%;
+    }
+    #hook-bar-1 { height: 48px; }
+    #hook-bar-2 { height: 132px; }
+    #hook-bar-3 { height: 84px; }
+    #hook-bar-4 { height: 36px; }
+    #hook-line-1 {
+      font-family: "Archivo Variable", sans-serif;
+      font-weight: 850;
+      font-size: 128px;
+      line-height: 1;
+      letter-spacing: -0.01em;
+    }
+    #hook-line-2-wrap {
+      position: relative;
+    }
+    #hook-line-2 {
+      font-family: "Archivo Variable", sans-serif;
+      font-weight: 700;
+      font-size: 72px;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      color: #a9adba;
+    }
+    #hook-strike {
+      position: absolute;
+      left: -18px;
+      right: -18px;
+      top: 50%;
+      height: 6px;
+      margin-top: -3px;
+      border-radius: 3px;
+      background: #1cc5e3;
+      transform-origin: 0% 50%;
+    }
+  </style>
+  <div id="root" data-composition-id="hook" data-width="1920" data-height="1080">
+    <div id="hook-stack">
+      <div id="hook-mark">
+        <div class="hook-bar" id="hook-bar-1"></div>
+        <div class="hook-bar" id="hook-bar-2"></div>
+        <div class="hook-bar" id="hook-bar-3"></div>
+        <div class="hook-bar" id="hook-bar-4"></div>
+      </div>
+      <div id="hook-line-1" data-var-text="hook-line-1">YOUR VOICE.</div>
+      <div id="hook-line-2-wrap">
+        <div id="hook-line-2" data-var-text="hook-line-2">SOMEONE ELSE'S CLOUD.</div>
+        <div id="hook-strike"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo(
+      ".hook-bar",
+      { scaleY: 0, opacity: 0 },
+      { scaleY: 1, opacity: 1, duration: 0.55, ease: "power3.out", stagger: 0.12 },
+      0.15,
+    );
+    tl.fromTo("#hook-line-1", { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 0.55);
+    tl.fromTo("#hook-line-2", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 1.7);
+    tl.fromTo("#hook-strike", { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power3.inOut" }, 3.55);
+    tl.to("#hook-line-2", { opacity: 0.4, duration: 0.3, ease: "power1.out" }, 3.85);
+    tl.fromTo("#hook-stack", { opacity: 1 }, { opacity: 0, duration: 0.35, ease: "power2.in" }, 4.6);
+    window.__timelines["hook"] = tl;
+  </script>
+</template>

@@ -1,0 +1,105 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Archivo Variable";
+      src: url("assets/fonts/archivo-variable.woff2") format("woff2");
+      font-weight: 100 900;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #0d0e13;
+      color: #f5f6f8;
+    }
+    #reveal-bg {
+      position: absolute;
+      inset: 0;
+    }
+    #reveal-kb {
+      position: absolute;
+      inset: 0;
+    }
+    #reveal-bg-still {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1920px;
+      height: 1080px;
+      object-fit: cover;
+    }
+    #reveal-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+    }
+    #reveal-lockup {
+      display: flex;
+      align-items: center;
+      gap: 44px;
+    }
+    #reveal-mark {
+      width: 132px;
+      height: 132px;
+    }
+    #reveal-wordmark {
+      font-family: "Archivo Variable", sans-serif;
+      font-weight: 900;
+      font-size: 176px;
+      line-height: 1;
+      letter-spacing: 0.06em;
+      color: #80e3f4;
+      -webkit-mask-image: radial-gradient(circle, #000 2.1px, transparent 2.9px);
+      mask-image: radial-gradient(circle, #000 2.1px, transparent 2.9px);
+      -webkit-mask-size: 7px 7px;
+      mask-size: 7px 7px;
+    }
+    #reveal-sub {
+      font-family: Inter, sans-serif;
+      font-weight: 500;
+      font-size: 44px;
+      color: #f5f6f8;
+      letter-spacing: 0.01em;
+    }
+    #reveal-sub span {
+      color: #1cc5e3;
+    }
+  </style>
+  <div id="root" data-composition-id="reveal" data-width="1920" data-height="1080">
+    <div id="reveal-bg">
+      <div id="reveal-kb">
+        <img id="reveal-bg-still" class="clip" data-start="0" data-duration="6" data-track-index="0" src="assets/stills/empty.png" alt="" />
+      </div>
+    </div>
+    <div id="reveal-center">
+      <div id="reveal-lockup">
+        <svg id="reveal-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect width="32" height="32" rx="7" fill="#14151a" />
+          <g fill="#1cc5e3">
+            <rect x="5" y="12" width="4" height="8" rx="2" />
+            <rect x="12" y="5" width="4" height="22" rx="2" />
+            <rect x="19" y="9" width="4" height="14" rx="2" />
+            <rect x="26" y="13" width="4" height="6" rx="2" />
+          </g>
+        </svg>
+        <div id="reveal-wordmark">HOMEGROWN</div>
+      </div>
+      <div id="reveal-sub" data-var-text="reveal-sub">Private voice cloning. <span>On your own GPU.</span></div>
+    </div>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo("#reveal-bg", { opacity: 0 }, { opacity: 0.22, duration: 1.2, ease: "power1.out" }, 0);
+    tl.fromTo("#reveal-kb", { scale: 1.04 }, { scale: 1.12, duration: 6, ease: "none" }, 0);
+    tl.fromTo("#reveal-mark", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.6, ease: "power3.out" }, 0.2);
+    tl.fromTo("#reveal-wordmark", { opacity: 0, scale: 0.94 }, { opacity: 1, scale: 1, duration: 0.9, ease: "power3.out" }, 0.35);
+    tl.fromTo("#reveal-sub", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 1.1);
+    tl.fromTo("#reveal-center", { opacity: 1 }, { opacity: 0, duration: 0.35, ease: "power2.in" }, 5.6);
+    tl.to("#reveal-bg", { opacity: 0, duration: 0.35, ease: "power2.in" }, 5.6);
+    window.__timelines["reveal"] = tl;
+  </script>
+</template>

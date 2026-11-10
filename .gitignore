@@ -34,8 +34,18 @@ desktop/launcher/build/
 # Packaged installer output
 installer.zip
 
-# /brag video output is tracked; only Hyperframes check/snapshot artifacts are ignored
+# /brag video output is tracked; Hyperframes check/snapshot artifacts and preview caches are ignored
 brag-output*/composition/.hyperframes/
+# /brag working files and media that must not be published: raw screen
+# recordings (personal on-screen data), local tool environments, and generated
+# audio (cloned voices, TTS narration). The rendered brag.mp4 stays tracked.
+brag-output*/work/
+brag-output*/composition/assets/footage/
+brag-output*/composition/assets/audio/
+brag-output*/composition/assets/vo/
+# Hyperframes preview caches
+brag-output*/composition/.waveform-cache/
+brag-output*/composition/.thumbnails/
 
 # setup.sh working dirs -- kept on the repo's drive so multi-GB pip wheels and
 # model weights don't fill the system drive (see setup.sh header)
