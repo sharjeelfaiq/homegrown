@@ -1083,7 +1083,12 @@ body {
 }
 
 .cloned-voices-empty {
-  padding: 6px 8px;
+  /* Grow to fill the card body so the CTA sits centred; the min-height keeps it
+     centred even in the height-capped card below the wide breakpoint, where the
+     section is content-sized rather than flex-1. */
+  flex: 1 1 auto;
+  min-height: 150px;
+  padding: 16px 8px;
 }
 
 .cloned-voices-section.is-file-drop-target::before {

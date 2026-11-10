@@ -237,7 +237,19 @@ export default function ClonedVoicesSection({
             enqueueVoiceFiles(files)
           }}
         />
-        <span className="inline-flex shrink-0">
+        <div className="voice-statuses flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[11px] leading-5" aria-label="Voice status">
+          <span className={`voice-status-value voice-status-selected${selectedVoiceName ? ' is-active' : ''}`} aria-label={`Selected: ${selectedVoiceName ?? 'None'}`} title={`Selected: ${selectedVoiceName ?? 'None'}`}>
+            <i className="voice-status-dot" aria-hidden="true" />
+            <span className="voice-status-label font-medium">Selected:</span>{' '}
+            <span className="voice-status-name">{selectedVoiceName ?? 'None'}</span>
+          </span>
+          <span className={`voice-status-value voice-status-generating${generatingVoiceNames.length ? ' is-active' : ''}`} aria-label={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`} title={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`}>
+            <i className={`voice-status-dot${generatingVoiceNames.length && !reduced ? ' animate-pulse-soft' : ''}`} aria-hidden="true" />
+            <span className="voice-status-label font-medium">Generating:</span>{' '}
+            <span className="voice-status-name">{generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}</span>
+          </span>
+        </div>
+        <span className="ml-auto inline-flex shrink-0">
           <AppTooltip content={cloneTooltip}>
             <button
               type="button"
@@ -252,18 +264,6 @@ export default function ClonedVoicesSection({
             </button>
           </AppTooltip>
         </span>
-        <div className="voice-statuses ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[11px] leading-5" aria-label="Voice status">
-          <span className={`voice-status-value voice-status-selected${selectedVoiceName ? ' is-active' : ''}`} aria-label={`Selected: ${selectedVoiceName ?? 'None'}`} title={`Selected: ${selectedVoiceName ?? 'None'}`}>
-            <i className="voice-status-dot" aria-hidden="true" />
-            <span className="voice-status-label font-medium">Selected:</span>{' '}
-            <span className="voice-status-name">{selectedVoiceName ?? 'None'}</span>
-          </span>
-          <span className={`voice-status-value voice-status-generating${generatingVoiceNames.length ? ' is-active' : ''}`} aria-label={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`} title={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`}>
-            <i className={`voice-status-dot${generatingVoiceNames.length && !reduced ? ' animate-pulse-soft' : ''}`} aria-hidden="true" />
-            <span className="voice-status-label font-medium">Generating:</span>{' '}
-            <span className="voice-status-name">{generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}</span>
-          </span>
-        </div>
       </div>
       {loading && presets.length === 0 && !pageQuery.data && visibleCloneQueue.length === 0 ? (
         <Skeleton
@@ -276,7 +276,21 @@ export default function ClonedVoicesSection({
           <ClonedVoiceRowsFixture />
         </Skeleton>
       ) : clonedPresets.length === 0 && visibleCloneQueue.length === 0 ? (
-        <p className="cloned-voices-empty m-0 text-[12px] text-faint">No voices yet — add one to get started.</p>
+        <div className="cloned-voices-empty flex flex-col items-center justify-center gap-3 text-center">
+          <p className="m-0 text-[12px] text-faint">No voices yet. Clone a voice to get started.</p>
+          <AppTooltip content={cloneTooltip}>
+            <button
+              type="button"
+              className="clone-voice-cta inline-flex items-center gap-1.5 rounded-sm border border-control bg-surface-raised px-3 py-1.5 text-[12px] text-muted transition-colors hover:border-(--line-focus) hover:text-audio disabled:cursor-default disabled:opacity-60"
+              aria-label="Clone your first voice"
+              disabled={cloneDisabled}
+              onClick={() => voiceUploadRef.current?.click()}
+            >
+              <UploadIcon size={14} />
+              <span>Clone voice</span>
+            </button>
+          </AppTooltip>
+        </div>
       ) : (
         <>
         <ul className="result-list cloned-voices-list" role="listbox" onKeyDown={onListKeyDown}>
@@ -292,7 +306,7 @@ export default function ClonedVoicesSection({
             </li>
           ))}
           {visiblePresets.length === 0 && visibleCloneQueue.length === 0 ? (
-            <li className="list-none px-2 py-3 text-[12px] text-faint" role="presentation">No matching voices.</li>
+            <li className="list-none px-2 py-3 text-[12px] text-faint" role="presentation">{searchQuery.trim() ? `No voices match “${searchQuery.trim()}”.` : 'No matching voices.'}</li>
           ) : visiblePresets.map((preset) => {
             const voiceCount = (
               <span className="voice-generation-count mono flex-none text-[10px] text-faint" aria-label={`${preset.completed_voiceovers ?? 0} completed voiceovers`}>

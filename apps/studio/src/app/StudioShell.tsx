@@ -10,6 +10,7 @@ import { restoreVoiceoverFilters, type VoiceoverFilterState } from '../features/
 import GenerateButton from '../features/generation/GenerateButton'
 import MascotPicker from '../features/mascots/MascotPicker'
 import { MAX_SCRIPT_CHARS } from '../features/generation/constants'
+import { generationChecklist } from '../features/generation/generationChecklist'
 import { presetNameFromFile } from '../lib/format'
 import { CircleAlert as AlertIcon, Check as CheckIcon, CircleHelp as HelpIcon, Settings as SettingsIcon } from 'lucide-react'
 import { Toaster } from 'sonner'
@@ -548,6 +549,9 @@ export default function StudioShell() {
   const modelReady = modelStatus === 'ready' && !warmingUp
   const modelLoading = !modelReady && modelStatus !== 'down'
   const canGenerate = modelReady && modelOnGpu && scriptReady && selectedVoice != null && languageOverride != null && !submitting
+  // Prerequisite checklist for the empty Voiceovers card; flips live as the
+  // user clones a voice, writes a script, and chooses a language.
+  const generationSteps = generationChecklist({ clonedVoiceCount: presets.length, script, language: languageOverride })
 
   // Say what is missing rather than presenting a mute grey slab -- but only
   // for prerequisites the user has to go and fix elsewhere. An empty script is
@@ -756,6 +760,7 @@ export default function StudioShell() {
             onReuseQueue={(job) => void handleReuseQueued(job)}
             onError={setError}
             gpuFault={gpuFault != null}
+            generationSteps={generationSteps}
           />
           {mascotEnabled && <MascotPicker anchorRef={voiceoversRef} />}
         </aside>

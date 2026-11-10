@@ -137,6 +137,12 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   not mutate history.
 - The initial history skeleton is shown only when `isLoading` has no query
   data. Placeholder/cached history remains visible during refetches.
+- When no voiceover exists yet (unfiltered, unsearched empty card) the card
+  shows a live prerequisite checklist from `generationChecklist` — clone a
+  voice, write a script, choose a language — each item checking off as its
+  state is satisfied. Searched/active/failed empty states keep their own
+  messages. Keep the checklist in step with the real generation gates in
+  `StudioShell`.
 
 Both completed voiceovers and cloned voices expose Details in their three-dot
 menus with an Info icon, using the shared RecordDetailsModal. Both details

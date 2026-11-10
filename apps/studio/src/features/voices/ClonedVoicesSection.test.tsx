@@ -94,7 +94,8 @@ describe('ClonedVoicesSection', () => {
     expect(toolbar.contains(cloneButton)).toBe(true)
     expect(toolbar.contains(selected)).toBe(true)
     expect(toolbar.contains(generating)).toBe(true)
-    expect(cloneButton.compareDocumentPosition(selected) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Statuses sit on the left, Clone voice on the right: the button follows them.
+    expect(selected.compareDocumentPosition(cloneButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('shows each voice’s completed voiceover count, including zero', () => {
@@ -253,10 +254,35 @@ describe('ClonedVoicesSection', () => {
     expect(screen.queryByRole('option', { name: /Ada/ })).not.toBeInTheDocument()
   })
 
+  it('shows a centered Clone voice CTA only when no cloned voices exist, and it opens the picker', async () => {
+    vi.spyOn(api, 'listPresets').mockResolvedValue({ presets: [], total: 0 })
+    const { container } = renderSection({ presets: [] })
+    const cta = await screen.findByRole('button', { name: 'Clone your first voice' })
+    expect(container.querySelector('.cloned-voices-empty')).toContainElement(cta)
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    const clickSpy = vi.spyOn(input, 'click')
+    fireEvent.click(cta)
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the centered CTA once a cloned voice exists', () => {
+    renderSection()
+    expect(screen.queryByRole('button', { name: 'Clone your first voice' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clone voice' })).toBeInTheDocument()
+  })
+
+  it('disables the centered CTA with the loading tooltip during model startup', async () => {
+    vi.spyOn(api, 'listPresets').mockResolvedValue({ presets: [], total: 0 })
+    renderSection({ presets: [], modelReady: false, modelLoading: true })
+    const cta = await screen.findByRole('button', { name: 'Clone your first voice' })
+    expect(cta).toBeDisabled()
+    expect(cta.closest('[data-tooltip="Available when the voice model is ready."]')).toBeTruthy()
+  })
+
   it('shows a no-results message for an unmatched query', () => {
     renderSection()
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search cloned voices' }), { target: { value: 'missing' } })
-    expect(screen.getByText('No matching voices.')).toBeInTheDocument()
+    expect(screen.getByText('No voices match “missing”.')).toBeInTheDocument()
   })
 
   it('confirms voice deletion with Cancel and Delete actions', () => {
@@ -280,7 +306,7 @@ describe('ClonedVoicesSection', () => {
     expect(container.querySelector('[data-tooltip="Available when the voice model is ready."]')).toBeTruthy()
   })
 
-  it('keeps Clone voice left-aligned with its original label and upload icon while cloning', () => {
+  it('keeps Clone voice right-aligned with its original label and upload icon while cloning', () => {
     const { container } = renderSection({ onAddVoice: () => new Promise(() => {}) })
     fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['audio'], 'voice.wav', { type: 'audio/wav' })] } })
     const action = container.querySelector('.clone-voice-button')
@@ -289,7 +315,7 @@ describe('ClonedVoicesSection', () => {
     expect(screen.getByRole('button', { name: 'Clone voice' })).toHaveTextContent('Clone voice')
     expect(action?.querySelector('.lucide-upload')).toBeTruthy()
     expect(action?.querySelector('[data-status]')).toBeNull()
-    expect(action?.parentElement?.parentElement).not.toHaveClass('ml-auto')
+    expect(action?.parentElement?.parentElement).toHaveClass('ml-auto')
     expect(screen.queryByText(/Cloned voices ·/)).not.toBeInTheDocument()
   })
 

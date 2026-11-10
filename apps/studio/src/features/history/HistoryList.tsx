@@ -62,6 +62,9 @@ interface Props {
   /** True once the GPU is gone. Retry is hidden rather than disabled-with-a-
    * tooltip: there is nothing the user can do in-app to make it work. */
   gpuFault?: boolean
+  /** Ordered prerequisites for a first voiceover, rendered as a live checklist
+   * in the empty card. Omitted (e.g. in tests) falls back to a plain sentence. */
+  generationSteps?: { label: string; done: boolean }[]
   /** True before the first fetch has returned. Without it an empty column
    * tells a starting-up user to "pick a voice and press Generate", which is
    * advice they cannot act on yet. */
@@ -711,6 +714,7 @@ export default function HistoryList({
   onReuseQueue,
   onError,
   gpuFault = false,
+  generationSteps,
 }: Props) {
   const { queue, refresh, loading: queueLoading } = useGenerationActivity()
   // Read by held-cancel timers, which fire from a closure captured several
@@ -1262,6 +1266,28 @@ export default function HistoryList({
           >
             <VoiceoverHistoryFixture />
           </Skeleton>
+        ) : !searching && (filters.status === 'all' || filters.status === 'completed') && generationSteps && generationSteps.length > 0 ? (
+          // The never-generated-anything state walks the user through the
+          // prerequisites instead of a single sentence; each item flips to done
+          // live as its state is satisfied (the old sentence also never
+          // mentioned choosing a language).
+          <div className="voiceover-empty flex flex-col py-5 text-[13px] wide:min-h-0 wide:flex-1 wide:overflow-y-auto">
+            <p className="m-0 text-faint">No voiceovers yet. Finish these steps to create your first one:</p>
+            <ul className="voiceover-checklist mt-3 flex flex-col gap-2" aria-label="Steps to create your first voiceover">
+              {generationSteps.map((step) => (
+                <li
+                  key={step.label}
+                  className="flex items-center gap-2"
+                  aria-label={`${step.label}: ${step.done ? 'done' : 'not done'}`}
+                >
+                  {step.done
+                    ? <CheckIcon size={14} className="shrink-0 text-ok" aria-hidden="true" />
+                    : <span className="size-3.5 shrink-0 rounded-full border border-control" aria-hidden="true" />}
+                  <span className={step.done ? 'text-faint line-through' : 'text-muted'}>{step.label}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : (
           <p className="m-0 max-w-full break-all py-5 text-[13px] text-faint wide:min-h-0 wide:flex-1 wide:overflow-y-auto">
             {searching
