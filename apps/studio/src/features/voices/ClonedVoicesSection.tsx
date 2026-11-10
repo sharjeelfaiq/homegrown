@@ -253,11 +253,15 @@ export default function ClonedVoicesSection({
           </AppTooltip>
         </span>
         <div className="voice-statuses ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[11px] leading-5" aria-label="Voice status">
-          <span className="voice-status-value voice-status-selected" aria-label={`Selected: ${selectedVoiceName ?? 'None'}`} title={`Selected: ${selectedVoiceName ?? 'None'}`}>
-            <span className="font-medium">Selected:</span>{' '}{selectedVoiceName ?? 'None'}
+          <span className={`voice-status-value voice-status-selected${selectedVoiceName ? ' is-active' : ''}`} aria-label={`Selected: ${selectedVoiceName ?? 'None'}`} title={`Selected: ${selectedVoiceName ?? 'None'}`}>
+            <i className="voice-status-dot" aria-hidden="true" />
+            <span className="voice-status-label font-medium">Selected:</span>{' '}
+            <span className="voice-status-name">{selectedVoiceName ?? 'None'}</span>
           </span>
-          <span className="voice-status-value voice-status-generating" aria-label={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`} title={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`}>
-            <span className="font-medium">Generating:</span>{' '}{generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}
+          <span className={`voice-status-value voice-status-generating${generatingVoiceNames.length ? ' is-active' : ''}`} aria-label={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`} title={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`}>
+            <i className={`voice-status-dot${generatingVoiceNames.length && !reduced ? ' animate-pulse-soft' : ''}`} aria-hidden="true" />
+            <span className="voice-status-label font-medium">Generating:</span>{' '}
+            <span className="voice-status-name">{generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}</span>
           </span>
         </div>
       </div>

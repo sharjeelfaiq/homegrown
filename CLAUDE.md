@@ -128,8 +128,11 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   into a history entry at generation time.
 - A completed job invalidates history. Individual voice and history deletion require the
   shared Cancel/Delete confirmation modal, then defer the server DELETE for the
-  seven-second Undo toast. History is optimistically
-  removed when the request runs, rolls back on failure, and invalidates on
+  seven-second Undo toast. The confirmed voiceover row is hidden from the list
+  the instant the delete is confirmed and reappears if Undo is pressed; it is
+  hidden by a render-time filter, not an early cache mutation, so a mid-window
+  history refetch cannot resurrect it. The server-side cache removal still runs
+  when the deferred request fires, rolls back on failure, and invalidates on
   success. Unmounting cancels pending client-side deletes. Requeue/reuse does
   not mutate history.
 - The initial history skeleton is shown only when `isLoading` has no query
@@ -296,7 +299,9 @@ cloning_s without retaining private reference transcripts or storage paths.
 - Live queued/running/failed rows come from `GenerationActivityContext`; do not
   fold them into completed-history cache data.
 - Individual voice/history deletes are deferred behind a seven-second Undo toast; unmount
-  cancels a pending delete. The toast uses the shared amber `StatusMark` ring
+  cancels a pending delete. A held voice and a held voiceover both leave the
+  list the instant the delete is confirmed and return if Undo is pressed. The
+  toast uses the shared amber `StatusMark` ring
   to show the remaining Undo time. At the deadline, remove Undo and show the
   spinner until the request finishes; on success, animate a green check and
   dismiss after one second. Toast hover must not pause the deletion deadline.

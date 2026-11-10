@@ -33,6 +33,7 @@ import RecordDetailsModal from '../../components/ui/RecordDetailsModal'
 import ConfirmDeleteModal from '../../components/ui/ConfirmDeleteModal'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, readHistoryPageSize, writeHistoryPageSize, type HistoryPageSize } from './historyPageSize'
 import { fetchHistoryPage, historyQueryKey, normalizeHistoryRequest } from './historyQuery'
+import { applyPendingDeletes } from './historyVisibility'
 import { pageControls } from './historyPager'
 import { voiceoverRowClassName } from './voiceoverRowLayout'
 import { Skeleton } from 'boneyard-js/react'
@@ -744,6 +745,13 @@ export default function HistoryList({
 
   const [deleteRequest, setDeleteRequest] = useState<{ id: string; label: string } | null>(null)
   const deleteTimers = useRef(new Set<() => void>())
+  // Ids whose delete is mid-Undo-window. The row leaves the list the instant
+  // the delete is confirmed -- not when the deferred request fires -- and comes
+  // back if Undo is pressed. Held as render-time filter state rather than a
+  // cache mutation on purpose: history refetches on window focus, so an early
+  // cache removal would be resurrected mid-window, whereas this filter outlasts
+  // any refetch until the id is cleared.
+  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(() => new Set())
 
   useEffect(() => () => {
     for (const cancel of deleteTimers.current) cancel()
@@ -886,11 +894,11 @@ export default function HistoryList({
   // matches nearly everything and the result is a list that has not been
   // narrowed. Names are short, deliberate and the thing people actually
   // remember a voiceover by.
-  // A held delete remains on screen until its Undo window ends. Besides making
-  // the deferred action legible, this preserves numbering and the heading
-  // count until the server-side delete has actually been committed.
-  const visible = numbered
-  const visibleTotal = total
+  // A held delete drops out of view the instant it is confirmed and stays gone
+  // for its Undo window; Undo brings it back. Rows are numbered ABOVE this
+  // filter, so the survivors keep their original numbers, and the heading count
+  // falls only by the rows actually hidden on this page.
+  const { visible, visibleTotal } = applyPendingDeletes(numbered, pendingDeletes, total)
 
   const headingText = `${visibleTotal} voiceover${visibleTotal === 1 ? '' : 's'}`
 
@@ -1035,6 +1043,18 @@ export default function HistoryList({
   function confirmDelete() {
     if (!deleteRequest) return
     const { id, label } = deleteRequest
+    // Hide the row now, for the whole Undo window. onSettled fires on every
+    // terminal path -- committed, server error, and Undo -- so clearing the id
+    // there reveals the row again when it must come back (error and Undo both
+    // leave the cache entry in place) and tidies up after a committed delete
+    // (whose cache entry is already gone). No separate restore branch needed.
+    setPendingDeletes((prev) => new Set(prev).add(id))
+    const reveal = () => setPendingDeletes((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
     const cancel = showUndoDeleteToast({
       label,
       onDelete: async () => {
@@ -1042,7 +1062,10 @@ export default function HistoryList({
         removeFileName(id)
       },
       onError: (e) => onError(e instanceof ApiError ? e.message : `Failed to delete ${label}`),
-      onSettled: () => deleteTimers.current.delete(cancel),
+      onSettled: () => {
+        deleteTimers.current.delete(cancel)
+        reveal()
+      },
     })
     deleteTimers.current.add(cancel)
     setDeleteRequest(null)

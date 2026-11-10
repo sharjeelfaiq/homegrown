@@ -1030,19 +1030,56 @@ body {
 }
 
 .voice-status-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex: 0 0 160px;
   width: 160px;
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.voice-status-label {
+  flex: none;
+}
+
+.voice-status-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-faint);
 }
 
-.voice-status-selected {
-  color: var(--accent-2);
+/* A set voice reads as "current"; the empty "None" stays quiet rather than
+   shouting in accent. */
+.voice-status-value.is-active .voice-status-name {
+  color: var(--text-primary);
 }
 
-.voice-status-generating {
-  color: var(--green);
+/* Studio says "this is the current/working one" with a small status dot, not a
+   whole string in accent -- the same idiom as RuntimeStatus and the voice-row
+   indicators. The dot is faint when idle and takes its state colour only when
+   something is set. */
+.voice-status-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-faint);
+}
+
+.voice-status-selected.is-active .voice-status-dot {
+  background: var(--accent-2);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent-2) 65%, transparent);
+}
+
+/* Generating is the amber work-in-progress state everywhere else in Studio
+   (--progress), matching the pulsing dot on the generating voice row -- not the
+   green this label used before. */
+.voice-status-generating.is-active .voice-status-dot {
+  background: var(--progress);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--progress) 55%, transparent);
 }
 
 .cloned-voices-empty {
