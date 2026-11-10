@@ -238,13 +238,13 @@ export default function ClonedVoicesSection({
           }}
         />
         <div className="voice-statuses flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[11px] leading-5" aria-label="Voice status">
-          <span className={`voice-status-value voice-status-selected${selectedVoiceName ? ' is-active' : ''}`} aria-label={`Selected: ${selectedVoiceName ?? 'None'}`} title={`Selected: ${selectedVoiceName ?? 'None'}`}>
+          <span className={`voice-status-value voice-status-selected ${selectedVoiceName ? 'is-active' : ''}`} aria-label={`Selected: ${selectedVoiceName ?? 'None'}`} title={`Selected: ${selectedVoiceName ?? 'None'}`}>
             <i className="voice-status-dot" aria-hidden="true" />
             <span className="voice-status-label font-medium">Selected:</span>{' '}
             <span className="voice-status-name">{selectedVoiceName ?? 'None'}</span>
           </span>
-          <span className={`voice-status-value voice-status-generating${generatingVoiceNames.length ? ' is-active' : ''}`} aria-label={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`} title={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`}>
-            <i className={`voice-status-dot${generatingVoiceNames.length && !reduced ? ' animate-pulse-soft' : ''}`} aria-hidden="true" />
+          <span className={`voice-status-value voice-status-generating ${generatingVoiceNames.length ? 'is-active' : ''}`} aria-label={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`} title={`Generating: ${generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}`}>
+            <i className={`voice-status-dot ${generatingVoiceNames.length && !reduced ? 'animate-pulse-soft' : ''}`} aria-hidden="true" />
             <span className="voice-status-label font-medium">Generating:</span>{' '}
             <span className="voice-status-name">{generatingVoiceNames.length ? generatingVoiceNames.join(', ') : 'None'}</span>
           </span>
