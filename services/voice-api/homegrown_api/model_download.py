@@ -7,9 +7,9 @@ import homegrown_api.boot_status as boot_status
 import homegrown_api.config as config
 
 
-REPO_ID = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+REPO_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 IGNORE_PATTERNS = ["*.msgpack", "*.h5", "flax_model*"]
-APPROX_MODEL_BYTES = 2_500_000_000
+APPROX_MODEL_BYTES = 4_000_000_000
 
 
 def _repo_total_bytes() -> int:

@@ -1,4 +1,4 @@
-LOCAL GPU NOTES — Homegrown (Qwen3-TTS-12Hz-0.6B)
+LOCAL GPU NOTES — Homegrown (Qwen3-TTS-12Hz-1.7B)
 ======================================================================
 
 These are dated measurements and tuning notes from specific local GPUs, not a
@@ -6,6 +6,19 @@ live inventory or guarantees about another machine. Runtime constants can
 change; check `services/voice-api/homegrown_api/config.py` for the values currently in source.
 The capacity notes below are observations, not a tested compatibility or
 performance guarantee.
+
+CURRENT SHIPPED MODEL (2026-10-31)
+----------------------------------------
+The app now downloads and ships `Qwen/Qwen3-TTS-12Hz-1.7B-Base` (set by
+`REPO_ID` in `services/voice-api/homegrown_api/model_download.py` and
+`services/voice-api/run.py`). Its weights are ~3.9GB in bf16, so the practical
+VRAM floor is higher than the 0.6B checkpoint these historical notes were
+measured on: budget for an 8GB+ card, not the 4GB cards the GTX 960/970 runs
+below used. The chunk/sequence tuning in `config.py` (MAX_SEQ_LEN=1024,
+CHUNK_MAX_CHARS=800, the ELISION/PADDING sweet-spots) was calibrated on 0.6B;
+it still functions on 1.7B (same 12.5Hz codec frame rate) but has not been
+re-measured against the larger model. The dated measurements below remain the
+0.6B record and are preserved as historical context, not current guarantees.
 
 LATEST CONTROLLED EVALUATION (2026-10-26)
 ----------------------------------------

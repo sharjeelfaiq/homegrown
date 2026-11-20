@@ -20,7 +20,7 @@ logger = logging.getLogger("homegrown")
 # a separate environment) must set MODEL_PATH to wherever it downloaded the snapshot.
 MODEL_PATH = os.environ.get(
     "MODEL_PATH",
-    r"D:\models_cache\models--Qwen--Qwen3-TTS-12Hz-0.6B-Base\snapshots\5d83992436eae1d760afd27aff78a71d676296fc",
+    r"D:\models_cache\Qwen3-TTS-12Hz-1.7B-Base",
 )
 
 # Required for bulk deletion endpoints. Kept out of API responses and logs.
