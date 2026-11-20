@@ -1,5 +1,6 @@
 """Download the voice model when missing during background ASGI startup."""
 import fnmatch
+import json
 import threading
 from pathlib import Path
 
@@ -10,6 +11,19 @@ import homegrown_api.config as config
 REPO_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 IGNORE_PATTERNS = ["*.msgpack", "*.h5", "flax_model*"]
 APPROX_MODEL_BYTES = 4_000_000_000
+EXPECTED_MODEL_SIZE = "1b7"
+
+
+def _validate_model_dir(model_dir: Path) -> None:
+    try:
+        model_config = json.loads((model_dir / "config.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Voice model files are incomplete. Check MODEL_PATH.") from exc
+    if (
+        model_config.get("tts_model_size") != EXPECTED_MODEL_SIZE
+        or model_config.get("tts_model_type") != "base"
+    ):
+        raise RuntimeError("MODEL_PATH must point to Qwen3-TTS-12Hz-1.7B-Base.")
 
 
 def _repo_total_bytes() -> int:
@@ -52,6 +66,7 @@ def download_model_if_needed() -> None:
     """Fetch the model without delaying the Studio's first render."""
     model_dir = Path(config.MODEL_PATH)
     if (model_dir / "config.json").exists():
+        _validate_model_dir(model_dir)
         return
 
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -77,6 +92,7 @@ def download_model_if_needed() -> None:
             local_dir=str(model_dir),
             ignore_patterns=IGNORE_PATTERNS,
         )
+        _validate_model_dir(model_dir)
     finally:
         stop.set()
         if ticker is not None:

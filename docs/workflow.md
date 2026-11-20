@@ -2,12 +2,10 @@
 
 This guide describes the current local Studio workflow. For first-time setup
 and safety boundaries, see [README.md](../README.md); for the frozen Windows
-build, see [build.md](build.md). GPU measurements are historical and collected
-on the hardware identified in [gpu-notes.md](gpu-notes.md).
+build, see [build.md](build.md). The current checkpoint's GPU requirements are
+in [gpu-notes.md](gpu-notes.md).
 For isolated, offline generation profiling and paired comparison commands, see
 [the voice benchmark procedure](../scripts/benchmarks/voice_generation.md).
-The latest retained decoder change is documented in
-[the waveform evaluation](waveform-decoding-results.md).
 
 ## Start and safety
 
@@ -19,7 +17,8 @@ npm run dev
 
 Open `http://localhost:5173`. The script starts Vite on `:5173` first, then
 FastAPI on `127.0.0.1:8000`. FastAPI begins serving while a background startup
-task probes the device, loads Qwen3-TTS, restores the queue, and starts the
+task downloads the 1.7B Base checkpoint when needed, probes the device, loads
+Qwen3-TTS, restores the queue, and starts the
 worker. The boot-status file reports the startup phase, and `/api/health`
 remains responsive with readiness and error details. Studio shows voice-model and
 compute status through `RuntimeStatus`, mounted
@@ -50,7 +49,9 @@ cd apps/studio && npm run dev
 cd services/voice-api && ../../.venv/Scripts/python.exe -m uvicorn homegrown_api.app:app --host 127.0.0.1 --port 8000
 ```
 
-Set `MODEL_PATH` in `services/voice-api/.env` to the downloaded local model.
+Set `MODEL_PATH` in `services/voice-api/.env` to a directory for the 1.7B Base
+checkpoint. The backend downloads it on first launch and rejects a different
+checkpoint already present at that path.
 The app has no accounts or general API authentication: requests use the single
 local user. Individual deletes and other ordinary API operations do not require
 a password; only permanent bulk deletion requires `HOMEGROWN_ADMIN_PASSWORD`.

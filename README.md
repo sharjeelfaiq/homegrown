@@ -9,10 +9,11 @@ on the computer that runs it.
 Use Windows 10/11 with Git Bash, Python 3.13 for the tested Windows dependency
 set (the API package metadata requires Python 3.11 or newer, but pinned native
 dependencies may not publish wheels for the newest Python versions), Node
-20.19+ (or 22.12+), and (for a packaged build) 7-Zip. Studio generation
-requires the voice model to load on an NVIDIA CUDA device. If no usable GPU is
-found, the backend can start on CPU for voice management, but Studio keeps
-Generate disabled.
+20.19+ (or 22.12+), and (for a packaged build) 7-Zip. The shipped checkpoint is
+`Qwen/Qwen3-TTS-12Hz-1.7B-Base`. Budget at least 8 GB of GPU memory for Studio
+generation; this is a planning target, not a measured minimum. Studio requires
+the model to load on an NVIDIA CUDA device. On CPU fallback, the backend can
+start for voice management, but Studio keeps Generate disabled.
 
 ```bash
 git clone git@github.com:sharjeelfaiq/homegrown.git
@@ -32,11 +33,12 @@ Set `HOMEGROWN_ADMIN_PASSWORD` to a private value in that local `.env` if you
 need the permanent bulk-delete actions in Settings. Leave it out of source
 control; without it, bulk deletion is disabled.
 
-Set `MODEL_PATH` in `services/voice-api/.env` to the directory where you want
-the model stored. On first launch, the backend downloads the model there if it
-is missing, then loads it onto the selected device before enabling voice
-operations. The app has no sign-in or authentication; use it only on a trusted
-network:
+Set `MODEL_PATH` in `services/voice-api/.env` to a directory for the 1.7B Base
+checkpoint. On first launch, the backend downloads that checkpoint there when
+it is missing. An existing directory must contain the 1.7B Base configuration;
+another checkpoint is rejected before loading. The model repository is about
+4.54 GB, including about 3.86 GB of main weights. The app has no sign-in or
+authentication; use it only on a trusted network.
 
 ## Repairing a broken Python environment
 
@@ -328,11 +330,9 @@ docs/workflow.md   day-to-day Studio workflow
   other ordinary API actions are unauthenticated; permanent bulk deletion
   additionally requires `HOMEGROWN_ADMIN_PASSWORD`. Never expose the
   development or packaged app to an untrusted network.
-- See [docs/gpu-notes.md](docs/gpu-notes.md) for local-GPU measurements and
+- See [docs/gpu-notes.md](docs/gpu-notes.md) for current model GPU requirements and
   [engine/qwen/README.md](engine/qwen/README.md) for the vendored wrapper.
 - Use the [isolated voice benchmark](scripts/benchmarks/voice_generation.md)
   for reproducible offline generation measurements without modifying user data.
-  The [waveform decoding evaluation](docs/waveform-decoding-results.md) documents
-  the retained optimization and its performance/quality evidence.
 - `docs/archive/` is archival material only; it documents superseded cloud and
   pre-migration workflows and is not executable guidance.

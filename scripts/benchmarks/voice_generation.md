@@ -1,7 +1,8 @@
 # Voice generation benchmark
 
-For the retained prefix-skipping decoder and its measured results, see
-[waveform-decoding-results.md](../../docs/waveform-decoding-results.md).
+The retained prefix-skipping decoder lives in
+`../../engine/qwen/waveform_stream.py`. Use this benchmark to measure it on the
+current checkpoint.
 
 Run from the repository root using the existing virtual environment. The entry
 point uses only the standard library until it redirects storage and enables
@@ -117,9 +118,8 @@ benchmark-only; it was not retained in the initial evaluation. Production now
 uses `engine/qwen/waveform_stream.py`, which retains full generated history only
 during calibration and uses a bounded tail afterward as part of the later
 prefix-skipping implementation. Suppression vectorization remains a
-microbenchmark. See the [initial measurement report](../../docs/voice-speed-results.md)
-and [subsequent waveform evaluation](../../docs/waveform-decoding-results.md)
-for their separate retention decisions.
+microbenchmark. Re-run the comparison on the current checkpoint before
+reporting performance or quality results.
 
 Run regression coverage with `npm test` (backend, colocated engine and benchmark
 safety tests are included). Targeted checks:

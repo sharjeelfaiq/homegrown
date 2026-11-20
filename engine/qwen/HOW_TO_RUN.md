@@ -33,19 +33,26 @@ pip install -U soundfile qwen-tts
 
 Note: `qwen-tts` pins its own `transformers` version and may downgrade an existing install — that's expected and fine.
 
-## 3. Download a model
+## 3. Download the application model
 
-Pick the smallest model that fits your VRAM. On a 4GB card, use the 0.6B model:
+Use `Qwen3-TTS-12Hz-1.7B-Base` with a GPU budget of at least 8 GB of VRAM.
+This is a planning target, not a measured minimum. The local GTX 970 has 4 GB,
+and 1.7B generation has not been verified on it.
 
 ```bash
 python -c "
 from huggingface_hub import snapshot_download
-path = snapshot_download('Qwen/Qwen3-TTS-12Hz-0.6B-Base', cache_dir='D:/models_cache')
+path = snapshot_download(
+    'Qwen/Qwen3-TTS-12Hz-1.7B-Base',
+    local_dir='D:/models_cache/Qwen3-TTS-12Hz-1.7B-Base',
+    ignore_patterns=['*.msgpack', '*.h5', 'flax_model*'],
+)
 print(path)
 "
 ```
 
-This downloads ~2.5GB and prints the local snapshot path — save that path, you'll pass it to `from_pretrained` below. Other available models: `Qwen3-TTS-12Hz-1.7B-Base`, `-CustomVoice`, `-VoiceDesign` variants (bigger, need more VRAM).
+This downloads the model into a flat directory and prints that directory for
+`from_pretrained` below. The model weights are about 3.86 GB.
 
 ## 4. Get a reference audio clip + transcript (for voice cloning)
 
@@ -73,7 +80,7 @@ import torch
 import soundfile as sf
 from qwen import FasterQwen3TTS
 
-MODEL_PATH = r"D:\models_cache\models--Qwen--Qwen3-TTS-12Hz-0.6B-Base\snapshots\<snapshot-hash>"  # REPLACE with the real path printed by step 3 -- this placeholder will not work as-is
+MODEL_PATH = r"D:\models_cache\Qwen3-TTS-12Hz-1.7B-Base"
 REF_AUDIO = r"C:\path\to\ref_audio.wav"  # REPLACE with the real path to the file from step 4
 REF_TEXT = "The quick brown fox jumps over the lazy dog near the riverbank."
 
@@ -82,7 +89,7 @@ tts = FasterQwen3TTS.from_pretrained(
     device="cuda",
     dtype=torch.bfloat16,
     attn_implementation="sdpa",
-    max_seq_len=256,       # keep small on <=4GB cards; see VRAM note below
+    max_seq_len=1024,      # match the application's checked-in setting
 )
 
 # Non-streaming
@@ -91,7 +98,7 @@ audio_arrays, sr = tts.generate_voice_clone(
     language="English",
     ref_audio=REF_AUDIO,
     ref_text=REF_TEXT,
-    max_new_tokens=128,    # keep small on <=4GB cards
+    max_new_tokens=128,
 )
 sf.write("out.wav", audio_arrays[0], sr)
 
@@ -120,17 +127,14 @@ The first call to `generate_voice_clone`/`generate_voice_clone_streaming` captur
 the CUDA graphs when CUDA is selected; later calls reuse them.
 Capture time and warm performance depend on the machine and input.
 
-## VRAM notes (4GB cards)
+## VRAM notes
 
-Older standalone notes reported about 4.2–4.3 GB of memory use without
-distinguishing allocated, reserved, device and shared memory. Do not treat that
-as a verified 4 GB VRAM requirement. Controlled application measurements are in
-[the waveform evaluation](../../docs/waveform-decoding-results.md).
+Budget at least 8 GB of GPU memory for this checkpoint. The model weights alone
+are about 3.86 GB; CUDA graphs and generation buffers need additional space.
 If you hit `CUDA out of memory`:
-- Lower `max_seq_len` further (e.g. 128–192)
+- Lower `max_seq_len` only after measuring generation quality.
 - Lower `max_new_tokens`
 - Close other GPU-using apps first (check `nvidia-smi` for baseline usage)
-- Use the 0.6B model, not 1.7B, on anything ≤6GB VRAM
 
 ## Troubleshooting
 

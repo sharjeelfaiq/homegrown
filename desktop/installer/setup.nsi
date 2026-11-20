@@ -76,8 +76,7 @@ Section "Main" SecMain
   SetOutPath "$INSTDIR\storage\references"
   SetOutPath "$INSTDIR\storage\generated"
 
-  ; Model snapshot downloaded on first run (see services/voice-api/run.py) -- not
-  ; bundled in the installer, kept out of the ~2.5GB download this way.
+  ; The model downloads during first-run API startup and is not bundled in the installer.
   SetOutPath "$INSTDIR\models"
 
   ; .env pins the paths run.py would otherwise infer -- kept explicit so an

@@ -65,12 +65,10 @@ GEN_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Per-chunk char budget so a single chunk's prefill + decode stay within
-# max_seq_len=1024 (tuned for this machine's 4GB GPU -- see
-# ../../engine/qwen/HOW_TO_RUN.md). Empirically tested: 800 chars / 700 max_new_tokens
-# with a short (~3.5s) reference clip takes ~85s and comfortably fits. Longer
-# reference clips (10+s) eat into the same max_seq_len budget and will be much
-# slower or may exceed it -- the talker's own StaticCache bounds check is the
-# final safety net (surfaced as a chunk failure in the job's "error" field).
+# max_seq_len=1024. The limits below were measured on an earlier checkpoint and
+# need quality and memory validation on the current 1.7B Base checkpoint.
+# Longer reference clips eat into the same window; the talker's StaticCache
+# bounds check is the final safety net (surfaced as a chunk failure).
 #
 # Long scripts are handled by splitting into multiple CHUNK_MAX_CHARS-sized
 # pieces (text_chunker.chunk_text), each generated independently with a fresh
@@ -78,7 +76,7 @@ GEN_DIR.mkdir(parents=True, exist_ok=True)
 # long generation would drift into noise as cache position approaches
 # max_seq_len (rope embeddings extrapolating past the range this model/config
 # was validated for). See audio_stitcher.stitch_audio for how the per-chunk
-# audio is recombined.
+# audio is recombined. The quality behavior has not been remeasured on 1.7B.
 CHUNK_MAX_CHARS = 800
 
 
@@ -92,18 +90,18 @@ STITCH_GAP_SECONDS = 0.2
 
 
 # --- max_seq_len budgeting -------------------------------------------------
-# The reference clip and the script share ONE window, and CHUNK_MAX_CHARS=800
-# above is calibrated for a ~3.5s reference. Nothing used to reconcile the two,
-# so a long clip silently overran the window. Measured failure: a 53.5s
+# The reference clip and the script share ONE window. CHUNK_MAX_CHARS=800
+# above came from a short-reference measurement on an earlier checkpoint.
+# Before reference-aware budgeting, a long clip overran the window. The
+# earlier measurement used a 53.5s
 # reference (642 frames) plus an 876-char script asked for
 #
 #     642 ref frames + ~190 ref_text tokens + ~197 script tokens
 #         + 700 generated frames  =  ~1729  vs  1024 available
 #
-# The talker does not hard-fail on this -- rope positions extrapolate past the
-# validated range and output degenerates into murmur and long silence (54.4s of
-# audio holding only ~20s of speech). The same preset with a 160-char script
-# came to ~1009 and sounded fine, which is why this looked intermittent.
+# In that measurement, output degenerated into murmur and long silence (54.4s
+# of audio holding only ~20s of speech). The same preset with a 160-char script
+# came to ~1009 and sounded fine. This is historical evidence, not a 1.7B test.
 #
 # So derive the per-chunk char budget from what the reference actually leaves,
 # rather than assuming a short clip. Conversion factors are deliberately rough:
@@ -124,8 +122,8 @@ SEQ_SAFETY_MARGIN = 64      # absorbs tokenizer/prompt overhead these estimates 
 MIN_CHUNK_CHARS = 80        # ~one short sentence; below this prosody suffers badly
 
 
-# Chunk size has a sweet spot, and the model fails in BOTH directions. Measured
-# on this machine with one preset, same 378-char text, produced vs expected:
+# An earlier checkpoint had a narrow useful chunk range. Measured on one
+# machine with one preset and the same 378-char text, produced vs expected:
 #
 #     380 chars/chunk ->  89%  clauses silently dropped
 #     190 chars/chunk ->  95%  complete
@@ -134,8 +132,8 @@ MIN_CHUNK_CHARS = 80        # ~one short sentence; below this prosody suffers ba
 # So a chunk budget derived only from max_seq_len is not enough: a long
 # reference clip shrinks the budget into the padding regime, which is what the
 # original "murmur and long silence" reports actually were. Cap the ceiling for
-# elision and warn below the floor, where the fix is a shorter reference clip
-# rather than a smaller chunk.
+# elision and warn below the floor. Validate these thresholds on 1.7B before
+# changing them.
 ELISION_SAFE_CHUNK_CHARS = 200
 
 
@@ -189,16 +187,8 @@ _GEN_SLACK = 1.15
 _CHUNK_CAP_HEADROOM_FRAMES = 125
 
 
-# Reference-audio duration bounds for new presets. ICL voice cloning gets
-# unstable outside this range: too short starves the speaker encoder of
-# signal; too long eats into the same max_seq_len budget generation uses and
-# has been observed (empirically, this session) to cause unstable output --
-# degenerate babbling that runs to the full token budget, or near-instant
-# stopping -- regardless of chunk size. 23s reference clips reproduced this
-# reliably at the old 15s cap. Raised to 60s by product decision (2026-07) --
-# this is well past the 23s point where instability was previously observed,
-# so watch for garbled/looping output on long reference clips and lower this
-# again if it reproduces.
+# Minimum accepted reference duration. Very short clips give the speaker
+# encoder too little signal. The quality threshold needs validation on 1.7B.
 MIN_REF_AUDIO_SECS = 2.0
 
 
@@ -224,10 +214,10 @@ MAX_REF_AUDIO_SECS = 1800.0
 #     44s -> refcost 693, avail 267, chunk_chars 196, max_new_tokens 218  OK
 #     50s -> refcost 787, avail 173, chunk_chars 127, max_new_tokens 141  BAD
 #
-# 40 is the LAST comfortable value, not an arbitrary one: it still holds the
-# full ELISION_SAFE_CHUNK_CHARS ceiling, 44 starts dropping below it, and 50 is
-# into the PADDING_SAFE_MIN_CHARS regime this file documents as murmuring and
-# dragging. Do not raise it without re-solving that table.
+# At 40s, the arithmetic budget still holds the full
+# ELISION_SAFE_CHUNK_CHARS ceiling; at 44s it drops below that ceiling. The
+# associated audio-quality judgments came from an earlier checkpoint. Measure
+# 1.7B before raising this limit or treating the table as a quality guarantee.
 REF_TRIM_SECS = 40.0
 
 
@@ -263,9 +253,7 @@ MAX_REF_TEXT_CHARS_PER_SEC = 22.0
 # discards exactly those runs (measured p90 32.4s/chunk against p50 19.3s).
 #
 # generation_s and total_chunks are still recorded on every history entry, so
-# the raw material survives if anyone wants to try again. The full
-# model-selection table is in docs/gpu-notes.md -- read it before proposing a
-# replacement.
+# the raw material survives for a new measurement on the current checkpoint.
 
 STYLE_INSTRUCTIONS = {
     "natural": None,

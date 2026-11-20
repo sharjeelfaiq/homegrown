@@ -62,7 +62,7 @@ To avoid any network/API dependency at runtime, pre-download the model and pass 
 from qwen import FasterQwen3TTS
 
 tts = FasterQwen3TTS.from_pretrained(
-    "Qwen/Qwen3-TTS-12Hz-0.6B-Base",  # Base checkpoint for voice cloning
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base",  # Base checkpoint for voice cloning
     device="cuda",
     dtype="bfloat16",
 )
@@ -113,6 +113,5 @@ device and dtype; failed file inspection and oversized entries bypass caching.
 Voice-clone streaming skips reference-only vocoder blocks whose PCM would be
 discarded during calibration, then retains only the generated context tail.
 The full reference still conditions codec prediction. No benchmark CUDA timing
-is enabled in ordinary generation. See the
-[waveform evaluation](../../docs/waveform-decoding-results.md) for measured
-results and their limits.
+is enabled in ordinary generation. The current checkpoint's performance and
+quality need measurement on target hardware.

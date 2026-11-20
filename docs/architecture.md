@@ -105,7 +105,8 @@ declares package metadata; it does not replace or duplicate dependency pins.
   for permanent collection-wide deletion. There is no account authentication.
 - `lifespan.py` starts model initialization in a background thread during ASGI
   lifespan startup, then yields without waiting for it. Initialization
-  downloads the model snapshot when it is missing, probes the device, loads the
+  downloads the 1.7B Base checkpoint when it is missing, rejects an existing
+  checkpoint with the wrong model size or type, probes the device, loads the
   model, restores persisted queue state, and starts the worker before publishing
   ready; failures publish an error status.
 - `generation/model.py` owns model and device state; `generation/worker.py`
@@ -178,7 +179,7 @@ live under `scripts/benchmarks/`; artifacts stay in ignored `.tmp/voice-speed/`.
 vocoder blocks whose output the old calibration discarded, preserving internal
 alignment, acoustic context and sample slicing. Autoregressive conditioning is
 unchanged; comparison decoders and GPU timing remain in benchmark scripts.
-The `.env.example` documents variable names only; the administrator password
+The `.env.example` provides example configuration without a secret; the administrator password
 must remain in the ignored local `.env` and must never be copied into docs or
 committed.
 

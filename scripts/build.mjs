@@ -263,7 +263,7 @@ async function main() {
     fs.rmSync(STAGE_DIR, { recursive: true, force: true }); fs.mkdirSync(STAGE_DIR, { recursive: true });
     fs.copyFileSync(atRoot('desktop', 'launcher', 'dist', 'Homegrown.exe'), path.join(STAGE_DIR, 'Homegrown.exe')); fs.cpSync(atRoot('services', 'voice-api', 'dist', 'backend'), path.join(STAGE_DIR, 'backend'), { recursive: true });
     for (const dir of [['storage', 'references'], ['storage', 'generated'], ['models']]) fs.mkdirSync(path.join(STAGE_DIR, ...dir), { recursive: true });
-    if (isFile(path.join(STAGE_DIR, 'backend', '.env'))) die(`${path.relative(ROOT, STAGE_DIR)}/backend/.env exists. It carries an absolute MODEL_PATH that exists on no other machine. Delete it and re-run.`);
+    if (isFile(path.join(STAGE_DIR, 'backend', '.env'))) die(`${path.relative(ROOT, STAGE_DIR)}/backend/.env exists. It may contain a machine-specific MODEL_PATH or administrator password. Delete it and re-run.`);
     if (fs.readdirSync(path.join(STAGE_DIR, 'models')).length > 0) die(`${path.relative(ROOT, STAGE_DIR)}/models is not empty. It must ship empty -- the app downloads the model on first run.`);
     if (!isFile(path.join(STAGE_DIR, 'Homegrown.exe'))) die('launcher exe missing from the staged tree.'); if (!isFile(path.join(STAGE_DIR, 'backend', 'backend.exe'))) die('backend.exe missing from the staged tree.');
     const archive = path.join(DIST_DIR, 'app.7z'); fs.rmSync(archive, { force: true }); fs.rmSync(OUTPUT, { force: true }); await run(SEVENZIP, ['a', '-t7z', '-m0=lzma2', '-mx5', '-mmt=on', 'app.7z', 'Homegrown'], { cwd: DIST_DIR });

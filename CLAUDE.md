@@ -50,6 +50,8 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
 - `services/voice-api/homegrown_api/app.py` composes the API routers and static Studio host.
   `generation/model.py` owns model state, `generation/worker.py` owns the queue, and
   `persistence/stores.py` owns JSON stores. See `docs/architecture.md` for boundaries.
+  `model_download.py` downloads the 1.7B Base checkpoint when absent and rejects
+  a different checkpoint at `MODEL_PATH` before loading.
 - `apps/studio/src/app/StudioShell.tsx` composes voices, generation, and
   queue activity. `SettingsModal.tsx` owns the header Settings dialog:
   `ThemeSwitch.tsx` persists the System or named theme choice, while the
@@ -84,9 +86,9 @@ and `/refs`. The finished-product path is `npm run build` followed by the genera
   `HOMEGROWN_STORAGE_DIR` can redirect source or packaged runtime storage;
   benchmark artifacts belong under ignored `.tmp/voice-speed/`.
   Voice-clone waveform streaming skips discarded reference-only vocoder blocks
-  while preserving the original block alignment/context and PCM slicing; see
-  `docs/waveform-decoding-results.md`. The full reference still conditions codec
-  prediction. Keep inference timing instrumentation in benchmark scripts.
+  while preserving the original block alignment/context and PCM slicing. The
+  full reference still conditions codec prediction. Keep inference timing
+  instrumentation in benchmark scripts.
 - There is one fixed local user (`local-user`), no accounts, and no workspaces.
   Ordinary API actions, including individual voice and voiceover deletion, do
   not require authentication. Permanent bulk deletion is additionally gated by

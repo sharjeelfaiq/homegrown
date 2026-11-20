@@ -1132,9 +1132,6 @@ class FasterQwen3TTS:
             default=True,
         )
 
-        if self.model.model.tts_model_size in "0b6":
-            instruct = None
-
         from .generate import fast_generate
 
         m, talker, config, tie, tam, tth, tpe = self._prepare_generation_custom(
@@ -1218,9 +1215,6 @@ class FasterQwen3TTS:
             non_streaming_mode,
             default=True,
         )
-
-        if self.model.model.tts_model_size in "0b6":
-            instruct = None
 
         from .streaming import fast_generate_streaming
 

@@ -1,20 +1,10 @@
-"""
-PyInstaller entrypoint for the Homegrown backend.
+"""Configure installed paths and start the packaged Homegrown API.
 
-In dev, nobody runs this -- `python -m uvicorn homegrown_api.app:app` (or the Vite dev
-flow) is used instead. This file only matters once frozen into backend.exe:
-it wires up the installed-machine paths (model dir, storage dir, .env) that
-the API can't derive from a real repo layout anymore, then starts uvicorn.
-
-The entrypoint configures installed-machine paths and starts Uvicorn. Slow
-model download and initialization run from the ASGI lifespan after Uvicorn is
-serving the Studio, so the packaged build shows the development app's loading
-states.
+Model download and initialization run in the ASGI lifespan after Uvicorn starts
+serving Studio. Development uses the Vite and Uvicorn flow instead.
 """
-import fnmatch
 import os
 import sys
-import threading
 from pathlib import Path
 
 from homegrown_api import boot_status
@@ -33,14 +23,6 @@ from homegrown_api import boot_status
 # they disagree the launcher polls a dead port and reports the backend as
 # having timed out during startup, which is a badly wrong diagnosis.
 PORT = 8731
-
-REPO_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
-IGNORE_PATTERNS = ["*.msgpack", "*.h5", "flax_model*"]
-
-# Fallback when the size of the repo can't be looked up (offline-ish HF API,
-# rate limit). Only used to render a progress bar, never to decide anything.
-APPROX_MODEL_BYTES = 4_000_000_000
-
 
 def _storage_dir() -> Path:
     # VOICECLONE_STORAGE_DIR is the pre-rebrand key, still read so an
@@ -66,99 +48,6 @@ def _configure_frozen_env() -> None:
     # A status file from a previous run would expose a stale phase or error.
     boot_status.clear(_storage_dir())
     boot_status.write(_storage_dir(), boot_status.PHASE_STARTING)
-
-
-def _repo_total_bytes() -> int:
-    """Sum of the files snapshot_download will actually fetch, for the bar."""
-    try:
-        from huggingface_hub import HfApi
-        info = HfApi().model_info(REPO_ID, files_metadata=True)
-        total = 0
-        for sibling in info.siblings or []:
-            name = sibling.rfilename
-            if any(fnmatch.fnmatch(name, pat) for pat in IGNORE_PATTERNS):
-                continue
-            total += sibling.size or 0
-        if total > 0:
-            return total
-    except Exception:
-        pass
-    return APPROX_MODEL_BYTES
-
-
-def _bytes_on_disk(root: Path) -> int:
-    try:
-        return sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
-    except OSError:
-        return 0
-
-
-def _download_progress_loop(model_dir: Path, total: int, stop: threading.Event) -> None:
-    """Report download progress by watching the model dir grow.
-
-    Deliberately not huggingface_hub's `tqdm_class`: that hands out one bar per
-    file plus an overall bar, created lazily as parallel workers start, so the
-    aggregate total jumps around mid-download. Bytes on disk (including the
-    partial files under .cache/) only ever move one way.
-    """
-    while not stop.wait(1.0):
-        done = _bytes_on_disk(model_dir)
-        percent = min(99, int(done * 100 / total)) if total else None
-        boot_status.write(
-            _storage_dir(),
-            boot_status.PHASE_DOWNLOADING,
-            detail=f"{done / 1e9:.1f} GB of {total / 1e9:.1f} GB",
-            percent=percent,
-        )
-
-
-def _download_model_if_needed() -> None:
-    model_dir = Path(os.environ["MODEL_PATH"])
-    if (model_dir / "config.json").exists():
-        return  # already downloaded (or the user pointed MODEL_PATH at one)
-
-    print(f"First run: downloading the Qwen3-TTS model to {model_dir} ...")
-    model_dir.mkdir(parents=True, exist_ok=True)
-    boot_status.write(
-        _storage_dir(), boot_status.PHASE_DOWNLOADING, detail="Contacting Hugging Face", percent=0
-    )
-
-    stop = threading.Event()
-    ticker = None
-    try:
-        from huggingface_hub import snapshot_download
-
-        total = _repo_total_bytes()
-        ticker = threading.Thread(
-            target=_download_progress_loop, args=(model_dir, total, stop), daemon=True
-        )
-        ticker.start()
-
-        snapshot_download(
-            repo_id=REPO_ID,
-            local_dir=str(model_dir),
-            ignore_patterns=IGNORE_PATTERNS,
-        )
-        print("Model download complete.")
-    except Exception as e:
-        print(f"ERROR: model download failed: {e}")
-        message = (
-            f"Failed to download the AI voice model:\n\n{e}\n\n"
-            "Check your internet connection and try again.\n"
-            "The model only needs to download once (~4GB)."
-        )
-        # Both channels: the flag file feeds the launcher's browser loader, the
-        # message box covers someone running backend.exe on its own.
-        boot_status.write(_storage_dir(), boot_status.PHASE_ERROR, detail=message)
-        import ctypes
-        ctypes.windll.user32.MessageBoxW(
-            0, message, "Homegrown -- Download Failed", 0x10,  # MB_ICONERROR
-        )
-        sys.exit(1)
-    finally:
-        stop.set()
-        if ticker is not None:
-            ticker.join(timeout=2)
 
 
 if getattr(sys, "frozen", False):

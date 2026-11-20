@@ -1,14 +1,10 @@
 """
 Startup progress, published where the desktop launcher can read it.
 
-The launcher opens a browser loader within a second or two of the double-click,
-but the backend has nothing to say over HTTP for a long time after that:
-uvicorn runs the ASGI lifespan startup (CUDA probe + model load) *before* it
-creates the listening socket, and on a first run `run.py` downloads ~2.5GB
-before uvicorn is even imported. For that whole window the desktop build's
-port (`PORT` in `run.py`) is connection-refused, so progress is published as a
-small JSON file in the storage dir and polled by the launcher's splash server
-instead.
+Importing the backend and binding its port can take time. The launcher reads
+this status file for progress and startup errors before Studio is available.
+Model download, CUDA probing, and loading run in the ASGI lifespan background
+thread; Studio displays their status after the API begins serving.
 
 Nothing here may raise: a failure to report progress must never be the reason
 the app doesn't start.

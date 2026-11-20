@@ -60,7 +60,7 @@ export default function BootOverlay({ boot, elapsed }: Props) {
 
         {/* Two separate slots. The launcher learned this the hard way: letting
             the backend's `detail` replace the prose meant the whole screen read
-            "0.0 GB of 2.5 GB" and the one reassuring sentence vanished exactly
+            a raw download counter and the one reassuring sentence vanished exactly
             when it was needed most. */}
         {/* min-h holds the line's space so the panel does not jolt when
             detail is empty. */}

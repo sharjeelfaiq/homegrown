@@ -241,7 +241,7 @@ def main() -> None:
 
 
 def wait_for_backend(storage_dir: Path, log_path: Path, proc):
-    """Mirror the backend's published progress into /status until it is healthy.
+    """Watch backend progress and errors until Studio is served.
 
     Returns once the app is serving, while model initialization may still be
     running in the background. Fatal pre-bind failures return a message.

@@ -65,7 +65,7 @@ If no file was there to stash, it writes the default dev value, so the tree is
 always left usable. `apps/studio/.env.local.example` is the committed reference.
 
 Two gates abort the build rather than warn: a `services/voice-api/.env` reaching the staged
-tree (it carries an absolute `MODEL_PATH` that exists on no other machine), and
+tree (it can carry a machine-specific `MODEL_PATH` and an administrator password), and
 a non-empty `models/`.
 
 The steps below are the same pipeline by hand — for when a stage fails and you
@@ -250,8 +250,8 @@ ls dist/Homegrown/backend/.env 2>/dev/null && echo "^^ DELETE THIS" || echo "OK:
 ls -A dist/Homegrown/models    # must print nothing
 ```
 
-If `.env` is present, delete it. It carries an absolute
-`MODEL_PATH=D:\dev-projects\...` that exists on no other machine.
+If `.env` is present, delete it. It can contain machine-specific paths and a
+private administrator password.
 
 ---
 
@@ -458,17 +458,19 @@ a folder outside the repo, and run `Homegrown.exe` from there.
 2. `<chosen folder>/Homegrown/` appears. Its size depends on the current frozen
    backend and launcher dependencies.
 3. Runs `Homegrown.exe` inside it.
-4. **SmartScreen warns once** — "Windows protected your PC" → More info → Run
-   anyway. The exe is unsigned; only an Authenticode certificate removes this.
-5. When model files are absent, first launch downloads them into `models/`;
-   the app uses an approximate 2.5 GB fallback for progress when size discovery
-   is unavailable. Studio shows download/model initialization status.
+4. Windows SmartScreen may warn because the executable is unsigned. The user
+   must decide whether to run an executable from a source they trust.
+5. When model files are absent, first launch downloads
+   `Qwen/Qwen3-TTS-12Hz-1.7B-Base` into `models/`. The model repository is about
+   4.54 GB; the app uses a 4 GB fallback for the progress estimate when size
+   discovery is unavailable. An existing directory with another checkpoint is
+   rejected. Studio shows download and model initialization status.
 
-**Requirements to state to them:** Windows and about 8 GB free disk, plus
-about 2.5 GB for the model download. Studio generation requires an NVIDIA GPU
-with working CUDA drivers; on CPU fallback, voice management remains available
-but Generate stays disabled. The
-4 GB VRAM figure is a historical tested profile, not a guaranteed minimum.
+**Requirements to state to them:** Windows, space for the extracted app and a
+roughly 4.54 GB model download, and an NVIDIA GPU with working CUDA drivers for
+Studio generation. Budget at least 8 GB of GPU memory for this checkpoint;
+this is a planning target, not a measured minimum. On CPU fallback, voice
+management remains available but Generate stays disabled.
 No Python, no Node.
 
 There is no installer, no Start Menu entry and no uninstaller — uninstalling
