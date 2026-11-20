@@ -58,6 +58,10 @@ transient Windows file-lock errors during recursive cleanup:
 that you need to retain; the build recreates them.
 If a cleanup still fails with a permission error, close Homegrown and any
 process using that output folder, then check its permissions before retrying.
+Before staging, the scripted build checks for `backend.exe` in PyInstaller's
+`dist/backend/` output. If that copy has disappeared, it restores the exact
+executable from PyInstaller's `build/backend/` output. A missing source or a
+second disappearance stops the build with a Windows Security diagnostic.
 
 It also **stashes `apps/studio/.env.local` and restores it afterwards**. The restore runs from a
 process-exit handler, so it happens whether the build succeeds, fails, or you Ctrl-C it.

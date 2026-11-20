@@ -7,6 +7,7 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ensureBackendExecutable } from './build/artifacts.mjs';
 import { DEFAULT_STAGE_ETAS, RollingTail, formatDuration, renderOverview, renderOverviewLine, renderProgress, stageDescription, TOTAL_STAGES } from './build/progress.mjs';
 import { renderBuildSummary } from './build/summary.mjs';
 
@@ -260,6 +261,9 @@ async function main() {
   const freezeEnv = { ...process.env, TMP: TMP_DIR, TEMP: TMP_DIR }; await stage(8, () => run(PY, ['-m', 'PyInstaller', 'backend.spec', '--clean', '--noconfirm'], { cwd: atRoot('services', 'voice-api'), env: freezeEnv }));
   await stage(9, async () => { await run('python', [path.join('scripts', 'build', 'build_splash.py')]); await run(PY, ['-m', 'PyInstaller', 'launcher.spec', '--clean', '--noconfirm'], { cwd: atRoot('desktop', 'launcher'), env: freezeEnv }); });
   await stage(10, async () => {
+    if (ensureBackendExecutable(atRoot('services', 'voice-api', 'dist', 'backend'), atRoot('services', 'voice-api', 'build', 'backend'))) {
+      logger.event('Restored missing backend.exe from PyInstaller build output.');
+    }
     fs.rmSync(STAGE_DIR, { recursive: true, force: true }); fs.mkdirSync(STAGE_DIR, { recursive: true });
     fs.copyFileSync(atRoot('desktop', 'launcher', 'dist', 'Homegrown.exe'), path.join(STAGE_DIR, 'Homegrown.exe')); fs.cpSync(atRoot('services', 'voice-api', 'dist', 'backend'), path.join(STAGE_DIR, 'backend'), { recursive: true });
     for (const dir of [['storage', 'references'], ['storage', 'generated'], ['models']]) fs.mkdirSync(path.join(STAGE_DIR, ...dir), { recursive: true });
